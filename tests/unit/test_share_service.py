@@ -365,8 +365,9 @@ def test_restore_snapshot_hydrates_ui_without_rescoring():
     assert state["shared_snapshot_data_release"] == "release-2026-08-04"
     assert state["processed_gdf"].loc["69123", "weighted_score"] == 0.855
     assert "engine" not in state
-    assert "snapshot-hash" not in state["odis_bg_store"]
-    assert "analysis_snapshot-hash_69123" not in state["odis_bg_store"]
+    assert "snapshot-hash" in state["odis_bg_store"]
+    assert "analysis_snapshot-hash_69123" in state["odis_bg_store"]
+    assert state["active_search_hash"] is None
 
 
 def test_load_shared_search_invalid_id(monkeypatch):
@@ -720,5 +721,4 @@ def test_restore_shared_search_from_query_params_logs_view_telemetry(monkeypatch
         assert view_event["share_id"] == "view1234"
         assert view_event["org_id"] == "jaccueille"
         assert "env" in view_event
-
 

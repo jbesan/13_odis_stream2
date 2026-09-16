@@ -115,9 +115,8 @@ def polling_synthesis_fragment(
     status = status_data.get("status") if status_data else None
 
     if status == "running":
-        st.info("🧠 L'analyse stratégique est en cours d'exécution en arrière-plan...")
         st.caption(
-            "Vous pouvez fermer cette modale. Une notification apparaîtra dès que la synthèse sera prête."
+            "L'analyse avancée est en cours de préparation en arrière-plan (~30 secondes). Vous pouvez fermer cette fenêtre, une notification apparaîtra dès que la synthèse sera prête."
         )
         if st.button("Annuler l'analyse", key=f"cancel_analysis_{task_key}"):
             cancel_background_city_analysis(task_key)
@@ -349,6 +348,11 @@ def _render_initial_analysis_report(
     """Renders the initial full analysis report with executive brief, tabs for experts, and CTA at the end."""
     report = _get_or_build_analysis_report(commune, fallback_content)
     if report:
+        st.info(
+            "Cette synthèse est générée par une intelligence artificielle. "
+            "Elle est fournie à titre indicatif et peut comporter des inexactitudes : "
+            "pensez à vérifier les informations."
+        )
         # 1. Executive overview (Top)
         if report.avis_global:
             avis_text = report.avis_global.strip()
@@ -509,11 +513,6 @@ def show_ia_analysis_dialog(index: Any):
     codgeo = commune.codgeo
 
     st.header(f"Analyse OD&IS pour {nom}")
-    st.info(
-        "Cette synthèse est générée par une intelligence artificielle. "
-        "Elle est fournie à titre indicatif et peut comporter des inexactitudes : "
-        "pensez à vérifier les informations."
-    )
 
     search_criterias = st.session_state.config
     ia_analysis_content(nom, codgeo, search_criterias)

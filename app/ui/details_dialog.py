@@ -390,7 +390,8 @@ def render_jobs_enrichment(commune: CommuneResult, h: Optional[str]):
                     ]
                     if "total" in jobs_city_data:
                         emp_data.standard_jobs_matching_total = jobs_city_data["total"]
-                    st.rerun()  # Trigger dialog rerun to reveal content
+                    if emp_data.matching_job_offers:
+                        st.rerun()  # Only rerun when copying changed visible content.
 
     bg_res = odis_get_bg_result(h) if h else None
     jobs_city_data = (
@@ -702,7 +703,7 @@ def show_details_dialog(index: Any):
     h = st.session_state.get("active_search_hash")
 
     # Sync background results into model if available
-    if h:
+    if h and not st.session_state.get("immutable_shared_snapshot"):
         sync_commune_data(commune, odis_get_bg_result(h))
 
     # Salesforce J'Accueille report links (org == jaccueille)

@@ -204,7 +204,9 @@ def _render_ai_polling_button(commune: CommuneResult, h: Optional[str]) -> bool:
         )
         return False
 
-    # Not yet launched -> check prerequisites and auto-launch!
+    # An automatic top-five stage is planned by PostScoringRun. Wait for its
+    # coordinator; this fragment must never create a second, manual-looking
+    # run when the feature flag is enabled.
     ready = _is_postscoring_ready_for_city(commune, h)
     if not ready:
         st.button(
@@ -216,25 +218,6 @@ def _render_ai_polling_button(commune: CommuneResult, h: Optional[str]) -> bool:
         )
         return False
 
-    # Prerequisites are ready -> Auto-launch background city analysis
-    if h and st.session_state.get("search_results"):
-        launch_background_city_analysis(
-            nom=commune.name,
-            codgeo=commune.codgeo,
-            search_criterias=st.session_state.get("config"),
-            search_results=st.session_state.get("search_results"),
-            h=h,
-            username=st.session_state.get("username", "unknown"),
-            organization_id=getattr(st.session_state.get("org"), "id", None),
-            trigger="city_card_autoload",
-        )
-        launch_toasted_set = st.session_state.setdefault(
-            "ia_analysis_launch_toasted", set()
-        )
-        if commune.codgeo not in launch_toasted_set:
-            launch_toasted_set.add(commune.codgeo)
-            st.toast(f"Analyse Avancée pour {commune.name} lancée...", icon="🧠", duration="short")
-
     st.button(
         "Analyse Avancée [Lancement...]",
         key=f"btn_ia_comm_{commune.codgeo}",
@@ -243,6 +226,20 @@ def _render_ai_polling_button(commune: CommuneResult, h: Optional[str]) -> bool:
         disabled=True,
     )
     return False
+
+
+def _is_auto_analysis_planned(commune: CommuneResult, h: Optional[str]) -> bool:
+    """Return whether the post-scoring coordinator owns this city's analysis."""
+    if not h:
+        return False
+    bg_res = odis_get_bg_result(h)
+    if not isinstance(bg_res, dict):
+        return False
+    steps = bg_res.get("auto_analysis_steps")
+    if not isinstance(steps, dict):
+        return False
+    step = steps.get(commune.codgeo) or steps.get(str(commune.codgeo))
+    return isinstance(step, dict) and step.get("status") in {"waiting", "dispatched"}
 
 
 def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
@@ -289,13 +286,19 @@ def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
     # 3. Completed state (in memory or freshly finished in bg store)
     if has_analysis or status == "done":
         if status == "done" and not has_analysis and status_data:
-            _merge_agent_results(status_data.get("result"), str(commune.codgeo), commune)
+            _merge_agent_results(
+                status_data.get("result"), str(commune.codgeo), commune
+            )
 
         # Notify via toast once per city
         toasted_set = st.session_state.setdefault("ia_analysis_toasted", set())
         if commune.codgeo not in toasted_set:
             toasted_set.add(commune.codgeo)
-            st.toast(f"Analyse Avancée pour {commune.name} disponible", icon="✨", duration="long")
+            st.toast(
+                f"Analyse Avancée pour {commune.name} disponible",
+                icon="✨",
+                duration="long",
+            )
 
         if st.button(
             "Analyse Avancée",
@@ -320,9 +323,9 @@ def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
             width="stretch",
         ):
             if h and st.session_state.get("search_results"):
-                st.session_state.setdefault("ia_analysis_launch_toasted", set()).discard(
-                    commune.codgeo
-                )
+                st.session_state.setdefault(
+                    "ia_analysis_launch_toasted", set()
+                ).discard(commune.codgeo)
                 st.session_state.setdefault("ia_analysis_toasted", set()).discard(
                     commune.codgeo
                 )
@@ -337,16 +340,63 @@ def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
                     retry=True,
                     trigger="city_card_retry",
                 )
-                st.toast(f"Analyse Avancée pour {commune.name} lancée...", icon="🧠", duration="short")
+                st.toast(
+                    f"Analyse Avancée pour {commune.name} lancée...",
+                    icon="🧠",
+                    duration="short",
+                )
                 st.rerun()
         return False
 
-    # 5. In-progress (running or waiting for prerequisites) -> delegate to polling fragment
-    # In bare-mode test environments (no ScriptRunContext), call unwrapped logic directly
-    if get_script_run_ctx() is None:
-        target = getattr(_render_ai_polling_button, "__wrapped__", _render_ai_polling_button)
-        return target(commune, h)
-    return _render_ai_polling_button(commune, h)
+    # 5. In-progress executions and planned automatic stages use the polling
+    # fragment. A missing task for a planned city means the coordinator has not
+    # joined its prerequisites yet; it must remain disabled rather than launch
+    # a duplicate task from the UI.
+    auto_planned = _is_auto_analysis_planned(commune, h)
+    if status == "running" or auto_planned:
+        # In bare-mode test environments (no ScriptRunContext), call unwrapped logic directly
+        if get_script_run_ctx() is None:
+            target = getattr(
+                _render_ai_polling_button, "__wrapped__", _render_ai_polling_button
+            )
+            return target(commune, h)
+        return _render_ai_polling_button(commune, h)
+
+    # 6. No automatic stage owns this city: expose the manual trigger once the
+    # deterministic prerequisites are ready.
+    ready = _is_postscoring_ready_for_city(commune, h)
+    can_launch = bool(ready and h and st.session_state.get("search_results"))
+    if (
+        st.button(
+            "Analyse Avancée" if ready else "Analyse Avancée [Préparation...]",
+            key=f"btn_ia_comm_{commune.codgeo}",
+            icon=":material/wand_stars:",
+            width="stretch",
+            disabled=not can_launch,
+        )
+        and can_launch
+    ):
+        st.session_state["active_ia_city_index"] = commune.codgeo
+        ui_telemetry.track_ui_event(
+            "run_ia_analysis", {"codgeo": commune.codgeo, "name": commune.name}
+        )
+        launch_background_city_analysis(
+            nom=commune.name,
+            codgeo=commune.codgeo,
+            search_criterias=st.session_state.get("config"),
+            search_results=st.session_state.get("search_results"),
+            h=h,
+            username=st.session_state.get("username", "unknown"),
+            organization_id=getattr(st.session_state.get("org"), "id", None),
+            trigger="user_modal",
+        )
+        st.toast(
+            f"Analyse Avancée pour {commune.name} lancée...",
+            icon="🧠",
+            duration="short",
+        )
+        st.rerun()
+    return ready
 
 
 @st.fragment(run_every=2.0)

@@ -31,8 +31,6 @@ def test_execute_owns_search_transition_and_background_launch():
     ), patch(
         "services.search_controller.telemetry.reset_interaction_id"
     ) as reset_telemetry, patch(
-        "services.search_controller.odis_get_bg_result", return_value=None
-    ), patch(
         "services.search_controller.launch_post_scoring_tasks"
     ) as launch_tasks:
         returned = controller.execute(config, app_data)
@@ -41,14 +39,15 @@ def test_execute_owns_search_transition_and_background_launch():
     assert state["config"] is config
     assert state["active_data_release"] == "release-3"
     assert state["search_results"] is results
-    assert state["active_search_hash"] == "run-hash"
+    assert state["active_search_hash"] == results.execution_id
+    assert results.execution_id != results.search_hash
     assert state["form_completed"] is False
     reset_telemetry.assert_called_once_with()
     launch_tasks.assert_called_once_with(
         engine,
         config,
         results,
-        "run-hash",
+        results.execution_id,
         interaction_id=ANY,
         username="unknown",
         org_id="unknown",
@@ -56,7 +55,7 @@ def test_execute_owns_search_transition_and_background_launch():
     )
 
 
-def test_execute_does_not_duplicate_existing_background_run():
+def test_execute_isolates_repeated_searches_with_identical_criteria():
     state = {}
     controller = SearchController(AppSession(state))
     config = SearchCriterias(loc_search_area="france")
@@ -75,14 +74,15 @@ def test_execute_does_not_duplicate_existing_background_run():
     ), patch(
         "services.search_controller.telemetry.reset_interaction_id"
     ), patch(
-        "services.search_controller.odis_get_bg_result",
-        return_value={"status": "running"},
-    ), patch(
         "services.search_controller.launch_post_scoring_tasks"
     ) as launch_tasks:
         controller.execute(config, app_data)
+        first_key = results.execution_id
+        controller.execute(config, app_data)
 
-    launch_tasks.assert_not_called()
+    assert launch_tasks.call_count == 2
+    assert results.execution_id != first_key
+    assert results.search_hash == "run-hash"
 
 
 def test_center_map_sets_initial_center_and_unhighlight_restores():
@@ -124,4 +124,3 @@ def test_center_map_sets_initial_center_and_unhighlight_restores():
         assert state["highlighted_result"] == [False, None]
         assert state["zoom"] is None
         assert state["center"] == state["initial_center"]
-

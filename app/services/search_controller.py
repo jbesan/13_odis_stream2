@@ -6,11 +6,11 @@ import gc
 import logging
 from collections.abc import Mapping
 from typing import Any
+from uuid import uuid4
 
 import pandas as pd
 
 import config as cfg
-from agents.utils import odis_get_bg_result
 from core import maps_deck, scoring
 from core.models import SearchCriterias, SearchResultsData
 from core.postscoring import launch_post_scoring_tasks
@@ -56,28 +56,28 @@ class SearchController:
             config, log_prefix="classic"
         )
         processed_gdf = self._attach_geometries(processed_gdf, app_data)
+        search_results.execution_id = uuid4().hex
         self.session.complete_search(
             engine=engine,
             search_results=search_results,
             processed_gdf=processed_gdf,
         )
 
-        search_hash = search_results.search_hash
-        if odis_get_bg_result(search_hash) is None:
-            org = self.session.state.get("org")
-            username = self.session.state.get("username", "unknown")
-            org_id = getattr(org, "id", "unknown") if org else "unknown"
-            is_ai_free = cfg.is_ai_free_mode(org)
-            launch_post_scoring_tasks(
-                engine,
-                config,
-                search_results,
-                search_hash,
-                interaction_id=telemetry.get_interaction_id(),
-                username=username,
-                org_id=org_id,
-                is_ai_free=is_ai_free,
-            )
+        search_hash = search_results.background_key
+        org = self.session.state.get("org")
+        username = self.session.state.get("username", "unknown")
+        org_id = getattr(org, "id", "unknown") if org else "unknown"
+        is_ai_free = cfg.is_ai_free_mode(org)
+        launch_post_scoring_tasks(
+            engine,
+            config,
+            search_results,
+            search_hash,
+            interaction_id=telemetry.get_interaction_id(),
+            username=username,
+            org_id=org_id,
+            is_ai_free=is_ai_free,
+        )
 
         self._center_map(config, search_results, app_data)
         self.session.state["fgs_to_show"] = set()

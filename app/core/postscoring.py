@@ -1,13 +1,21 @@
 import asyncio
 import logging
+import os
 import string
 import threading
-from typing import Any, Dict, List, Optional
+from functools import partial
+from typing import Any, Callable, Dict, List, Optional
 import logfire
 import pandas as pd
+import requests
 
 import config as cfg
-from core.enrichment_status import EnrichmentStatus, enrichment_result
+from core.enrichment_status import (
+    EnrichmentStatus,
+    enrichment_result,
+    is_terminal_enrichment_status,
+    is_terminal_refiner_status,
+)
 from core.models import (
     AssociationDetail,
     CommuneResult,
@@ -16,6 +24,32 @@ from core.models import (
     SearchCriterias,
     SearchResultsData,
 )
+from core.hydration import (
+    HydrationProvider,
+    HydrationRun,
+    HydrationTaskResult,
+    SUCCESS_STATUSES,
+    submit_background_work,
+)
+from core.hydration_payloads import (
+    AssociationsPayload,
+    ServicesPayload,
+    JobsPayload,
+    apply_associations,
+    apply_services,
+    apply_jobs,
+    project_associations,
+    project_services,
+    project_jobs,
+)
+from agents.state import ODISContextBuilder, GraphState, ODISDeps
+from agents.refiner import refiner_agent
+from agents.job_curator import job_curator_agent
+from agents import agent_config
+from services import telemetry
+from utils import logger as result_logger
+from services import mcp_france_travail as france_travail
+from utils import common
 from agents.utils import (
     get_odis_bg_store,
     launch_background_city_analysis,
@@ -27,35 +61,171 @@ logger = logging.getLogger(__name__)
 ENRICHMENT_DEADLINE_SECONDS = 30
 
 
-def _schedule_enrichment_deadline(
-    results_store: dict, hash_val: str, status_key: str, codgeos: List[str]
+def hydration_providers(
+    engine: Any,
+    config: Any,
+    search_results: Optional[SearchResultsData],
+    *,
+    is_ai_free: bool,
+) -> tuple[HydrationProvider, ...]:
+    """Register built-in adapters; consumers depend on the plan, not their names.
+
+    Args:
+        engine: Read-only territorial resources.
+        config: Criteria captured for this execution.
+        search_results: Territorial context captured for this execution.
+        is_ai_free: Explicit AI policy.
+
+    Returns:
+        The ordered provider registry used by map and reduce.
+    """
+    criteria = (
+        config.model_copy(deep=True) if isinstance(config, SearchCriterias) else config
+    )
+    results = (
+        search_results.model_copy(deep=True)
+        if isinstance(search_results, SearchResultsData)
+        else search_results
+    )
+    slugs = [
+        i.code if hasattr(i, "code") else str(i)
+        for i in getattr(config, "inc_services_selection", [])
+    ]
+    return (
+        HydrationProvider(
+            "associations",
+            partial(fetch_associations, engine),
+            apply_associations,
+            project_associations,
+            ("inclusion",),
+            batched=True,
+        ),
+        HydrationProvider(
+            "services",
+            partial(fetch_inclusion_services, engine, thematique_slugs=slugs or None),
+            apply_services,
+            project_services,
+            ("inclusion",),
+        ),
+        HydrationProvider(
+            "jobs",
+            lambda codes: {
+                code: fetch_jobs(code, criteria, results, is_ai_free=is_ai_free)
+                for code in codes
+            },
+            apply_jobs,
+            project_jobs,
+            ("employment",),
+        ),
+    )
+
+
+def launch_hydrations(
+    engine: Any,
+    config: Any,
+    search_results: SearchResultsData,
+    h: str,
+    *,
+    is_ai_free: bool,
+) -> HydrationRun:
+    """Prepare the complete run before dispatching any provider task.
+
+    Args:
+        engine: Territorial resources.
+        config: Search criteria.
+        search_results: Deterministic results.
+        h: Unique execution key.
+        is_ai_free: Explicit caller policy.
+
+    Returns:
+        An unstarted run, allowing dependency hooks to be installed first.
+    """
+    codes = [city.codgeo for city in search_results.results]
+    if search_results.commune_pressentie:
+        codes.append(search_results.commune_pressentie.codgeo)
+    return HydrationRun(
+        codes,
+        hydration_providers(engine, config, search_results, is_ai_free=is_ai_free),
+        get_odis_bg_store(),
+        h,
+        timeout_seconds=ENRICHMENT_DEADLINE_SECONDS,
+    )
+
+
+def launch_background_association_enrichment(
+    engine: Any, codgeos: List[str], hash_val: str
 ) -> None:
-    """Ensure a stalled best-effort task reaches an honest terminal state."""
+    """Run the association adapter alone for legacy callers.
 
-    def mark_timeout() -> None:
-        current = results_store.get(hash_val, {})
-        if not isinstance(current, dict):
-            return
-        statuses = current.get(status_key, {})
-        if not isinstance(statuses, dict):
-            return
-        changed = False
-        for codgeo in codgeos:
-            item = statuses.get(str(codgeo), {})
-            if not item or item.get("status") == EnrichmentStatus.PENDING.value:
-                statuses[str(codgeo)] = enrichment_result(
-                    EnrichmentStatus.TIMEOUT,
-                    error_code="deadline_exceeded",
-                    retryable=True,
-                )
-                changed = True
-        if changed:
-            current[status_key] = statuses
-            results_store[hash_val] = current
+    Args:
+        engine: Association service owner.
+        codgeos: Target codes.
+        hash_val: Background key.
+    """
+    provider = HydrationProvider(
+        "associations",
+        partial(fetch_associations, engine),
+        apply_associations,
+        project_associations,
+        ("inclusion",),
+        batched=True,
+    )
+    HydrationRun(codgeos, (provider,), get_odis_bg_store(), hash_val).start()
 
-    timer = threading.Timer(ENRICHMENT_DEADLINE_SECONDS, mark_timeout)
-    timer.daemon = True
-    timer.start()
+
+def launch_background_inclusion_enrichment(
+    engine: Any,
+    codgeos: List[str],
+    hash_val: str,
+    thematique_slugs: Optional[List[str]] = None,
+) -> None:
+    """Run the services adapter alone for legacy callers.
+
+    Args:
+        engine: Territorial resources.
+        codgeos: Target codes.
+        hash_val: Background key.
+        thematique_slugs: Requested thematic filters.
+    """
+    provider = HydrationProvider(
+        "services",
+        partial(fetch_inclusion_services, engine, thematique_slugs=thematique_slugs),
+        apply_services,
+        project_services,
+        ("inclusion",),
+    )
+    HydrationRun(codgeos, (provider,), get_odis_bg_store(), hash_val).start()
+
+
+def launch_background_job_curation(
+    codgeos: List[str],
+    config: Any,
+    hash_val: str,
+    search_results: Optional[Any] = None,
+    *,
+    is_ai_free: Optional[bool] = None,
+) -> None:
+    """Run the jobs adapter alone for legacy callers.
+
+    Args:
+        codgeos: Target codes.
+        config: Search criteria or legacy ROME lists.
+        hash_val: Background key.
+        search_results: Territorial context.
+        is_ai_free: Caller policy, resolved before workers start.
+    """
+    ai_free = cfg.is_ai_free_mode() if is_ai_free is None else is_ai_free
+    provider = HydrationProvider(
+        "jobs",
+        lambda codes: {
+            code: fetch_jobs(code, config, search_results, is_ai_free=ai_free)
+            for code in codes
+        },
+        apply_jobs,
+        project_jobs,
+        ("employment",),
+    )
+    HydrationRun(codgeos, (provider,), get_odis_bg_store(), hash_val).start()
 
 
 def launch_background_refining(
@@ -67,129 +237,129 @@ def launch_background_refining(
     commune_pressentie: Optional[dict] = None,
     interaction_id: Optional[str] = None,
     username: Optional[str] = None,
-):
+    on_terminal: Optional[Callable[[], None]] = None,
+) -> None:
+    """Run a bounded refiner stage, then notify dependent analysis steps.
+
+    Args:
+        search_criterias: Criteria captured by the caller.
+        results_dict_ignored: Legacy argument, unused.
+        hash_val: Isolated execution key.
+        top_cities: Serialized city inputs.
+        current_geo: Serialized current commune.
+        commune_pressentie: Serialized preferred commune.
+        interaction_id: Telemetry correlation identifier.
+        username: Authenticated caller.
+        on_terminal: Dependency notification, called exactly once on completion.
     """
-    Launches a background thread to generate the REFINER AI briefing and pitches.
-    Stores the result in the cached global store.
-    """
-    # Get the store here (main thread) to ensure it's initialized in the cache
     store = get_odis_bg_store()
-
-    # Capture Logfire context to propagate it to the background thread
+    entry = store.setdefault(hash_val, {})
+    entry["status_refiner"] = "running"
     context = logfire.get_context()
+    lock = threading.Lock()
+    closed = False
 
-    @logfire.instrument("Background Refiner: {hash_val}")
-    def bg_refiner_task(results_store: dict, hash_val: str):
-        # Attach the context from the main thread
-        logfire.attach_context(context)
+    def publish(payload: dict[str, Any]) -> None:
+        """Publish one final result; ignore superseded and late completions.
 
-        logfire.info(
-            "Refiner background task started for hash: {search_hash}",
-            search_hash=hash_val,
-        )
-        from agents.state import ODISDeps
-        from agents.refiner import refiner_agent
-        from agents.agent_config import get_p_model
+        Args:
+            payload: Final refiner status and optional content.
+        """
+        nonlocal closed
+        with lock:
+            if closed or store.get(hash_val) is not entry:
+                return
+            closed = True
+            entry.update(payload)
+            timer.cancel()
+        if on_terminal is not None:
+            on_terminal()
 
-        try:
-            logging.debug(f"🚀 [BG] Starting background refiner for hash {hash_val}")
-
-            from agents.agent_config import get_gemini_client
-
-            client = get_gemini_client(attempts=2)
-
-            # 3. Unified State Rehydration
-            input_data = {
-                "search_criteria": search_criterias,
-                "search_results": {
-                    "search_hash": hash_val,
-                    "results": top_cities,
-                    "current_geo": current_geo
-                    or (top_cities[0] if top_cities else None),
-                    "commune_pressentie": commune_pressentie,
-                }
-                if top_cities
-                else None,
-                "execution_mode": "full_analysis",
-                "interaction_id": interaction_id or "unknown",
-                "username": username or "unknown",
+    timer = threading.Timer(
+        ENRICHMENT_DEADLINE_SECONDS,
+        lambda: publish(
+            {
+                "status_refiner": "timeout",
+                "pitches_error": "Refiner deadline exceeded",
             }
+        ),
+    )
+    timer.daemon = True
+    timer.start()
 
-            state = rehydrate_graph_state(input_data)
-            logging.debug(
-                f"🔍 [REFINER-DEBUG] commune_pressentie in input_data: {commune_pressentie is not None}"
-            )
-            logging.debug(
-                f"🔍 [REFINER-DEBUG] commune_pressentie in rehydrated state: {state.search_results.commune_pressentie is not None if state.search_results else False}"
+    @logfire.instrument("Background Refiner")
+    def work() -> None:
+        """Compute the briefing without accessing Streamlit or shared models."""
+        with lock:
+            if closed or store.get(hash_val) is not entry:
+                return
+        try:
+            logfire.attach_context(context)
+            client = agent_config.get_gemini_client(attempts=2)
+            state = rehydrate_graph_state(
+                {
+                    "search_criteria": search_criterias,
+                    "search_results": {
+                        "search_hash": hash_val,
+                        "results": top_cities,
+                        "current_geo": current_geo
+                        or (top_cities[0] if top_cities else None),
+                        "commune_pressentie": commune_pressentie,
+                    }
+                    if top_cities
+                    else None,
+                    "execution_mode": "full_analysis",
+                    "interaction_id": interaction_id or "unknown",
+                    "username": username or "unknown",
+                }
             )
             deps = ODISDeps(state=state, client=client)
-            model = get_p_model("refiner", client=client)
+            model = agent_config.get_p_model("refiner", client=client)
 
-            async def run_agent():
-                logging.debug(f"🚀 [BG] Calling refiner_agent.run for hash {hash_val}")
-                return await refiner_agent.run(
-                    "Génère le briefing du dossier et les explications des résultats.",
-                    deps=deps,
-                    model=model,
+            async def run_agent() -> Any:
+                """Execute the refiner under its transport cancellation deadline."""
+                return await asyncio.wait_for(
+                    refiner_agent.run(
+                        "Génère le briefing du dossier et les explications des résultats.",
+                        deps=deps,
+                        model=model,
+                    ),
+                    timeout=ENRICHMENT_DEADLINE_SECONDS,
                 )
 
-            try:
-                with asyncio.Runner() as runner:
-                    result_run = runner.run(run_agent())
-                response_obj = result_run.output
-                logging.debug(
-                    f"🚀 [BG] Refiner Agent call successful for hash {hash_val}"
-                )
-
-                pitches_dict = {
-                    "global": sanitize_llm_markdown(response_obj.global_pitch),
+            with asyncio.Runner() as runner:
+                result = runner.run(run_agent()).output
+            publish(
+                {
+                    "status_refiner": "done",
+                    "odis_brief": sanitize_llm_markdown(result.odis_brief),
                     "pitches": {
-                        str(p.codgeo).strip(): sanitize_llm_markdown(p.pitch)
-                        for p in response_obj.pitches_per_city
+                        "global": sanitize_llm_markdown(result.global_pitch),
+                        "pitches": {
+                            str(p.codgeo).strip(): sanitize_llm_markdown(p.pitch)
+                            for p in result.pitches_per_city
+                        },
                     },
                 }
-
-                # Harmonized storage: merge with existing results if any
-                current_val = results_store.get(hash_val, {})
-                if not isinstance(current_val, dict):
-                    current_val = {}
-                current_val["pitches"] = pitches_dict
-                current_val["odis_brief"] = sanitize_llm_markdown(
-                    response_obj.odis_brief
-                )
-                current_val["status_refiner"] = "done"
-                results_store[hash_val] = current_val
-
-                logging.debug(
-                    f"✅ [BG] Background Refiner fully finished for hash {hash_val}"
-                )
-            except Exception as e:
-                logging.error(
-                    f"❌ [BG] Background Refiner Error for hash {hash_val}: {e}"
-                )
-                current_val = results_store.get(hash_val, {})
-                if not isinstance(current_val, dict):
-                    current_val = {}
-                current_val["pitches_error"] = f"⚠️ L'analyse IA a échoué: {e}"
-                current_val["status_refiner"] = "error"
-                results_store[hash_val] = current_val
-        except Exception as global_e:
-            logging.error(
-                f"❌ [BG] Background Refiner Setup Error for hash {hash_val}: {global_e}"
             )
-            current_val = results_store.get(hash_val, {})
-            if not isinstance(current_val, dict):
-                current_val = {}
-            current_val["pitches_error"] = (
-                f"⚠️ L'analyse IA a échoué (Setup): {global_e}"
+        except Exception as exc:
+            logger.exception("Background refiner failed")
+            publish(
+                {
+                    "status_refiner": "timeout"
+                    if isinstance(exc, TimeoutError)
+                    else "error",
+                    "pitches_error": "Refiner unavailable",
+                }
             )
-            current_val["status_refiner"] = "error"
-            results_store[hash_val] = current_val
 
-    # 4. Threading (Non-blocking)
-    thread = threading.Thread(target=bg_refiner_task, args=(store, hash_val))
-    thread.daemon = True  # Ensure it doesn't block exit
-    thread.start()
+    try:
+        submit_background_work(work)
+    except RuntimeError:
+        logger.exception("Refiner executor unavailable")
+        publish(
+            {"status_refiner": "error", "pitches_error": "Refiner executor unavailable"}
+        )
 
 
 def prefetch_associations(engine: Any, codgeos: List[str]) -> Dict[str, Dict[str, Any]]:
@@ -251,383 +421,298 @@ def prefetch_associations(engine: Any, codgeos: List[str]) -> Dict[str, Dict[str
         raise RuntimeError("association_fetch_failed") from e
 
 
-def launch_background_association_enrichment(
-    engine: Any, codgeos: List[str], hash_val: str
-):
-    """
-    Launches a background thread to fetch detailed associations for the search results.
-    """
-    store = get_odis_bg_store()
-    current = store.get(hash_val, {})
-    if not isinstance(current, dict):
-        current = {}
-    current["association_enrichment_status"] = {
-        str(codgeo): enrichment_result(EnrichmentStatus.PENDING, attempts=0)
-        for codgeo in codgeos
-    }
-    store[hash_val] = current
-
-    def bg_enrichment_task(results_store: dict):
-        try:
-            logging.info(
-                f"🚀 [ENRICH] Starting background enrichment for {len(codgeos)} communes (hash: {hash_val})"
-            )
-
-            # Use the provided engine to prefetch
-            # Note: engine is likely a ScoringEngine instance
-            enrichment_data = prefetch_associations(engine, codgeos)
-
-            # Merge into harmonized storage
-            current_val = results_store.get(hash_val, {})
-            if not isinstance(current_val, dict):
-                current_val = {}
-            current_val["enrichment"] = enrichment_data
-            current_val["association_enrichment_status"] = {
-                str(codgeo): enrichment_result(
-                    EnrichmentStatus.SUCCESS_NONEMPTY
-                    if enrichment_data.get(str(codgeo), {}).get("refugee")
-                    or enrichment_data.get(str(codgeo), {}).get("inclusion")
-                    else EnrichmentStatus.SUCCESS_EMPTY,
-                    data=enrichment_data.get(str(codgeo), {}),
-                )
-                for codgeo in codgeos
-            }
-            results_store[hash_val] = current_val
-
-            logging.info(
-                f"✅ [ENRICH] Background enrichment finished for hash {hash_val}"
-            )
-        except Exception as e:
-            logging.error(
-                f"❌ [ENRICH] Background enrichment error for {hash_val}: {e}"
-            )
-            current_val = results_store.get(hash_val, {})
-            if not isinstance(current_val, dict):
-                current_val = {}
-            status = (
-                EnrichmentStatus.NOT_CONFIGURED
-                if str(e) == "association_service_not_configured"
-                else EnrichmentStatus.ERROR
-            )
-            current_val["association_enrichment_status"] = {
-                str(codgeo): enrichment_result(
-                    status,
-                    error_code=str(e),
-                    retryable=status == EnrichmentStatus.ERROR,
-                )
-                for codgeo in codgeos
-            }
-            results_store[hash_val] = current_val
-
-    thread = threading.Thread(target=bg_enrichment_task, args=(store,))
-    thread.daemon = True
-    thread.start()
-    _schedule_enrichment_deadline(
-        store, hash_val, "association_enrichment_status", codgeos
-    )
-
-
-def launch_background_inclusion_enrichment(
-    engine: Any,
-    codgeos: List[str],
-    hash_val: str,
-    thematique_slugs: Optional[List[str]] = None,
-) -> None:
-    """
-    Launches a background thread to fetch detailed inclusion services for the search results from the Data Inclusion API.
+def fetch_associations(
+    engine: Any, codgeos: tuple[str, ...]
+) -> dict[str, HydrationTaskResult]:
+    """Fetch one association batch and validate individual commune results.
 
     Args:
-        engine: ScoringEngine instance with inclusion_services_index.
-        codgeos: List of INSEE commune codes to fetch services for.
-        hash_val: Search hash used as background store key.
-        thematique_slugs: Optional list of Data Inclusion thematique slugs to filter the API
-            response. If None or empty, fetches all services for each commune.
+        engine: Association service owner.
+        codgeos: Deduplicated target codes.
+
+    Returns:
+        Typed outcomes for the batch.
     """
-    store = get_odis_bg_store()
-    current = store.get(hash_val, {})
-    if not isinstance(current, dict):
-        current = {}
-    current["inclusion_services_status"] = {
-        str(codgeo): enrichment_result(EnrichmentStatus.PENDING, attempts=0)
-        for codgeo in codgeos
-    }
-    store[hash_val] = current
-
-    def bg_inclusion_enrichment_task(results_store: dict):
-        import requests
-        import os
-
-        api_key = os.getenv("DATA_INCLUSION_API_KEY")
-        if not api_key:
-            logging.warning("⚠️ [INCLUSION-ENRICH] DATA_INCLUSION_API_KEY is not set.")
-            current_val = results_store.get(hash_val, {})
-            if not isinstance(current_val, dict):
-                current_val = {}
-            current_val["inclusion_services_status"] = {
-                str(codgeo): enrichment_result(
-                    EnrichmentStatus.NOT_CONFIGURED,
-                    error_code="missing_data_inclusion_credentials",
-                )
-                for codgeo in codgeos
-            }
-            results_store[hash_val] = current_val
-            return
-
-        logging.info(
-            f"🚀 [INCLUSION-ENRICH] Starting background services enrichment for {len(codgeos)} communes (hash: {hash_val})"
+    if not engine.rna_rag_service:
+        logger.warning("Association service is not configured")
+        return {
+            code: HydrationTaskResult(
+                status=EnrichmentStatus.NOT_CONFIGURED,
+                error_code="association_service_not_configured",
+            )
+            for code in codgeos
+        }
+    data = prefetch_associations(engine, list(codgeos))
+    return {
+        code: HydrationTaskResult(
+            status=EnrichmentStatus.SUCCESS_NONEMPTY
+            if data.get(code, {}).get("refugee") or data.get(code, {}).get("inclusion")
+            else EnrichmentStatus.SUCCESS_EMPTY,
+            payload=AssociationsPayload.model_validate(data.get(code, {})),
         )
+        for code in codgeos
+    }
 
-        headers = {"Authorization": f"Bearer {api_key}"}
-        base_url = "https://api.data.inclusion.gouv.fr/api/v1"
 
-        enrichment_data = {}
-        statuses = {}
+def fetch_inclusion_services(
+    engine: Any,
+    codgeos: tuple[str, ...],
+    thematique_slugs: Optional[List[str]] = None,
+) -> dict[str, HydrationTaskResult]:
+    """Fetch and validate service outcomes without publishing to the UI store.
 
-        for codgeo in codgeos:
-            try:
-                # 1. Resolve mairie GPS coordinates from engine.pois (with fallback to df_all_communes centroid)
-                target_lat, target_lon = None, None
+    Args:
+        engine: Territorial data and thematic index.
+        codgeos: Communes assigned to this task.
+        thematique_slugs: Requested thematic filters.
+
+    Returns:
+        Typed terminal results for each commune.
+    """
+    api_key = os.getenv("DATA_INCLUSION_API_KEY")
+    if not api_key:
+        logger.warning("Data Inclusion credentials are not configured")
+        return {
+            code: HydrationTaskResult(
+                status=EnrichmentStatus.NOT_CONFIGURED,
+                error_code="missing_data_inclusion_credentials",
+            )
+            for code in codgeos
+        }
+    headers = {"Authorization": f"Bearer {api_key}"}
+    base_url = "https://api.data.inclusion.gouv.fr/api/v1"
+    enrichment_data = {}
+    statuses = {}
+    for codgeo in codgeos:
+        try:
+            # 1. Resolve mairie GPS coordinates from engine.pois (with fallback to df_all_communes centroid)
+            target_lat, target_lon = None, None
+            if (
+                hasattr(engine, "pois")
+                and engine.pois is not None
+                and not engine.pois.empty
+            ):
+                mairie = engine.pois[
+                    (engine.pois["category"] == "mairie")
+                    & (engine.pois["codgeo"] == str(codgeo))
+                ]
                 if (
-                    hasattr(engine, "pois")
-                    and engine.pois is not None
-                    and not engine.pois.empty
+                    not mairie.empty
+                    and "lat" in mairie.columns
+                    and "lon" in mairie.columns
                 ):
-                    mairie = engine.pois[
-                        (engine.pois["category"] == "mairie")
-                        & (engine.pois["codgeo"] == str(codgeo))
-                    ]
-                    if (
-                        not mairie.empty
-                        and "lat" in mairie.columns
-                        and "lon" in mairie.columns
-                    ):
-                        target_lat = float(mairie.iloc[0]["lat"])
-                        target_lon = float(mairie.iloc[0]["lon"])
+                    target_lat = float(mairie.iloc[0]["lat"])
+                    target_lon = float(mairie.iloc[0]["lon"])
 
+            if (
+                target_lat is None
+                and hasattr(engine, "df_all_communes")
+                and engine.df_all_communes is not None
+                and str(codgeo) in engine.df_all_communes.index
+            ):
+                row_c = engine.df_all_communes.loc[str(codgeo)]
                 if (
-                    target_lat is None
-                    and hasattr(engine, "df_all_communes")
-                    and engine.df_all_communes is not None
-                    and str(codgeo) in engine.df_all_communes.index
+                    "centroid_lon" in row_c
+                    and "centroid_lat" in row_c
+                    and pd.notna(row_c["centroid_lon"])
                 ):
-                    row_c = engine.df_all_communes.loc[str(codgeo)]
-                    if (
-                        "centroid_lon" in row_c
-                        and "centroid_lat" in row_c
-                        and pd.notna(row_c["centroid_lon"])
-                    ):
-                        from utils import common
-                        import config as cfg
+                    c_lon, c_lat = common.project_point(
+                        row_c["centroid_lon"],
+                        row_c["centroid_lat"],
+                        from_crs=cfg.PROJECTED_CRS,
+                        to_crs="EPSG:4326",
+                    )
+                    target_lat, target_lon = c_lat, c_lon
 
-                        c_lon, c_lat = common.project_point(
-                            row_c["centroid_lon"],
-                            row_c["centroid_lat"],
-                            from_crs=cfg.PROJECTED_CRS,
-                            to_crs="EPSG:4326",
-                        )
-                        target_lat, target_lon = c_lat, c_lon
+            # 2. Fetch services using search endpoint (combining code_commune and GPS coordinates)
+            services_params: dict = {"code_commune": codgeo, "size": 100}
+            if target_lat is not None and target_lon is not None:
+                services_params["lat"] = round(target_lat, 5)
+                services_params["lon"] = round(target_lon, 5)
 
-                # 2. Fetch services using search endpoint (combining code_commune and GPS coordinates)
-                services_params: dict = {"code_commune": codgeo, "size": 100}
-                if target_lat is not None and target_lon is not None:
-                    services_params["lat"] = round(target_lat, 5)
-                    services_params["lon"] = round(target_lon, 5)
+            if thematique_slugs:
+                services_params["thematiques"] = thematique_slugs
 
-                if thematique_slugs:
-                    services_params["thematiques"] = thematique_slugs
+            r_services = requests.get(
+                f"{base_url}/search/services",
+                headers=headers,
+                params=services_params,
+                timeout=10,
+            )
 
-                r_services = requests.get(
-                    f"{base_url}/search/services",
-                    headers=headers,
-                    params=services_params,
-                    timeout=10,
+            if r_services.status_code != 200:
+                logging.warning(
+                    f"⚠️ [INCLUSION-ENRICH] Failed to fetch services for codgeo {codgeo}: {r_services.status_code} {r_services.text[:100]}"
+                )
+                statuses[str(codgeo)] = enrichment_result(
+                    EnrichmentStatus.ERROR,
+                    error_code=f"http_{r_services.status_code}",
+                    retryable=r_services.status_code in {429, 500, 502, 503, 504},
+                )
+                continue
+
+            items = r_services.json().get("items", [])
+
+            # Group by user-friendly thematic label using engine.inclusion_services_index
+            grouped_services: dict[str, list] = {}
+            # Deduplication key: (structure_id, nom) — avoids duplicates from same structure
+            seen_keys: set[tuple] = set()
+            # Only index codes matching the user's thematique selection
+            active_slugs: set[str] | None = (
+                set(thematique_slugs) if thematique_slugs else None
+            )
+
+            for item_wrapper in items:
+                service = item_wrapper.get("service") or {}
+                srv_id = service.get("id") or ""
+                nom = service.get("nom") or ""
+                structure_id = service.get("structure_id") or ""
+
+                struct_obj = service.get("structure") or {}
+                nom_structure = (
+                    struct_obj.get("nom") or service.get("nom_structure") or ""
+                )
+                presentation_structure = (
+                    struct_obj.get("presentation_resumee")
+                    or struct_obj.get("presentation_detail")
+                    or ""
+                )
+                commune_nom = struct_obj.get("commune") or service.get("commune") or ""
+                code_postal = (
+                    struct_obj.get("code_postal") or service.get("code_postal") or ""
+                )
+                struct_code_insee = (
+                    struct_obj.get("code_insee") or service.get("code_insee") or ""
                 )
 
-                if r_services.status_code != 200:
-                    logging.warning(
-                        f"⚠️ [INCLUSION-ENRICH] Failed to fetch services for codgeo {codgeo}: {r_services.status_code} {r_services.text[:100]}"
-                    )
-                    statuses[str(codgeo)] = enrichment_result(
-                        EnrichmentStatus.ERROR,
-                        error_code=f"http_{r_services.status_code}",
-                        retryable=r_services.status_code in {429, 500, 502, 503, 504},
-                    )
+                # Filter 1: Broad diffusion zones exclusion (keep local: commune, epci, or None)
+                zone_type = (service.get("zone_diffusion_type") or "").strip().lower()
+                if zone_type in {"departement", "region", "pays"}:
                     continue
 
-                items = r_services.json().get("items", [])
+                # Filter 2: Max distance <= 10km (when distance is computed by API)
+                dist_val = item_wrapper.get("distance")
+                if dist_val is None:
+                    dist_val = service.get("distance")
+                if dist_val is not None and dist_val > 5:
+                    continue
 
-                # Group by user-friendly thematic label using engine.inclusion_services_index
-                grouped_services: dict[str, list] = {}
-                # Deduplication key: (structure_id, nom) — avoids duplicates from same structure
-                seen_keys: set[tuple] = set()
-                # Only index codes matching the user's thematique selection
-                active_slugs: set[str] | None = (
-                    set(thematique_slugs) if thematique_slugs else None
+                # Filter 3: External CCAS exclusion (keep local CCAS, CIAS, and other structures)
+                reseaux = struct_obj.get("reseaux_porteurs") or []
+                typologie = (struct_obj.get("typologie") or "").upper()
+                is_ccas = (
+                    "ccas-cias" in reseaux
+                    or typologie == "CCAS"
+                    or "CCAS" in nom_structure.upper()
+                    or "CENTRE COMMUNAL D'ACTION SOCIALE" in nom_structure.upper()
+                )
+                is_external = bool(
+                    struct_code_insee and str(struct_code_insee) != str(codgeo)
+                )
+                if is_ccas and is_external and "CIAS" not in nom_structure.upper():
+                    continue
+
+                # Deduplication key: same structure offering same service type
+                dedup_key = (structure_id, nom.strip().lower())
+                if dedup_key in seen_keys:
+                    continue
+                seen_keys.add(dedup_key)
+
+                desc = service.get("description") or ""
+                if desc.lower() in ["nan", "none"]:
+                    desc = ""
+                # Cap description to a reasonable length
+                if len(desc) > 250:
+                    desc = desc[:250] + "..."
+
+                # Keep direct lien_source if populated
+                lien_source = service.get("lien_source") or ""
+                source = service.get("source") or ""
+
+                # Get service thematiques list
+                thematiques = service.get("thematiques") or []
+                if isinstance(thematiques, str):
+                    thematiques = [thematiques]
+
+                # Convert each thematic code to user-friendly label using index
+                # Only process codes that match the user's selection (if filtered)
+                for code in thematiques:
+                    if active_slugs and code not in active_slugs:
+                        continue
+                    label = code
+                    try:
+                        if (
+                            hasattr(engine, "inclusion_services_index")
+                            and engine.inclusion_services_index is not None
+                            and code in engine.inclusion_services_index.index
+                        ):
+                            val = engine.inclusion_services_index.loc[code, "label"]
+                            label = val if isinstance(val, str) else val.iloc[0]
+                    except Exception as e:
+                        logging.debug(f"Error mapping thematic label: {e}")
+
+                    if label not in grouped_services:
+                        grouped_services[label] = []
+
+                    grouped_services[label].append(
+                        {
+                            "id": srv_id,
+                            "name": nom,
+                            "nom_structure": nom_structure,
+                            "structure_id": structure_id,
+                            "presentation_structure": presentation_structure,
+                            "description": desc,
+                            "lien_source": lien_source,
+                            "source": source,
+                            "distance_km": dist_val,
+                            "commune_nom": commune_nom,
+                            "code_postal": code_postal,
+                        }
+                    )
+
+            # Sort each thematic category by proximity (distance_km ascending)
+            for cat_label in grouped_services:
+                grouped_services[cat_label].sort(
+                    key=lambda x: (
+                        x.get("distance_km")
+                        if x.get("distance_km") is not None
+                        else 999,
+                        x.get("name", ""),
+                    )
                 )
 
-                for item_wrapper in items:
-                    service = item_wrapper.get("service") or {}
-                    srv_id = service.get("id") or ""
-                    nom = service.get("nom") or ""
-                    structure_id = service.get("structure_id") or ""
+            enrichment_data[str(codgeo)] = grouped_services
+            statuses[str(codgeo)] = enrichment_result(
+                EnrichmentStatus.SUCCESS_NONEMPTY
+                if grouped_services
+                else EnrichmentStatus.SUCCESS_EMPTY,
+                data=grouped_services,
+            )
 
-                    struct_obj = service.get("structure") or {}
-                    nom_structure = (
-                        struct_obj.get("nom") or service.get("nom_structure") or ""
-                    )
-                    presentation_structure = (
-                        struct_obj.get("presentation_resumee")
-                        or struct_obj.get("presentation_detail")
-                        or ""
-                    )
-                    commune_nom = (
-                        struct_obj.get("commune") or service.get("commune") or ""
-                    )
-                    code_postal = (
-                        struct_obj.get("code_postal")
-                        or service.get("code_postal")
-                        or ""
-                    )
-                    struct_code_insee = (
-                        struct_obj.get("code_insee") or service.get("code_insee") or ""
-                    )
+        except Exception as e:
+            logging.error(
+                f"❌ [INCLUSION-ENRICH] Error fetching services for codgeo {codgeo}: {e}"
+            )
+            statuses[str(codgeo)] = enrichment_result(
+                EnrichmentStatus.TIMEOUT
+                if isinstance(e, requests.Timeout)
+                else EnrichmentStatus.ERROR,
+                error_code="request_timeout"
+                if isinstance(e, requests.Timeout)
+                else "request_failed",
+                retryable=True,
+            )
 
-                    # Filter 1: Broad diffusion zones exclusion (keep local: commune, epci, or None)
-                    zone_type = (
-                        (service.get("zone_diffusion_type") or "").strip().lower()
-                    )
-                    if zone_type in {"departement", "region", "pays"}:
-                        continue
-
-                    # Filter 2: Max distance <= 10km (when distance is computed by API)
-                    dist_val = item_wrapper.get("distance")
-                    if dist_val is None:
-                        dist_val = service.get("distance")
-                    if dist_val is not None and dist_val > 5:
-                        continue
-
-                    # Filter 3: External CCAS exclusion (keep local CCAS, CIAS, and other structures)
-                    reseaux = struct_obj.get("reseaux_porteurs") or []
-                    typologie = (struct_obj.get("typologie") or "").upper()
-                    is_ccas = (
-                        "ccas-cias" in reseaux
-                        or typologie == "CCAS"
-                        or "CCAS" in nom_structure.upper()
-                        or "CENTRE COMMUNAL D'ACTION SOCIALE" in nom_structure.upper()
-                    )
-                    is_external = bool(
-                        struct_code_insee and str(struct_code_insee) != str(codgeo)
-                    )
-                    if is_ccas and is_external and "CIAS" not in nom_structure.upper():
-                        continue
-
-                    # Deduplication key: same structure offering same service type
-                    dedup_key = (structure_id, nom.strip().lower())
-                    if dedup_key in seen_keys:
-                        continue
-                    seen_keys.add(dedup_key)
-
-                    desc = service.get("description") or ""
-                    if desc.lower() in ["nan", "none"]:
-                        desc = ""
-                    # Cap description to a reasonable length
-                    if len(desc) > 250:
-                        desc = desc[:250] + "..."
-
-                    # Keep direct lien_source if populated
-                    lien_source = service.get("lien_source") or ""
-                    source = service.get("source") or ""
-
-                    # Get service thematiques list
-                    thematiques = service.get("thematiques") or []
-                    if isinstance(thematiques, str):
-                        thematiques = [thematiques]
-
-                    # Convert each thematic code to user-friendly label using index
-                    # Only process codes that match the user's selection (if filtered)
-                    for code in thematiques:
-                        if active_slugs and code not in active_slugs:
-                            continue
-                        label = code
-                        try:
-                            if (
-                                hasattr(engine, "inclusion_services_index")
-                                and engine.inclusion_services_index is not None
-                                and code in engine.inclusion_services_index.index
-                            ):
-                                val = engine.inclusion_services_index.loc[code, "label"]
-                                label = val if isinstance(val, str) else val.iloc[0]
-                        except Exception as e:
-                            logging.debug(f"Error mapping thematic label: {e}")
-
-                        if label not in grouped_services:
-                            grouped_services[label] = []
-
-                        grouped_services[label].append(
-                            {
-                                "id": srv_id,
-                                "name": nom,
-                                "nom_structure": nom_structure,
-                                "structure_id": structure_id,
-                                "presentation_structure": presentation_structure,
-                                "description": desc,
-                                "lien_source": lien_source,
-                                "source": source,
-                                "distance_km": dist_val,
-                                "commune_nom": commune_nom,
-                                "code_postal": code_postal,
-                            }
-                        )
-
-                # Sort each thematic category by proximity (distance_km ascending)
-                for cat_label in grouped_services:
-                    grouped_services[cat_label].sort(
-                        key=lambda x: (
-                            x.get("distance_km")
-                            if x.get("distance_km") is not None
-                            else 999,
-                            x.get("name", ""),
-                        )
-                    )
-
-                enrichment_data[str(codgeo)] = grouped_services
-                statuses[str(codgeo)] = enrichment_result(
-                    EnrichmentStatus.SUCCESS_NONEMPTY
-                    if grouped_services
-                    else EnrichmentStatus.SUCCESS_EMPTY,
-                    data=grouped_services,
-                )
-
-            except Exception as e:
-                logging.error(
-                    f"❌ [INCLUSION-ENRICH] Error fetching services for codgeo {codgeo}: {e}"
-                )
-                statuses[str(codgeo)] = enrichment_result(
-                    EnrichmentStatus.TIMEOUT
-                    if isinstance(e, requests.Timeout)
-                    else EnrichmentStatus.ERROR,
-                    error_code="request_timeout"
-                    if isinstance(e, requests.Timeout)
-                    else "request_failed",
-                    retryable=True,
-                )
-
-        # Merge into global results_store
-        current_val = results_store.get(hash_val, {})
-        if not isinstance(current_val, dict):
-            current_val = {}
-        current_val["inclusion_services_enrichment"] = enrichment_data
-        current_val["inclusion_services_status"] = statuses
-        results_store[hash_val] = current_val
-
-        logging.info(
-            f"✅ [INCLUSION-ENRICH] Background services enrichment finished for hash {hash_val}"
+    return {
+        code: HydrationTaskResult(
+            status=item["status"],
+            error_code=item.get("error_code"),
+            payload=ServicesPayload(services=enrichment_data[code])
+            if code in enrichment_data
+            else None,
         )
-
-    thread = threading.Thread(target=bg_inclusion_enrichment_task, args=(store,))
-    thread.daemon = True
-    thread.start()
-    _schedule_enrichment_deadline(store, hash_val, "inclusion_services_status", codgeos)
+        for code, item in statuses.items()
+    }
 
 
 def _curate_jobs_with_agent(
@@ -653,10 +738,6 @@ def _curate_jobs_with_agent(
     if ai_free:
         return jobs[:10]
     try:
-        from agents.job_curator import job_curator_agent
-        from agents.state import GraphState, ODISDeps
-        from core.models import SearchCriterias
-
         # Format jobs for the LLM prompt
         jobs_list_str = ""
         for job in jobs:
@@ -673,14 +754,8 @@ def _curate_jobs_with_agent(
                 f"  Date de création: {job.get('date_creation') or 'Non spécifiée'}\n\n"
             )
 
-        from agents.agent_config import (
-            get_p_model,
-            get_model_settings,
-            get_gemini_client,
-        )
-
-        client = get_gemini_client(attempts=1)
-        model = get_p_model("job_curator", client=client)
+        client = agent_config.get_gemini_client(attempts=1)
+        model = agent_config.get_p_model("job_curator", client=client)
 
         # Construct a lightweight GraphState to carry context
         state = GraphState()
@@ -698,7 +773,7 @@ def _curate_jobs_with_agent(
                     prompt,
                     deps=deps,
                     model=model,
-                    model_settings=get_model_settings("job_curator"),
+                    model_settings=agent_config.get_model_settings("job_curator"),
                 )
             )
         selected_jobs_list = getattr(result.output, "selected_jobs", [])
@@ -737,38 +812,28 @@ def _curate_jobs_with_agent(
         return jobs[:5]
 
 
-def launch_background_job_curation(
-    codgeos: List[str],
+def fetch_jobs(
+    cg: str,
     config: Any,
-    hash_val: str,
     search_results: Optional[Any] = None,
     *,
-    is_ai_free: Optional[bool] = None,
-):
-    """Launches background threads in parallel (one per target commune) to fetch and curate job offers.
+    is_ai_free: bool,
+) -> HydrationTaskResult:
+    """Fetch and curate one commune without mutating shared state.
 
     Args:
-        codgeos: List of geographic INSEE codes of target communes.
-        config: The SearchCriterias configuration object or a list of ROME codes for legacy compatibility.
-        hash_val: Unique MD5 search criteria hash.
-        search_results: Optional SearchResultsData container for target city lookup.
-        is_ai_free: Optional bool indicating if AI-free mode is active.
+        cg: Target commune code.
+        config: Frozen criteria or legacy ROME-code lists.
+        search_results: Frozen territorial context for curation.
+        is_ai_free: Explicit caller policy.
+
+    Returns:
+        Validated job data and terminal provider status.
     """
-    ai_free_mode = cfg.is_ai_free_mode() if is_ai_free is None else is_ai_free
-    store = get_odis_bg_store()
-
-    # 1. Pre-initialize the jobs_enrichment dictionary for all communes to pending state
-    current_val = store.get(hash_val, {})
-    if not isinstance(current_val, dict):
-        current_val = {}
-
-    from core.models import SearchCriterias
-
     if isinstance(config, SearchCriterias):
         codes_metiers = config.codes_metiers
 
         # Build candidate profile summary directly using the metadata-driven odis_visibility system
-        from agents.state import ODISContextBuilder
 
         ctx_dict = ODISContextBuilder._auto_build_context(config, "agent_job_hunter")
 
@@ -793,22 +858,6 @@ def launch_background_job_curation(
         profile_brief = ""
         notes_qualitatives = []
 
-    # Initialize nested dict
-    if "jobs_enrichment" not in current_val:
-        current_val["jobs_enrichment"] = {
-            str(cg): {"status": EnrichmentStatus.PENDING.value, "jobs": []}
-            for cg in codgeos
-        }
-    else:
-        # Reset specific keys to pending
-        for cg in codgeos:
-            current_val["jobs_enrichment"][str(cg)] = {
-                "status": EnrichmentStatus.PENDING.value,
-                "jobs": [],
-            }
-    store[hash_val] = current_val
-    _schedule_enrichment_deadline(store, hash_val, "jobs_enrichment", codgeos)
-
     # 3. Extract unique valid ROME codes per adult
     adult_romes_list = []
     for adult_list in codes_metiers:
@@ -831,192 +880,128 @@ def launch_background_job_curation(
                     adult_romes.append({"code": code, "label": label or code})
         adult_romes_list.append(adult_romes)
 
-    # If no ROME codes are present at all, return empty results for all communes
-    if not any(adult_romes_list):
-        logging.info("ℹ️ [JOBS-ENRICH] No valid ROME codes to search.")
-        current_val = store.get(hash_val, {})
-        if not isinstance(current_val, dict):
-            current_val = {}
-        current_val["jobs_enrichment"] = {
-            cg: {
-                **enrichment_result(EnrichmentStatus.SUCCESS_EMPTY),
-                "jobs": [[] for _ in adult_romes_list],
-                "total": 0,
-            }
-            for cg in codgeos
-        }
-        store[hash_val] = current_val
-        return
+    city_results = []
+    api_total_count = 0
+    failed_queries = []
 
-    from services.mcp_france_travail import _search_job_offers_logic
+    # Fetch and pool up to 10 offers per ROME code per adult
+    for i, adult_romes in enumerate(adult_romes_list):
+        adult_pooled_jobs = []
+        for rome_entry in adult_romes:
+            rome = rome_entry["code"]
+            rome_label = rome_entry["label"]
 
-    # Define the worker task for a single city
-    def bg_jobs_enrichment_for_city_task(
-        cg: str, results_store: dict, is_ai_free: bool = False
-    ):
-        try:
-            logging.debug(
-                f"🚀 [JOBS-ENRICH-CITY] Starting background job enrichment for commune {cg} (hash: {hash_val})"
+            try:
+                # sort=2 (distance ascending), distance=10 (radius in km)
+                res = france_travail._search_job_offers_logic(
+                    rome=rome,
+                    location=cg,
+                    distance=10,
+                    sort=2,
+                    range_start=0,
+                    range_end=9,
+                    rome_label=rome_label,
+                )
+                if res.get("status") == EnrichmentStatus.ERROR.value:
+                    failed_queries.append(res.get("error_code", "provider_error"))
+                    continue
+                offres = res.get("offres", [])[:10]
+                api_total_count += res.get("total", 0)
+                for o in offres:
+                    job_detail = {
+                        "id": str(o.get("id", "")),
+                        "title": str(o.get("intitule", "Poste sans titre")),
+                        "company": o.get("entreprise", {}).get("nom")
+                        if o.get("entreprise")
+                        else None,
+                        "contract_type": str(o.get("typeContrat", "")),
+                        "contract_label": o.get("typeContratLibelle"),
+                        "description": o.get("description_sh"),
+                        "location": o.get("lieuTravail", {}).get("libelle")
+                        if o.get("lieuTravail")
+                        else None,
+                        "location_insee": o.get("lieuTravail", {}).get("codeINSEE")
+                        if o.get("lieuTravail")
+                        else None,
+                        "salary": o.get("salaire", {}).get("libelle")
+                        if o.get("salaire")
+                        else None,
+                        "url": o.get("origineOffre", {}).get("urlOrigine")
+                        if o.get("origineOffre")
+                        else None,
+                        "rome_code": rome,
+                        "rome_label": rome_label,
+                        "date_creation": o.get("dateCreation"),
+                        "work_duration": o.get("dureeTravailLibelle"),
+                        "experience": o.get("experienceLibelle"),
+                    }
+                    adult_pooled_jobs.append(job_detail)
+            except Exception as e:
+                logging.warning(
+                    f"⚠️ [JOBS-ENRICH-CITY] API error for {cg} ROME {rome}: {e}"
+                )
+                failed_queries.append(
+                    "missing_france_travail_credentials"
+                    if "Missing FRANCE_TRAVAIL" in str(e)
+                    else "request_failed"
+                )
+
+        # Apply post-curation to the pooled jobs list for this adult
+        if is_ai_free:
+            curated_jobs = adult_pooled_jobs[:10]
+        elif len(adult_pooled_jobs) <= 5:
+            curated_jobs = adult_pooled_jobs
+        else:
+            # Resolve target city CommuneResult for this specific city
+            target_city = None
+            if search_results:
+                if hasattr(search_results, "get_by_code"):
+                    target_city = search_results.get_by_code(cg)
+                elif isinstance(search_results, dict):
+                    results = search_results.get("results", [])
+                    for r in results:
+                        r_code = (
+                            r.get("codgeo")
+                            if isinstance(r, dict)
+                            else getattr(r, "codgeo", None)
+                        )
+                        if r_code == cg:
+                            target_city = r
+                            break
+            curated_jobs = _curate_jobs_with_agent(
+                adult_pooled_jobs,
+                profile_brief,
+                notes_qualitatives,
+                target_city=target_city,
+                is_ai_free=is_ai_free,
             )
-            city_results = []
-            api_total_count = 0
-            failed_queries = []
 
-            # Fetch and pool up to 10 offers per ROME code per adult
-            for i, adult_romes in enumerate(adult_romes_list):
-                adult_pooled_jobs = []
-                for rome_entry in adult_romes:
-                    rome = rome_entry["code"]
-                    rome_label = rome_entry["label"]
+        city_results.append(curated_jobs)
 
-                    try:
-                        # sort=2 (distance ascending), distance=10 (radius in km)
-                        res = _search_job_offers_logic(
-                            rome=rome,
-                            location=cg,
-                            distance=10,
-                            sort=2,
-                            range_start=0,
-                            range_end=9,
-                            rome_label=rome_label,
-                        )
-                        if res.get("status") == EnrichmentStatus.ERROR.value:
-                            failed_queries.append(
-                                res.get("error_code", "provider_error")
-                            )
-                            continue
-                        offres = res.get("offres", [])[:10]
-                        api_total_count += res.get("total", 0)
-                        for o in offres:
-                            job_detail = {
-                                "id": str(o.get("id", "")),
-                                "title": str(o.get("intitule", "Poste sans titre")),
-                                "company": o.get("entreprise", {}).get("nom")
-                                if o.get("entreprise")
-                                else None,
-                                "contract_type": str(o.get("typeContrat", "")),
-                                "contract_label": o.get("typeContratLibelle"),
-                                "description": o.get("description_sh"),
-                                "location": o.get("lieuTravail", {}).get("libelle")
-                                if o.get("lieuTravail")
-                                else None,
-                                "location_insee": o.get("lieuTravail", {}).get(
-                                    "codeINSEE"
-                                )
-                                if o.get("lieuTravail")
-                                else None,
-                                "salary": o.get("salaire", {}).get("libelle")
-                                if o.get("salaire")
-                                else None,
-                                "url": o.get("origineOffre", {}).get("urlOrigine")
-                                if o.get("origineOffre")
-                                else None,
-                                "rome_code": rome,
-                                "rome_label": rome_label,
-                                "date_creation": o.get("dateCreation"),
-                                "work_duration": o.get("dureeTravailLibelle"),
-                                "experience": o.get("experienceLibelle"),
-                            }
-                            adult_pooled_jobs.append(job_detail)
-                    except Exception as e:
-                        logging.warning(
-                            f"⚠️ [JOBS-ENRICH-CITY] API error for {cg} ROME {rome}: {e}"
-                        )
-                        failed_queries.append(
-                            "missing_france_travail_credentials"
-                            if "Missing FRANCE_TRAVAIL" in str(e)
-                            else "request_failed"
-                        )
-
-                # Apply post-curation to the pooled jobs list for this adult
-                if is_ai_free:
-                    curated_jobs = adult_pooled_jobs[:10]
-                elif len(adult_pooled_jobs) <= 5:
-                    curated_jobs = adult_pooled_jobs
-                else:
-                    # Resolve target city CommuneResult for this specific city
-                    target_city = None
-                    if search_results:
-                        if hasattr(search_results, "get_by_code"):
-                            target_city = search_results.get_by_code(cg)
-                        elif isinstance(search_results, dict):
-                            results = search_results.get("results", [])
-                            for r in results:
-                                r_code = (
-                                    r.get("codgeo")
-                                    if isinstance(r, dict)
-                                    else getattr(r, "codgeo", None)
-                                )
-                                if r_code == cg:
-                                    target_city = r
-                                    break
-                    curated_jobs = _curate_jobs_with_agent(
-                        adult_pooled_jobs,
-                        profile_brief,
-                        notes_qualitatives,
-                        target_city=target_city,
-                        is_ai_free=is_ai_free,
-                    )
-
-                city_results.append(curated_jobs)
-
-            # Atomic update to results_store nested dictionary
-            current_val = results_store.get(hash_val, {})
-            if isinstance(current_val, dict) and "jobs_enrichment" in current_val:
-                has_jobs = any(city_results)
-                if failed_queries and has_jobs:
-                    status = EnrichmentStatus.PARTIAL
-                elif failed_queries:
-                    status = (
-                        EnrichmentStatus.NOT_CONFIGURED
-                        if all(
-                            error == "missing_france_travail_credentials"
-                            for error in failed_queries
-                        )
-                        else EnrichmentStatus.ERROR
-                    )
-                elif has_jobs:
-                    status = EnrichmentStatus.SUCCESS_NONEMPTY
-                else:
-                    status = EnrichmentStatus.SUCCESS_EMPTY
-                current_val["jobs_enrichment"][str(cg)] = {
-                    **enrichment_result(
-                        status,
-                        error_code=failed_queries[0] if failed_queries else None,
-                        retryable=bool(failed_queries),
-                    ),
-                    "jobs": city_results,
-                    "total": api_total_count,
-                }
-                results_store[hash_val] = current_val
-
-            logging.debug(
-                f"✅ [JOBS-ENRICH-CITY] Background job enrichment finished for commune {cg} (hash: {hash_val})"
+    has_jobs = any(city_results)
+    if failed_queries and has_jobs:
+        status = EnrichmentStatus.PARTIAL
+    elif failed_queries:
+        status = (
+            EnrichmentStatus.NOT_CONFIGURED
+            if all(
+                error == "missing_france_travail_credentials"
+                for error in failed_queries
             )
-        except Exception as e:
-            logging.error(
-                f"❌ [JOBS-ENRICH-CITY] Error for commune {cg}: {e}", exc_info=True
-            )
-            current_val = results_store.get(hash_val, {})
-            if isinstance(current_val, dict) and "jobs_enrichment" in current_val:
-                current_val["jobs_enrichment"][str(cg)] = {
-                    **enrichment_result(
-                        EnrichmentStatus.ERROR,
-                        error_code="worker_failed",
-                        retryable=True,
-                    ),
-                    "jobs": [],
-                }
-                results_store[hash_val] = current_val
-
-    # 4. Spawn a concurrent thread for each target commune code
-    for cg in codgeos:
-        thread = threading.Thread(
-            target=bg_jobs_enrichment_for_city_task,
-            args=(str(cg), store, ai_free_mode),
+            else EnrichmentStatus.ERROR
         )
-        thread.daemon = True
-        thread.start()
+    elif has_jobs:
+        status = EnrichmentStatus.SUCCESS_NONEMPTY
+    else:
+        status = EnrichmentStatus.SUCCESS_EMPTY
+
+    return HydrationTaskResult(
+        status=status,
+        error_code=failed_queries[0] if failed_queries else None,
+        payload=JobsPayload(jobs=city_results, total=api_total_count)
+        if status in SUCCESS_STATUSES
+        else None,
+    )
 
 
 def launch_background_audit_log(
@@ -1037,9 +1022,7 @@ def launch_background_audit_log(
 
             # 1. Markdown Local Logging (Dev Audit)
             try:
-                from utils.logger import log_search_results
-
-                log_search_results(
+                result_logger.log_search_results(
                     config,
                     search_results,
                     prefix="classic",
@@ -1051,9 +1034,7 @@ def launch_background_audit_log(
 
             # 2. Telemetry Logging (BigQuery)
             try:
-                from services.telemetry import log_search_complete
-
-                log_search_complete(
+                telemetry.log_search_complete(
                     config,
                     search_results,
                     source_flow="classic",
@@ -1171,155 +1152,194 @@ def generate_static_pitch(commune: Union[CommuneResult, Dict[str, Any]]) -> str:
     return "\n".join(pitch_lines)
 
 
+class PostScoringRun:
+    """Join hydration publication and refiner completion before optional analysis."""
+
+    def __init__(
+        self,
+        hydration: HydrationRun,
+        config: SearchCriterias,
+        results: SearchResultsData,
+        *,
+        auto_analysis: bool,
+        interaction_id: str,
+        username: str,
+        org_id: str,
+    ) -> None:
+        """Capture execution inputs and initialize the optional analysis stage.
+
+        Args:
+            hydration: Planned provider execution.
+            config: Search criteria, copied for asynchronous use.
+            results: Deterministic results, copied for asynchronous use.
+            auto_analysis: Whether to dispatch the top-five analysis stage.
+            interaction_id: Telemetry correlation identifier.
+            username: Authenticated caller.
+            org_id: Authenticated organization.
+        """
+        self.hydration = hydration
+        self.config = config.model_copy(deep=True)
+        self.results = results.model_copy(deep=True)
+        self._lock = threading.RLock()
+        self.context = dict(
+            interaction_id=interaction_id, username=username, organization_id=org_id
+        )
+        self.steps = {
+            city.codgeo: {"status": "waiting" if auto_analysis else "skipped"}
+            for city in self.results.results[:5]
+        }
+        hydration.store[hydration.key]["auto_analysis_steps"] = self.steps
+
+    def advance(self) -> None:
+        """Dispatch each eligible city once, after both prerequisite stages."""
+        with self._lock:
+            bg = self.hydration.store.get(self.hydration.key, {})
+            if bg.get("hydration_run") is not self.hydration:
+                return
+            if not is_terminal_refiner_status(bg.get("status_refiner")):
+                return
+            for city in self.results.results[:5]:
+                step = self.steps[city.codgeo]
+                if step["status"] != "waiting" or not self.hydration.ready(city.codgeo):
+                    continue
+                # Reduce into private input models; UI publication is independent.
+                try:
+                    self.hydration.reduce_into(city)
+                except Exception:
+                    logger.exception(
+                        "Automatic analysis blocked by hydration publication: %s",
+                        city.codgeo,
+                    )
+                    step["status"] = "error"
+                    continue
+                if not city.commune_results_hydrated:
+                    continue
+                sync_search_results_data(
+                    self.results,
+                    {
+                        "pitches": bg.get("pitches", {}),
+                        "odis_brief": bg.get("odis_brief", ""),
+                    },
+                    self.config,
+                )
+                step["status"] = "dispatched"
+                step["task_key"] = f"analysis_{self.hydration.key}_{city.codgeo}"
+                try:
+                    launch_background_city_analysis(
+                        nom=city.name,
+                        codgeo=city.codgeo,
+                        search_criterias=self.config,
+                        search_results=self.results,
+                        h=self.hydration.key,
+                        trigger="post_scoring_auto",
+                        **self.context,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Automatic city analysis dispatch failed: %s", city.codgeo
+                    )
+                    step["status"] = "error"
+
+
 def launch_post_scoring_tasks(
     engine: Any,
-    config: Any,
-    search_results: Any,
+    config: SearchCriterias,
+    search_results: SearchResultsData,
     h: str,
     *,
     interaction_id: Optional[str] = None,
     username: Optional[str] = None,
     org_id: Optional[str] = None,
     is_ai_free: Optional[bool] = None,
-):
-    """
-    Orchestrator for all background tasks triggered after scoring.
-    """
-    # 0. Initialize the store entry for this hash to prevent race conditions between threads
-    store = get_odis_bg_store()
-    if h not in store:
-        store[h] = {}
+) -> None:
+    """Run the postscoring DAG: providers and refiner, then optional city analysis.
 
-    from services.telemetry import get_interaction_id
-
-    current_interaction_id = interaction_id or get_interaction_id()
-    current_username = username or "unknown"
-    current_org_id = org_id or "unknown"
+    Args:
+        engine: Read-only territorial resources.
+        config: Search criteria.
+        search_results: Deterministic results.
+        h: Isolated execution key.
+        interaction_id: Telemetry identifier resolved by the controller.
+        username: Authenticated caller.
+        org_id: Authenticated organization.
+        is_ai_free: Explicit AI policy, resolved on the caller thread.
+    """
     ai_free = cfg.is_ai_free_mode() if is_ai_free is None else is_ai_free
-
-    if ai_free:
-        # Compute static pitches for results
-        pitches = {}
-        for c in search_results.results:
-            pitch_text = generate_static_pitch(c)
-            c.refiner_pitch = pitch_text
-            pitches[str(c.codgeo)] = pitch_text
-
-        store[h]["pitches"] = {"global": "", "pitches": pitches}
-        store[h]["odis_brief"] = ""
-        store[h]["status_refiner"] = "done"
-
-        # Launch non-AI background hydrations
-        top_cities_full = [c.model_dump(mode="json") for c in search_results.results]
-        commune_pressentie_full = (
-            search_results.commune_pressentie.model_dump(mode="json")
-            if search_results.commune_pressentie
-            else None
-        )
-        target_codgeos = [c["codgeo"] for c in top_cities_full]
-        if commune_pressentie_full:
-            target_codgeos.append(commune_pressentie_full["codgeo"])
-
-        launch_background_association_enrichment(engine, target_codgeos, h)
-        thematique_slugs = [
-            i.code if hasattr(i, "code") else str(i)
-            for i in getattr(config, "inc_services_selection", [])
-        ]
-        launch_background_inclusion_enrichment(
-            engine, target_codgeos, h, thematique_slugs or None
-        )
-        launch_background_job_curation(
-            target_codgeos, config, h, search_results, is_ai_free=True
-        )
-        launch_background_audit_log(
-            config,
-            search_results,
-            h,
-            interaction_id=current_interaction_id,
-            username=current_username,
-            org_id=current_org_id,
-        )
-        return
-
-    store[h]["status_refiner"] = "running"
-
-    # Extract city data for Scorer Agent (using mode='json' for safe cross-thread serialization)
-    top_cities_full = [c.model_dump(mode="json") for c in search_results.results]
-    current_geo_full = (
-        search_results.current_geo.model_dump(mode="json")
-        if search_results.current_geo
-        else None
-    )
-    commune_pressentie_full = (
-        search_results.commune_pressentie.model_dump(mode="json")
-        if search_results.commune_pressentie
-        else None
-    )
-
-    # 3. Launch Refiner (AI Briefing & Pitch)
-    launch_background_refining(
+    run = launch_hydrations(engine, config, search_results, h, is_ai_free=ai_free)
+    store = get_odis_bg_store()
+    entry = store[h]
+    entry["status_refiner"] = "running"
+    coordinator = PostScoringRun(
+        run,
         config,
-        {},
-        h,
-        top_cities=top_cities_full,
-        current_geo=current_geo_full,
-        commune_pressentie=commune_pressentie_full,
-        interaction_id=current_interaction_id,
-        username=current_username,
+        search_results,
+        auto_analysis=not ai_free and cfg.is_auto_analyse_top_cities_enabled(),
+        interaction_id=interaction_id or "unknown",
+        username=username or "unknown",
+        org_id=org_id or "unknown",
     )
-
-    # 4. Launch Enrichment (Detailed Associations - BQ/RAG)
-    target_codgeos = [c["codgeo"] for c in top_cities_full]
-    if commune_pressentie_full:
-        target_codgeos.append(commune_pressentie_full["codgeo"])
-    launch_background_association_enrichment(engine, target_codgeos, h)
-    thematique_slugs = [
-        i.code if hasattr(i, "code") else str(i)
-        for i in getattr(config, "inc_services_selection", [])
-    ]
-    launch_background_inclusion_enrichment(
-        engine, target_codgeos, h, thematique_slugs or None
-    )
-
-    # 4b. Launch Employment Enrichment (Detailed Jobs - France Travail)
-    launch_background_job_curation(
-        target_codgeos, config, h, search_results, is_ai_free=False
-    )
-
-    # 4c. Launch Automated City Analysis (if enabled)
-    if not ai_free and cfg.is_auto_analyse_top_cities_enabled():
-        for city in (getattr(search_results, "results", []) or [])[:5]:
-            nom = getattr(city, "name", None) or (
-                city.get("name") if isinstance(city, dict) else ""
-            )
-            codgeo = getattr(city, "codgeo", None) or (
-                city.get("codgeo") if isinstance(city, dict) else ""
-            )
-            if nom and codgeo:
-                launch_background_city_analysis(
-                    nom=nom,
-                    codgeo=str(codgeo),
-                    search_criterias=config,
-                    search_results=search_results,
-                    h=h,
-                    interaction_id=current_interaction_id,
-                    username=current_username,
-                    organization_id=current_org_id,
-                    trigger="post_scoring_auto",
-                )
-
-    # 5. Launch Logging & Telemetry
+    run.on_change = coordinator.advance
+    if ai_free:
+        cities = list(search_results.results)
+        if search_results.commune_pressentie:
+            cities.append(search_results.commune_pressentie)
+        entry["pitches"] = {
+            "global": "",
+            "pitches": {city.codgeo: generate_static_pitch(city) for city in cities},
+        }
+        entry["odis_brief"] = ""
+        entry["status_refiner"] = "done"
+    else:
+        launch_background_refining(
+            config.model_copy(deep=True),
+            {},
+            h,
+            top_cities=[
+                city.model_dump(mode="json") for city in search_results.results
+            ],
+            current_geo=search_results.current_geo.model_dump(mode="json")
+            if search_results.current_geo
+            else None,
+            commune_pressentie=search_results.commune_pressentie.model_dump(mode="json")
+            if search_results.commune_pressentie
+            else None,
+            interaction_id=interaction_id,
+            username=username,
+            on_terminal=coordinator.advance,
+        )
+    run.start()
+    coordinator.advance()
     launch_background_audit_log(
         config,
         search_results,
         h,
-        interaction_id=current_interaction_id,
-        username=current_username,
-        org_id=current_org_id,
+        interaction_id=interaction_id,
+        username=username,
+        org_id=org_id,
     )
 
 
 def sync_commune_data(commune: CommuneResult, bg_res: Optional[dict[str, Any]]) -> None:
+    """Join/reduce a live run, or read a legacy result without an explicit plan.
+
+    Args:
+        commune: Domain model owned by the caller.
+        bg_res: Background execution entry.
+    """
+    if not isinstance(bg_res, dict):
+        return
+    run = bg_res.get("hydration_run")
+    if isinstance(run, HydrationRun):
+        run.reduce_into(commune)
+        # Refiner output has its own dependency and never gates data publication.
+        _sync_legacy_commune_data(commune, {"pitches": bg_res.get("pitches", {})})
+    else:
+        _sync_legacy_commune_data(commune, bg_res)
+
+
+def _sync_legacy_commune_data(
+    commune: CommuneResult, bg_res: Optional[dict[str, Any]]
+) -> None:
     """Syncs enrichment results and pitch from the background store into a CommuneResult model.
 
     Args:
@@ -1328,6 +1348,13 @@ def sync_commune_data(commune: CommuneResult, bg_res: Optional[dict[str, Any]]) 
     """
     if not isinstance(bg_res, dict):
         return
+
+    # Workers replace per-city records. Keep the records observed for this pass
+    # so a completion during validation cannot mark uncopied data as hydrated.
+    bg_res = {
+        key: value.copy() if isinstance(value, dict) else value
+        for key, value in bg_res.copy().items()
+    }
 
     # 1. Sync Enrichment (Associations)
     if "enrichment" in bg_res:
@@ -1437,9 +1464,12 @@ def sync_commune_data(commune: CommuneResult, bg_res: Optional[dict[str, Any]]) 
                 .get("status")
             )
 
-        jobs_done = bool(jobs_status and jobs_status != EnrichmentStatus.PENDING)
-        assos_done = bool(assos_status and assos_status != EnrichmentStatus.PENDING)
-        inc_done = inc_status is None or inc_status != EnrichmentStatus.PENDING
+        jobs_done = is_terminal_enrichment_status(jobs_status)
+        assos_done = is_terminal_enrichment_status(assos_status)
+        # A legacy entry is complete only when every planned provider has
+        # published a terminal status. Missing inclusion status used to be
+        # treated as success, which could expose a partially copied model.
+        inc_done = is_terminal_enrichment_status(inc_status)
 
         if jobs_done and assos_done and inc_done:
             commune.commune_results_hydrated = True

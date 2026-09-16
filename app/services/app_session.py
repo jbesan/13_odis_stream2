@@ -82,6 +82,7 @@ class AppSession:
 
     def begin_search(self, config: Any, data_release: str) -> None:
         """Start a mutable search on the active data release."""
+        self._retire_current_run()
         self.state["pdf_data"] = None
         self.state["pdf_modal_data"] = None
         self.state["active_share_id"] = None
@@ -108,7 +109,7 @@ class AppSession:
         self.state["unaggregated_gdf"] = processed_gdf
         self.state["engine"] = engine
         self.state["search_results"] = search_results
-        self.state["active_search_hash"] = search_results.search_hash
+        self.state["active_search_hash"] = search_results.background_key
         self.state["form_completed"] = False
 
     def restore_snapshot(
@@ -127,13 +128,14 @@ class AppSession:
         zoom: int,
     ) -> None:
         """Publish an immutable shared result without creating live workers."""
+        self._retire_current_run()
         self.state.update(
             {
                 "config": config,
                 "search_results": search_results,
                 "processed_gdf": processed_gdf,
                 "unaggregated_gdf": processed_gdf,
-                "active_search_hash": search_results.search_hash,
+                "active_search_hash": None,
                 "active_share_id": share_id,
                 "form_completed": False,
                 "immutable_shared_snapshot": True,
@@ -150,7 +152,12 @@ class AppSession:
             }
         )
         self.state.pop("engine", None)
-        self._drop_workers_for(search_results.search_hash)
+
+    def _retire_current_run(self) -> None:
+        """Remove only the live execution owned by this session."""
+        key = self.state.get("active_search_hash")
+        if key and not self.state.get("immutable_shared_snapshot"):
+            self._drop_workers_for(key)
 
     def _drop_workers_for(self, search_hash: str) -> None:
         store = self.state.get("odis_bg_store")
@@ -160,13 +167,16 @@ class AppSession:
                 if str(key).startswith(f"analysis_{search_hash}_"):
                     store.pop(key, None)
         bg_store = get_odis_bg_store()
-        bg_store.pop(search_hash, None)
+        entry = bg_store.pop(search_hash, None)
+        if isinstance(entry, dict) and entry.get("hydration_run") is not None:
+            entry["hydration_run"].cancel()
         for key in list(bg_store):
             if str(key).startswith(f"analysis_{search_hash}_"):
                 bg_store.pop(key, None)
 
     def reset_for_home(self) -> int:
         """Clear the draft and active run while retaining identity/resources."""
+        self._retire_current_run()
         removed = 0
         for key in list(self.state):
             if key not in self.PRESERVED_ON_RESET:

@@ -29,7 +29,7 @@ def base_app_test():
 
 
 @patch("ui.page_shell.inject_idle_disconnect")
-@patch("core.postscoring.launch_post_scoring_tasks")
+@patch("services.search_controller.launch_post_scoring_tasks")
 @patch("utils.data_loader.fetch_salesforce_jaccueille_bdv")
 @patch("services.rna_rag.RNARagService")
 def test_location_validation_blocks_progression(
@@ -78,7 +78,7 @@ def test_location_validation_blocks_progression(
 
 
 @patch("ui.page_shell.inject_idle_disconnect")
-@patch("core.postscoring.launch_post_scoring_tasks")
+@patch("services.search_controller.launch_post_scoring_tasks")
 @patch("utils.data_loader.fetch_salesforce_jaccueille_bdv")
 @patch("services.rna_rag.RNARagService")
 def test_search_modification_replaces_prior_results(
@@ -150,6 +150,7 @@ def test_search_modification_replaces_prior_results(
     assert config_b.nb_adultes == 2
     assert hash_b != hash_a
     assert at.session_state.search_results.search_hash == hash_b
+    assert mock_launch_post_scoring_tasks.call_count == 2
 
 
 def test_enrichment_timeout_and_error_graceful_unlock():

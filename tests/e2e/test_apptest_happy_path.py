@@ -8,7 +8,7 @@ from core.models import User, SearchCriterias
 
 @pytest.mark.e2e
 @patch("ui.page_shell.inject_idle_disconnect")
-@patch("core.postscoring.launch_post_scoring_tasks")
+@patch("services.search_controller.launch_post_scoring_tasks")
 @patch("utils.data_loader.fetch_salesforce_jaccueille_bdv")
 @patch("services.rna_rag.RNARagService")
 def test_happy_path_end_to_end(

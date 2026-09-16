@@ -4,6 +4,8 @@
 # Singa Dark Yellow rgba(174, 146, 22, 1)
 # Singa Grey #E8ECEA
 
+[global]
+disableWidgetStateDuplicationWarning = true
 
 [theme]
 base="dark"

@@ -285,8 +285,8 @@ if not is_immutable_snapshot or is_editing_snapshot:
     FormState(st.session_state).preserve_widgets_across_steps()
 
 search_results: SearchResultsData = st.session_state.get("search_results")
-if search_results and search_results.results:
-    h_init = search_results.search_hash
+if search_results and search_results.results and not is_immutable_snapshot:
+    h_init = search_results.background_key
     if h_init:
         sync_search_results_data(
             search_results,
@@ -397,7 +397,7 @@ with st.sidebar:
 
     # --- Export to PDF & Partager ---
     if st.session_state.get("search_results") is not None:
-        h = st.session_state.search_results.search_hash
+        h = st.session_state.search_results.background_key
         # Export and share actions become active once background post-scoring
         # enrichments reach a terminal state (or timeout).
         action_buttons_container_static(h)
@@ -415,7 +415,11 @@ ui_results.render_active_dialogs()
 if st.session_state.get("processed_gdf") is not None:
     config = st.session_state.get("config")
     search_results = st.session_state.get("search_results")
-    h = search_results.search_hash if search_results else None
+    h = (
+        search_results.background_key
+        if search_results and not is_immutable_snapshot
+        else None
+    )
     snapshot_mode = bool(st.session_state.get("immutable_shared_snapshot"))
     current_map_context = st.session_state.get("snapshot_current_map_context")
     if not isinstance(current_map_context, pd.DataFrame):

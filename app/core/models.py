@@ -1171,7 +1171,12 @@ class CommuneResult(BaseModel):
 
     commune_results_hydrated: bool = Field(
         default=False,
-        description="Indique si les enrichissements post-scoring (emplois, associations, services) ont été hydratés pour cette commune",
+        description="Indique si les traitements post-scoring sont terminés et leurs données disponibles validées et copiées dans cette commune",
+    )
+
+    hydration_sources: Dict[str, Dict[str, Optional[str]]] = Field(
+        default_factory=dict,
+        description="États terminaux et erreurs des fournisseurs à la publication",
     )
 
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
@@ -1184,6 +1189,15 @@ class SearchResultsData(BaseModel):
         default="",
         description="MD5 hash of the criteria used",
     )
+    execution_id: str = Field(
+        default="", description="Identité unique de la recherche live"
+    )
+
+    @property
+    def background_key(self) -> str:
+        """Return the isolated live execution key, or the legacy search hash."""
+        return self.execution_id or self.search_hash
+
     results: List[CommuneResult] = Field(
         default_factory=list,
         description="Top recommended communes in rank order",

@@ -337,7 +337,7 @@ async def expert_worker_step(
     if (
         ctx.state.execution_mode == "full_analysis"
         and ctx.state.search_results
-        and ctx.state.search_results.search_hash == h
+        and ctx.state.search_results.background_key == h
     ):
         city_res = ctx.state.search_results.get_by_code(
             ctx.state.focus_city.codgeo if ctx.state.focus_city else ""

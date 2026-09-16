@@ -258,7 +258,7 @@ def test_render_ai_trigger_button_in_immutable_snapshot_without_analysis(monkeyp
 
 
 def test_render_ai_trigger_button_in_live_mode(monkeypatch):
-    """Verify that in live mode, button displays non-blocking states depending on readiness."""
+    """Verify manual and in-progress live analysis states."""
     button_calls = []
 
     def mock_button(label, **kwargs):
@@ -274,15 +274,16 @@ def test_render_ai_trigger_button_in_live_mode(monkeypatch):
         "search_results": search_results,
         "immutable_shared_snapshot": False,
     })
+    monkeypatch.setattr("ui.results.cfg.is_auto_analyse_top_cities_enabled", lambda: False)
     # 1. Postscoring not ready -> Lancement (disabled)
     monkeypatch.setattr("ui.results._is_postscoring_ready_for_city", lambda c, h: False)
     monkeypatch.setattr("ui.results.odis_get_bg_result", lambda k: None)
 
     _call_fn(render_ai_trigger_button, commune=commune, h="hash_123")
-    assert button_calls[0][0] == "Analyse Avancée [Lancement...]"
+    assert button_calls[0][0] == "Analyse Avancée [Préparation...]"
     assert button_calls[0][1].get("disabled") is True
 
-    # 2. Postscoring ready -> auto-launches, emits launch toast, and stays in Lancement (disabled)
+    # 2. Postscoring ready -> stays a manual enabled trigger; no auto-launch.
     launched = []
     toasts = []
     monkeypatch.setattr(st, "toast", lambda msg, **kwargs: toasts.append(msg))
@@ -292,10 +293,10 @@ def test_render_ai_trigger_button_in_live_mode(monkeypatch):
     )
     monkeypatch.setattr("ui.results._is_postscoring_ready_for_city", lambda c, h: True)
     _call_fn(render_ai_trigger_button, commune=commune, h="hash_123")
-    assert len(launched) == 1
-    assert any("lancée..." in t for t in toasts)
-    assert button_calls[1][0] == "Analyse Avancée [Lancement...]"
-    assert button_calls[1][1].get("disabled") is True
+    assert launched == []
+    assert toasts == []
+    assert button_calls[1][0] == "Analyse Avancée"
+    assert button_calls[1][1].get("disabled") is False
 
     # 3. Running state (> 1s) -> En cours... (disabled)
     monkeypatch.setattr(
@@ -330,6 +331,74 @@ def test_render_ai_trigger_button_in_live_mode(monkeypatch):
     assert button_calls[4][1].get("disabled") in (False, None)
     assert len(toasts) == 1
     assert "disponible" in toasts[0]
+
+
+def test_render_ai_trigger_button_waits_for_planned_auto_stage(monkeypatch):
+    """A planned top-five city cannot be auto-launched by the card renderer."""
+    button_calls = []
+    launched = []
+
+    monkeypatch.setattr(
+        st,
+        "button",
+        lambda label, **kwargs: button_calls.append((label, kwargs)) or False,
+    )
+    search_results = _create_mock_search_results("33063")
+    commune = search_results.results[0]
+    monkeypatch.setattr("ui.results.st.session_state", {
+        "search_results": search_results,
+        "immutable_shared_snapshot": False,
+    })
+    monkeypatch.setattr("ui.results.cfg.is_auto_analyse_top_cities_enabled", lambda: True)
+    monkeypatch.setattr("ui.results._is_postscoring_ready_for_city", lambda c, h: True)
+    monkeypatch.setattr(
+        "ui.results.odis_get_bg_result",
+        lambda key: {"auto_analysis_steps": {"33063": {"status": "waiting"}}}
+        if key == "hash_123"
+        else None,
+    )
+    monkeypatch.setattr(
+        "ui.results.launch_background_city_analysis",
+        lambda **kwargs: launched.append(kwargs),
+    )
+
+    _call_fn(render_ai_trigger_button, commune=commune, h="hash_123")
+
+    assert launched == []
+    assert button_calls[0][0] == "Analyse Avancée [Lancement...]"
+    assert button_calls[0][1]["disabled"] is True
+
+
+def test_render_ai_trigger_button_manual_click_launches_when_auto_disabled(monkeypatch):
+    """A ready city starts analysis only after the user presses its button."""
+    launched = []
+    reruns = []
+    monkeypatch.setattr(st, "button", lambda label, **kwargs: True)
+    monkeypatch.setattr(st, "toast", lambda *args, **kwargs: None)
+    monkeypatch.setattr(st, "rerun", lambda: reruns.append(True))
+    monkeypatch.setattr(
+        "ui.results.launch_background_city_analysis",
+        lambda **kwargs: launched.append(kwargs),
+    )
+    monkeypatch.setattr("ui.results.ui_telemetry.track_ui_event", lambda *args: None)
+    monkeypatch.setattr("ui.results.show_ia_analysis_dialog", lambda *args: None)
+    monkeypatch.setattr("ui.results.cfg.is_auto_analyse_top_cities_enabled", lambda: False)
+    monkeypatch.setattr("ui.results._is_postscoring_ready_for_city", lambda c, h: True)
+    monkeypatch.setattr("ui.results.odis_get_bg_result", lambda key: None)
+
+    search_results = _create_mock_search_results("33063")
+    commune = search_results.results[0]
+    monkeypatch.setattr("ui.results.st.session_state", {
+        "search_results": search_results,
+        "config": object(),
+        "immutable_shared_snapshot": False,
+    })
+
+    _call_fn(render_ai_trigger_button, commune=commune, h="hash_123")
+
+    assert len(launched) == 1
+    assert launched[0]["trigger"] == "user_modal"
+    assert reruns == [True]
 
 
 def test_render_ai_trigger_button_retry_action(monkeypatch):
@@ -514,4 +583,3 @@ def test_polling_synthesis_fragment_error_state_shows_retry(monkeypatch):
     assert len(error_calls) == 1
     assert "LLM timeout" in error_calls[0]
     assert any("Réessayer" in b[0] for b in button_calls)
-

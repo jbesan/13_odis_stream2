@@ -4,9 +4,7 @@ from typing import List, Optional
 import streamlit as st
 
 from core.models import SearchResultsData, CommuneResult
-from core.enrichment_status import (
-    is_terminal_enrichment_status,
-)
+from core.postscoring import sync_commune_data
 from core.pdf_generator import generate_pdf_report
 from agents.utils import odis_get_bg_result
 from ui import ui_telemetry
@@ -84,55 +82,24 @@ def pdf_modal():
 
 
 def _is_hydration_ready_for_city(commune: CommuneResult, h: Optional[str]) -> bool:
-    """Return True if background post-scoring tasks for this commune are in a terminal state."""
-    if getattr(commune, "commune_results_hydrated", False):
-        return True
+    """Apply available results before checking the commune's hydration state.
 
+    Args:
+        commune: Commune whose enrichment data must be published.
+        h: Background search key, absent for results without live workers.
+
+    Returns:
+        Whether the commune is ready for user actions.
+    """
     if st.session_state.get("immutable_shared_snapshot"):
         return True
 
     if not h:
         return True
 
-    codgeo_str = str(commune.codgeo)
     bg_res = odis_get_bg_result(h)
-    if not isinstance(bg_res, dict):
-        return False
-
-    # 1. Jobs enrichment status
-    jobs_status = (
-        bg_res.get("jobs_enrichment", {}).get(codgeo_str, {}).get("status")
-    )
-    if not is_terminal_enrichment_status(jobs_status):
-        return False
-
-    # 2. Associations enrichment status
-    assos_status = (
-        bg_res.get("association_enrichment_status", {})
-        .get(codgeo_str, {})
-        .get("status")
-    )
-    if not is_terminal_enrichment_status(assos_status):
-        return False
-
-    # 3. Inclusion services enrichment status
-    inc_status = (
-        bg_res.get("inclusion_services_status", {})
-        .get(codgeo_str, {})
-        .get("status")
-    )
-    if inc_status is None:
-        inc_status = (
-            bg_res.get("inclusion_enrichment_status", {})
-            .get(codgeo_str, {})
-            .get("status")
-        )
-    if inc_status is not None and not is_terminal_enrichment_status(inc_status):
-        return False
-
-    # Mark as hydrated now that all are verified terminal
-    commune.commune_results_hydrated = True
-    return True
+    sync_commune_data(commune, bg_res)
+    return commune.commune_results_hydrated
 
 
 def _is_postscoring_ready_for_search(h: Optional[str]) -> bool:
@@ -280,7 +247,7 @@ def render_share_search_button(
         and "search_results" in st.session_state
         and st.session_state.search_results
     ):
-        h = st.session_state.search_results.search_hash
+        h = st.session_state.search_results.background_key
 
     if not st.session_state.get("search_results"):
         return
