@@ -443,7 +443,11 @@ OIDC_DOMAIN_ORG_MAPPING: Dict[str, str] = dict(
 OIDC_EMAIL_ORG_MAPPING: Dict[str, str] = dict(_get_auth_secret("email_org_mapping", {}))
 
 # --- Admins Allowlist ---
-ADMIN_USERS: Set[str] = set(_get_auth_secret("admin_users", ["jacques-local"]))
+ADMIN_USERS: Set[str] = {
+    u.strip().casefold()
+    for u in _get_auth_secret("admin_users", ["jacques-local"])
+    if isinstance(u, str) and u.strip()
+}
 
 
 # --- Inclusion Defaults ---

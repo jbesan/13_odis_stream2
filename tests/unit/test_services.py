@@ -83,10 +83,10 @@ def test_log_agent_state_to_bq(mock_client_class):
         assert row["cost_eur"] == 0.01
         assert "env" in row
         assert "cost_usd" not in row
-        usage_payload = json.loads(row["artifacts"])
-        assert usage_payload["__usage__"]["cost_eur"] == 0.01
-        assert "cost_usd" not in usage_payload["__usage__"]
-        assert "cost_eur" in usage_payload["__usage__"]
+        cost_details_payload = json.loads(row["cost_details"])
+        assert cost_details_payload["cost_eur"] == 0.01
+        assert "cost_usd" not in cost_details_payload
+        assert "cost_eur" in cost_details_payload
 
 
 @patch("ui.feedback.bigquery.Client")
@@ -182,7 +182,9 @@ def test_is_admin_check(monkeypatch):
 
     monkeypatch.setattr(cfg, "ADMIN_USERS", {"admin@example.com", "jacques-local"})
     assert auth.is_admin("admin@example.com") is True
+    assert auth.is_admin("Admin@Example.com") is True
     assert auth.is_admin("jacques-local") is True
+    assert auth.is_admin("Jacques-Local") is True
     assert auth.is_admin("random_user") is False
     assert auth.is_admin(None) is False
 

@@ -16,7 +16,9 @@ from core.models import SearchCriterias, SearchResultsData
 from core.postscoring import launch_post_scoring_tasks
 from services import telemetry
 from services.app_session import AppSession
+from ui import ui_telemetry
 from utils import common, data_loader
+
 
 
 logger = logging.getLogger(__name__)
@@ -79,7 +81,16 @@ class SearchController:
             is_ai_free=is_ai_free,
         )
 
+        ui_telemetry.track_ui_event(
+            "run_search",
+            payload={
+                "search_hash": search_hash,
+                "total_matches": len(search_results.results),
+            },
+        )
+
         self._center_map(config, search_results, app_data)
+
         self.session.state["fgs_to_show"] = set()
         self.session.state["highlighted_result"] = [False, None]
         return search_results

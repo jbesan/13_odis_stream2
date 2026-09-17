@@ -162,3 +162,27 @@ def test_generate_secrets_file_cloud_run_success(tmp_path, monkeypatch):
     assert data["organizations"]["jaccueille"]["name"] == "J'Accueille"
 
 
+def test_admin_users_normalization(tmp_path, monkeypatch):
+    """Verify admin_users list normalizes uppercase and trailing spaces."""
+    target_path = str(tmp_path / "secrets.toml")
+    monkeypatch.setenv("OIDC_AUTHORIZATION_POLICY_JSON", VALID_POLICY_JSON)
+    monkeypatch.setenv("OIDC_CLIENT_ID", "mock-id")
+    monkeypatch.setenv("OIDC_CLIENT_SECRET", "mock-secret")
+    monkeypatch.setenv("OIDC_COOKIE_SECRET", "mock-cookie-secret-32-chars-long")
+    monkeypatch.setenv("OIDC_REDIRECT_URI", "https://mock.app/oauth2callback")
+    monkeypatch.setenv(
+        "ADMIN_USERS_JSON",
+        '["  Admin@Example.COM  ", "JACQUES-LOCAL", "  invalid@@email  "]',
+    )
+
+    generate_secrets_file(target_path, is_cloud_run=False)
+    with open(target_path, "rb") as f:
+        data = tomllib.load(f)
+
+    admin_users = data["auth"]["admin_users"]
+    assert "admin@example.com" in admin_users
+    assert "jacques-local" in admin_users
+    assert "  Admin@Example.COM  " not in admin_users
+
+
+

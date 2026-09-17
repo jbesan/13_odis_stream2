@@ -28,7 +28,7 @@ with st.sidebar:
 # --- BigQuery Helper ---
 client = analytics_data.get_bq_client()
 
-st.title("📊 Dashboard Analytics & BI Métier")
+st.title("📊 Dashboard Métier")
 
 if client is None:
     st.error(
@@ -41,7 +41,8 @@ if client is None:
 dataset_id = "odis_logs"
 
 # --- Date & Action Filters ---
-col_filter1, col_filter2, col_filter3 = st.columns([2, 3, 1])
+# --- Date, Environment & Action Filters ---
+col_filter1, col_filter2, col_filter3, col_filter4 = st.columns([2, 2, 3, 1])
 
 with col_filter1:
     period_days = st.selectbox(
@@ -51,7 +52,21 @@ with col_filter1:
         format_func=lambda x: f"Derniers {x} jours",
     )
 
-with col_filter3:
+with col_filter2:
+    env_display = st.selectbox(
+        "Environnement",
+        options=["Production", "Recette / Staging", "Local / Dev", "Tous"],
+        index=0,
+    )
+    env_mapping = {
+        "Production": "production",
+        "Recette / Staging": "staging",
+        "Local / Dev": "local",
+        "Tous": None,
+    }
+    selected_env = env_mapping[env_display]
+
+with col_filter4:
     st.write("")  # Vertical spacing for alignment with selectbox
     st.write("")
     if st.button(
@@ -62,11 +77,14 @@ with col_filter3:
 
 
 with st.spinner("Chargement des données BigQuery..."):
-    analytics_result = analytics_data.fetch_analytics_data(client, period_days)
+    analytics_result = analytics_data.fetch_analytics_data(
+        client, period_days, env=selected_env
+    )
     billing_outcome = analytics_data.fetch_gcp_billing_data(client, period_days)
     agent_costs_outcome = analytics_data.fetch_agent_costs_data(
-        client, period_days, env="production"
+        client, period_days, env=selected_env
     )
+
 
 if analytics_result.status == analytics_data.OutcomeStatus.UNAUTHORIZED:
     st.error(
@@ -108,7 +126,7 @@ all_orgs = sorted(
     )
 )
 
-with col_filter2:
+with col_filter3:
     selected_orgs = st.multiselect(
         "Filtrer par Organisation",
         options=all_orgs,
@@ -220,7 +238,7 @@ with tab_global:
     with col_top_users:
         if not df_searches.empty:
             top_users = (
-                df_searches.groupby(["username", "org_id"])
+                df_searches.groupby("username")
                 .size()
                 .reset_index(name="Recherches")
                 .sort_values(by="Recherches", ascending=False)
@@ -230,31 +248,71 @@ with tab_global:
                 top_users,
                 x="Recherches",
                 y="username",
-                color="org_id",
                 orientation="h",
-                title="Top 5 Utilisateurs (+ Organisation)",
-                color_discrete_sequence=px.colors.qualitative.Set3,
+                title="Top 5 Utilisateurs",
+                color_discrete_sequence=["#1B4429"],
             )
-            fig_top_users.update_layout(yaxis={"categoryorder": "total ascending"})
+            fig_top_users.update_layout(
+                xaxis_title="Nombre de recherches",
+                yaxis_title="Utilisateur",
+                yaxis={"categoryorder": "total ascending"},
+            )
             st.plotly_chart(fig_top_users, width="content")
         else:
             st.info("Aucune donnée utilisateur disponible.")
 
     with col_event_dist:
+        action_label_map = {
+            "view_commune_details": "Consultation fiche commune",
+            "run_search": "Recherche exécutée",
+            "run_ia_analysis": "Analyse IA avancée",
+            "export_pdf": "Export rapport PDF",
+            "search_shared": "Partage de recherche",
+            "auto_detect_criteria": "Détection critères IA",
+        }
+        action_rows = []
         if not df_usage.empty:
-            event_counts = df_usage["event_name"].value_counts().reset_index()
-            event_counts.columns = ["Action", "Nombre"]
+            filtered_usage = df_usage[
+                ~df_usage["event_name"].isin(["page_view", "ai_run_usage"])
+            ]
+            for ev_name, count in filtered_usage["event_name"].value_counts().items():
+                label = action_label_map.get(str(ev_name), str(ev_name))
+                action_rows.append({"Action": label, "Nombre": int(count)})
+
+        searches_count = len(df_searches) if not df_searches.empty else 0
+        if searches_count > 0:
+            search_label = action_label_map["run_search"]
+            existing = next(
+                (r for r in action_rows if r["Action"] == search_label), None
+            )
+            if existing:
+                existing["Nombre"] = max(existing["Nombre"], searches_count)
+            else:
+                action_rows.append(
+                    {"Action": search_label, "Nombre": searches_count}
+                )
+
+        if action_rows:
+            df_action_counts = pd.DataFrame(action_rows).sort_values(
+                by="Nombre", ascending=False
+            )
             fig_events = px.bar(
-                event_counts,
+                df_action_counts,
                 x="Action",
                 y="Nombre",
-                title="Fréquence des événements applicatifs",
+                title="Fréquence des actions utilisateurs",
                 color="Action",
-                color_discrete_sequence=px.colors.qualitative.Set2,
+                color_discrete_sequence=px.colors.qualitative.Safe,
+            )
+            fig_events.update_layout(
+                xaxis_title="Action",
+                yaxis_title="Nombre d'occurrences",
+                showlegend=False,
             )
             st.plotly_chart(fig_events, width="content")
         else:
-            st.info("Aucun événement d'usage enregistré pour l'instant.")
+            st.info("Aucune action utilisateur enregistrée pour cette période.")
+
 
 
 # ==========================================
@@ -787,10 +845,25 @@ with tab_profiles:
 # TAB 4: COÛTS & FINOPS GCP
 # ==========================================
 with tab_finops:
-    st.markdown("##### 💰 Suivi des Dépenses Réelles GCP & FinOps")
-    st.caption(
-        "Données consolidées depuis l'export Cloud Billing BigQuery pour le projet `odis-stream2-app`."
-    )
+    col_finops_title, col_finops_toggle = st.columns([3, 1])
+    with col_finops_title:
+        st.markdown("##### 💰 Suivi des Dépenses Réelles GCP & FinOps")
+        # st.caption(
+        #     "Données consolidées depuis l'export Cloud Billing BigQuery pour le projet `odis-stream2-app`."
+        # )
+    with col_finops_toggle:
+        st.write("")
+        show_net = st.toggle(
+            "Afficher en Net",
+            value=False,
+            help=(
+                "Désactivé : Coûts Bruts (Consommation réelle d'infrastructure).\n\n"
+                "Activé : Coûts Nets facturés (après application des crédits et remises promotionnelles GCP)."
+            ),
+        )
+        is_gross = not show_net
+        cost_col = "cost_gross" if is_gross else "cost_net"
+        cost_label = "Brut" if is_gross else "Net"
 
     if billing_outcome.status == analytics_data.OutcomeStatus.UNAUTHORIZED:
         st.error(
@@ -822,21 +895,57 @@ with tab_finops:
                     df_agent["total_estimated_cost_eur"].dropna().sum()
                 )
                 agent_runs_count = int(df_agent["run_count"].dropna().sum())
+                total_new = (
+                    int(df_agent["input_tokens_new"].dropna().sum())
+                    if "input_tokens_new" in df_agent.columns
+                    else 0
+                )
+                total_cached = (
+                    int(df_agent["input_tokens_cached"].dropna().sum())
+                    if "input_tokens_cached" in df_agent.columns
+                    else 0
+                )
+                total_out = (
+                    int(df_agent["output_tokens"].dropna().sum())
+                    if "output_tokens" in df_agent.columns
+                    else 0
+                )
+                total_inp = total_new + total_cached
+                cache_pct = (total_cached / total_inp * 100) if total_inp > 0 else 0.0
+
                 st.markdown("###### 🤖 Métriques IA Temps Réel (`agent_state_logs`)")
-                m_c1, m_c2 = st.columns(2)
+                m_c1, m_c2, m_c3, m_c4 = st.columns(4)
                 with m_c1:
                     st.metric(
-                        "Coût Estimé Agents IA (Tokens + Grounding)",
+                        "Coût Estimé Agents IA",
                         f"{agent_estimated_cost:.4f} €",
                     )
                 with m_c2:
                     st.metric("Exécutions Swarm IA", f"{agent_runs_count}")
+                with m_c3:
+                    st.metric(
+                        "Tokens Consommés",
+                        f"{(total_inp + total_out):,.0f}".replace(",", " "),
+                        help=f"Entrée : {total_new:,.0f} nouv., {total_cached:,.0f} cache ({cache_pct:.1f}%) | Sortie : {total_out:,.0f}",
+                    )
+                with m_c4:
+                    total_g = (
+                        int(df_agent["grounding_queries"].dropna().sum())
+                        if "grounding_queries" in df_agent.columns
+                        else 0
+                    )
+                    total_p = (
+                        int(df_agent["places_requests"].dropna().sum())
+                        if "places_requests" in df_agent.columns
+                        else 0
+                    )
+                    st.metric("Recherche Web & Places", f"{total_g} web / {total_p} places")
         else:
             df_finops = df_billing.copy()
 
             # --- Financial KPIs ---
-            st.markdown("###### Indicateurs Financiers Clés (`odis-stream2-app`)")
-            kpi_net, kpi_gross, kpi_cred, kpi_avg_day, kpi_per_search = st.columns(5)
+            st.markdown("###### Indicateurs Financiers Clés (Projet GCP `odis-stream2-app`)")
+            kpi_gross, kpi_cred, kpi_net, kpi_avg_day, kpi_per_search = st.columns(5)
 
             total_net_cost = (
                 float(df_finops["cost_net"].sum()) if not df_finops.empty else 0.0
@@ -855,23 +964,27 @@ with tab_finops:
             total_searches_prod = (
                 len(prod_searches_df) if not prod_searches_df.empty else 0
             )
-            avg_daily_cost = total_net_cost / max(period_days, 1)
+            active_total_cost = total_gross_cost if is_gross else total_net_cost
+            avg_daily_cost = active_total_cost / max(period_days, 1)
             cost_per_search_val = (
-                (total_net_cost / total_searches_prod)
+                (active_total_cost / total_searches_prod)
                 if total_searches_prod > 0
                 else 0.0
             )
 
+            with kpi_gross:
+                st.metric("Coût Brut (Consommation)", f"{total_gross_cost:.2f} €")
+            with kpi_cred:
+                st.metric("Crédits & Remises GCP", f"-{total_credits_val:.2f} €")
             with kpi_net:
                 st.metric("Coût Net Facturé", f"{total_net_cost:.2f} €")
-            with kpi_gross:
-                st.metric("Coût Brut (Avant Remises)", f"{total_gross_cost:.2f} €")
-            with kpi_cred:
-                st.metric("Crédits & Remises GCP", f"{total_credits_val:.2f} €")
             with kpi_avg_day:
-                st.metric("Dépense Moyenne / Jour", f"{avg_daily_cost:.2f} €/j")
+                st.metric(f"Moyenne / Jour ({cost_label})", f"{avg_daily_cost:.2f} €/j")
             with kpi_per_search:
-                st.metric("Coût Infra / Rech. Prod", f"{cost_per_search_val:.3f} €")
+                st.metric(
+                    f"Coût / Rech. Prod ({cost_label})",
+                    f"{cost_per_search_val:.3f} €",
+                )
 
             st.divider()
 
@@ -881,27 +994,35 @@ with tab_finops:
             with col_chart_evol:
                 if not df_finops.empty and "usage_date" in df_finops.columns:
                     df_daily_costs = (
-                        df_finops.groupby(["usage_date", "service_name"])["cost_net"]
+                        df_finops.groupby(["usage_date", "service_name"])[cost_col]
                         .sum()
                         .reset_index()
                     )
                     fig_daily_costs = px.bar(
                         df_daily_costs,
                         x="usage_date",
-                        y="cost_net",
+                        y=cost_col,
                         color="service_name",
-                        title="Évolution des coûts quotidiens par service (€)",
+                        title=f"Évolution quotidienne par service ({cost_label}, €)",
                         labels={
                             "usage_date": "Date",
-                            "cost_net": "Coût Net (€)",
+                            cost_col: f"Coût {cost_label} (€)",
                             "service_name": "Service GCP",
                         },
                         color_discrete_sequence=px.colors.qualitative.Safe,
                     )
                     fig_daily_costs.update_layout(
                         xaxis_title="Date",
-                        yaxis_title="Coût Net (€)",
+                        yaxis_title=f"Coût {cost_label} (€)",
                         barmode="stack",
+                        legend=dict(
+                            orientation="h",
+                            yanchor="top",
+                            y=-0.25,
+                            xanchor="center",
+                            x=0.5,
+                            title_text="",
+                        ),
                     )
                     st.plotly_chart(fig_daily_costs, width="content")
                 else:
@@ -910,116 +1031,257 @@ with tab_finops:
             with col_chart_pie:
                 if not df_finops.empty and "service_name" in df_finops.columns:
                     df_by_service = (
-                        df_finops.groupby("service_name")["cost_net"]
+                        df_finops.groupby("service_name")[cost_col]
                         .sum()
                         .reset_index()
-                        .sort_values("cost_net", ascending=False)
+                        .sort_values(cost_col, ascending=False)
                     )
-                    # Filter out zero-cost items for cleaner pie chart
-                    df_pie_data = df_by_service[df_by_service["cost_net"] > 0]
+                    df_pie_data = df_by_service[df_by_service[cost_col] > 0]
                     if df_pie_data.empty:
-                        df_pie_data = df_by_service
-
-                    fig_service_pie = px.pie(
-                        df_pie_data,
-                        names="service_name",
-                        values="cost_net",
-                        hole=0.4,
-                        title="Répartition des dépenses nettes par service GCP",
-                        color_discrete_sequence=px.colors.qualitative.Prism,
-                    )
-                    st.plotly_chart(fig_service_pie, width="content")
+                        st.info(
+                            f"ℹ️ Aucun coût {cost_label.lower()} strictement positif à afficher "
+                            "(100% des dépenses sont couvertes par des crédits GCP). "
+                            "Désactivez le toggle **Afficher en Net** pour visualiser la répartition de la consommation."
+                        )
+                    else:
+                        fig_service_pie = px.pie(
+                            df_pie_data,
+                            names="service_name",
+                            values=cost_col,
+                            hole=0.4,
+                            title=f"Répartition des dépenses ({cost_label.lower()}) par service GCP",
+                            color_discrete_sequence=px.colors.qualitative.Prism,
+                        )
+                        st.plotly_chart(fig_service_pie, width="content")
                 else:
                     st.info("Aucune répartition par service disponible.")
 
             st.divider()
 
-            # --- Row 2: Top SKUs Table & AI FinOps Reconciliation ---
-            col_skus, col_ai_finops = st.columns(2)
-
-            with col_skus:
-                st.markdown("##### 🏆 Top 10 Postes de Coûts (SKUs)")
-                if not df_finops.empty:
-                    df_top_skus = (
-                        df_finops.groupby(["service_name", "sku_description"])[
-                            ["cost_gross", "cost_net"]
-                        ]
-                        .sum()
-                        .reset_index()
-                        .sort_values("cost_net", ascending=False)
-                        .head(10)
+            # --- Row 2: Top SKUs Table (Full Page Width) ---
+            st.markdown("##### 🏆 Top 10 Postes de Coûts (SKUs)")
+            if not df_finops.empty:
+                df_top_skus = (
+                    df_finops.groupby(["service_name", "sku_description"])
+                    .agg(
+                        cost_gross=("cost_gross", "sum"),
+                        credits=("credits", "sum"),
+                        cost_net=("cost_net", "sum"),
+                        usage_amount=("usage_amount", "sum"),
+                        usage_unit=("usage_unit", "first"),
                     )
-                    df_top_skus_display = df_top_skus.copy()
-                    df_top_skus_display["cost_net"] = df_top_skus_display[
-                        "cost_net"
-                    ].apply(lambda x: f"{x:.4f} €")
-                    df_top_skus_display["cost_gross"] = df_top_skus_display[
+                    .reset_index()
+                    .sort_values(
+                        by=[cost_col, "cost_gross"],
+                        ascending=[False, False],
+                    )
+                    .head(10)
+                )
+                df_top_skus_display = pd.DataFrame()
+                df_top_skus_display["Service"] = df_top_skus["service_name"]
+                df_top_skus_display["Description SKU"] = df_top_skus[
+                    "sku_description"
+                ]
+                df_top_skus_display["Usage"] = [
+                    analytics_data.format_billing_usage(amt, u)
+                    for amt, u in zip(
+                        df_top_skus["usage_amount"],
+                        df_top_skus["usage_unit"],
+                    )
+                ]
+                df_top_skus_display["Coût Brut"] = df_top_skus[
+                    "cost_gross"
+                ].apply(lambda x: f"{x:.4f} €")
+                df_top_skus_display["Remises GCP"] = df_top_skus[
+                    "credits"
+                ].apply(lambda x: f"{x:.4f} €")
+                df_top_skus_display["Coût Net"] = df_top_skus[
+                    "cost_net"
+                ].apply(lambda x: f"{x:.4f} €")
+                st.dataframe(
+                    df_top_skus_display, width="stretch", hide_index=True
+                )
+            else:
+                st.info("Aucun détail SKU disponible.")
+
+            st.divider()
+
+            # --- Row 3: Rapprochement FinOps IA ---
+            st.markdown("##### 🤖 Rapprochement FinOps IA (Tokens vs Factures)")
+            actual_vertex_gross = (
+                float(
+                    df_finops[df_finops["service_name"] == "Vertex AI"][
                         "cost_gross"
-                    ].apply(lambda x: f"{x:.4f} €")
-                    df_top_skus_display.columns = [
-                        "Service",
-                        "Description SKU",
-                        "Coût Brut",
-                        "Coût Net",
-                    ]
-                    st.dataframe(
-                        df_top_skus_display, width="stretch", hide_index=True
-                    )
-                else:
-                    st.info("Aucun détail SKU disponible.")
-
-            with col_ai_finops:
-                st.markdown("##### 🤖 Rapprochement FinOps IA (Tokens vs Factures)")
-                actual_vertex_cost = (
-                    float(
-                        df_finops[df_finops["service_name"] == "Vertex AI"][
-                            "cost_net"
-                        ].sum()
-                    )
-                    if not df_finops.empty
-                    and "Vertex AI" in df_finops["service_name"].values
-                    else 0.0
+                    ].sum()
                 )
-
-                actual_places_cost = (
-                    float(
-                        df_finops[
-                            df_finops["service_name"].str.contains(
-                                "Places", case=False, na=False
-                            )
-                        ]["cost_net"].sum()
-                    )
-                    if not df_finops.empty
-                    else 0.0
+                if not df_finops.empty
+                and "Vertex AI" in df_finops["service_name"].values
+                else 0.0
+            )
+            actual_vertex_credits = (
+                float(
+                    df_finops[df_finops["service_name"] == "Vertex AI"][
+                        "credits"
+                    ].sum()
                 )
+                if not df_finops.empty
+                and "Vertex AI" in df_finops["service_name"].values
+                else 0.0
+            )
+            actual_vertex_net = (
+                float(
+                    df_finops[df_finops["service_name"] == "Vertex AI"][
+                        "cost_net"
+                    ].sum()
+                )
+                if not df_finops.empty
+                and "Vertex AI" in df_finops["service_name"].values
+                else 0.0
+            )
 
-                agent_estimated_cost = 0.0
-                agent_runs_count = 0
-                if (
-                    agent_costs_outcome.is_success
-                    and agent_costs_outcome.value is not None
-                ):
-                    df_agent = agent_costs_outcome.value
-                    if not df_agent.empty:
-                        agent_estimated_cost = float(
-                            df_agent["total_estimated_cost_eur"].dropna().sum()
+            actual_places_gross = (
+                float(
+                    df_finops[
+                        df_finops["service_name"].str.contains(
+                            "Places", case=False, na=False
                         )
-                        agent_runs_count = int(df_agent["run_count"].dropna().sum())
-
-                recon_col1, recon_col2 = st.columns(2)
-                with recon_col1:
-                    st.metric("Facture Vertex AI (Réel)", f"{actual_vertex_cost:.2f} €")
-                    st.metric(
-                        "Facture Places API (Réel)", f"{actual_places_cost:.2f} €"
-                    )
-                with recon_col2:
-                    st.metric(
-                        "Estim. Tokens Agents (App)", f"{agent_estimated_cost:.2f} €"
-                    )
-                    st.metric("Exécutions Swarm IA", f"{agent_runs_count}")
-
-                st.info(
-                    "ℹ️ **Note FinOps** : L'estimation applicative se base sur le barème tarifaire Gemini "
-                    "(EU) par token. La facture réelle GCP intègre en plus les mécanismes de prompt-caching, "
-                    "le grounding Vertex AI Search et les arrondis de facturation à la seconde/au SKU."
+                    ]["cost_gross"].sum()
                 )
+                if not df_finops.empty
+                else 0.0
+            )
+            actual_places_net = (
+                float(
+                    df_finops[
+                        df_finops["service_name"].str.contains(
+                            "Places", case=False, na=False
+                        )
+                    ]["cost_net"].sum()
+                )
+                if not df_finops.empty
+                else 0.0
+            )
+
+            agent_estimated_cost = 0.0
+            agent_runs_count = 0
+            if (
+                agent_costs_outcome.is_success
+                and agent_costs_outcome.value is not None
+            ):
+                df_agent = agent_costs_outcome.value
+                if not df_agent.empty:
+                    agent_estimated_cost = float(
+                        df_agent["total_estimated_cost_eur"].dropna().sum()
+                    )
+                    agent_runs_count = int(df_agent["run_count"].dropna().sum())
+
+            recon_col1, recon_col2, recon_col3, recon_col4 = st.columns(4)
+            with recon_col1:
+                st.metric(
+                    "Facture Vertex AI (Brut)",
+                    f"{actual_vertex_gross:.2f} €",
+                    help=f"Remises GCP : {actual_vertex_credits:.2f} € | Net facturé : {actual_vertex_net:.2f} €",
+                )
+            with recon_col2:
+                st.metric(
+                    "Facture Places API (Brut)",
+                    f"{actual_places_gross:.2f} €",
+                    help=f"Net facturé : {actual_places_net:.2f} € (crédit mensuel Google Maps appliqué)",
+                )
+            with recon_col3:
+                st.metric(
+                    "Estim. Tokens Agents (App, Brut)",
+                    f"{agent_estimated_cost:.2f} €",
+                )
+            with recon_col4:
+                st.metric("Exécutions Swarm IA (Prod)", f"{agent_runs_count}")
+
+            if (
+                agent_costs_outcome.is_success
+                and agent_costs_outcome.value is not None
+                and not agent_costs_outcome.value.empty
+            ):
+                df_agent = agent_costs_outcome.value
+                total_new = (
+                    int(df_agent["input_tokens_new"].dropna().sum())
+                    if "input_tokens_new" in df_agent.columns
+                    else 0
+                )
+                total_cached = (
+                    int(df_agent["input_tokens_cached"].dropna().sum())
+                    if "input_tokens_cached" in df_agent.columns
+                    else 0
+                )
+                total_out = (
+                    int(df_agent["output_tokens"].dropna().sum())
+                    if "output_tokens" in df_agent.columns
+                    else 0
+                )
+                total_inp = total_new + total_cached
+                cache_pct = (total_cached / total_inp * 100) if total_inp > 0 else 0.0
+
+                total_g_queries = (
+                    int(df_agent["grounding_queries"].dropna().sum())
+                    if "grounding_queries" in df_agent.columns
+                    else 0
+                )
+                total_g_cost = (
+                    float(df_agent["grounding_cost_eur"].dropna().sum())
+                    if "grounding_cost_eur" in df_agent.columns
+                    else 0.0
+                )
+
+                total_p_reqs = (
+                    int(df_agent["places_requests"].dropna().sum())
+                    if "places_requests" in df_agent.columns
+                    else 0
+                )
+                total_p_cost = (
+                    float(df_agent["places_cost_eur"].dropna().sum())
+                    if "places_cost_eur" in df_agent.columns
+                    else 0.0
+                )
+
+                total_tok_cost = (
+                    float(df_agent["token_cost_eur"].dropna().sum())
+                    if "token_cost_eur" in df_agent.columns
+                    else 0.0
+                )
+
+                if total_inp + total_out > 0 or total_g_queries > 0 or total_p_reqs > 0:
+                    st.markdown("###### 🤖 Télémétrie Détaillée des Agents IA (`cost_details`)")
+                    ai_t1, ai_t2, ai_t3, ai_t4 = st.columns(4)
+                    with ai_t1:
+                        st.metric(
+                            "Tokens d'Entrée (Nouveaux)",
+                            f"{total_new:,.0f}".replace(",", " "),
+                            help=f"Total tokens d'entrée : {total_inp:,.0f} | Coût tokens : {total_tok_cost:.4f} €",
+                        )
+                    with ai_t2:
+                        st.metric(
+                            "Tokens en Cache (Économie)",
+                            f"{total_cached:,.0f}".replace(",", " "),
+                            delta=f"{cache_pct:.1f}% en cache",
+                            delta_color="normal",
+                            help=f"Taux d'utilisation du prompt-caching : {cache_pct:.1f}%",
+                        )
+                    with ai_t3:
+                        st.metric(
+                            "Tokens de Sortie",
+                            f"{total_out:,.0f}".replace(",", " "),
+                        )
+                    with ai_t4:
+                        st.metric(
+                            "Recherche Web & Places",
+                            f"{total_g_queries} web / {total_p_reqs} places",
+                            help=f"Grounding Search : {total_g_cost:.4f} € | Places API : {total_p_cost:.4f} €",
+                        )
+
+            st.info(
+                "ℹ️ **Note FinOps** : L'estimation applicative (Tokens Agents) comptabilise les tokens consommés "
+                "en production. La facture réelle GCP Vertex AI (Brut) englobe l'ensemble des requêtes "
+                "(production et evals/tests CI), le prompt-caching et les arrondis de facturation à la requête, "
+                "avant déduction des crédits promotionnels GCP."
+            )
+
+

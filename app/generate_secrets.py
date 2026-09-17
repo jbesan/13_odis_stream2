@@ -19,6 +19,7 @@ from utils.oidc_policy import (
     OIDCAuthorizationPolicy,
     OIDCAuthorizationPolicyError,
     load_runtime_oidc_authorization_policy,
+    normalize_email,
 )
 
 logger = logging.getLogger(__name__)
@@ -150,7 +151,11 @@ def serialize_secrets_toml(
     Returns:
         str: Serialized TOML content.
     """
-    admin_list = admin_users or []
+    admin_list = [
+        norm
+        for u in (admin_users or [])
+        if isinstance(u, str) and (norm := (normalize_email(u) or u.strip().casefold()))
+    ]
     allowed_domains = list(policy.allowed_domains.keys())
     allowed_emails = list(policy.allowed_emails.keys())
 
@@ -282,9 +287,17 @@ def generate_secrets_file(
     redirect_uri = os.getenv("OIDC_REDIRECT_URI", "")
 
     try:
-        admin_users: list[str] = json.loads(os.getenv("ADMIN_USERS_JSON", "[]"))
+        raw_admins = json.loads(os.getenv("ADMIN_USERS_JSON", "[]"))
+        if not isinstance(raw_admins, list):
+            raw_admins = []
     except json.JSONDecodeError:
-        admin_users = []
+        raw_admins = []
+
+    admin_users: list[str] = [
+        norm
+        for u in raw_admins
+        if isinstance(u, str) and (norm := (normalize_email(u) or u.strip().casefold()))
+    ]
 
     toml_content = serialize_secrets_toml(
         policy=policy,

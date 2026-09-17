@@ -86,9 +86,21 @@ def is_admin(username: Optional[str] = None) -> bool:
     if not username:
         username = st.session_state.get("username")
     if not username:
+        user_obj = st.session_state.get("user")
+        if user_obj and hasattr(user_obj, "username") and user_obj.username:
+            username = user_obj.username
+    if not username:
         return False
     admin_users = getattr(cfg, "ADMIN_USERS", set())
-    return username in admin_users
+    if username in admin_users:
+        return True
+    normalized = normalize_email(username) or username.strip().casefold()
+    normalized_admins = {
+        (normalize_email(a) or a.strip().casefold())
+        for a in admin_users
+        if isinstance(a, str)
+    }
+    return normalized in normalized_admins
 
 
 def check_password() -> bool:

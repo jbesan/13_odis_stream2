@@ -46,8 +46,8 @@ from agents.web_search import (
 from services.ai_pricing import estimate_google_grounding_cost_eur
 from utils.logger import log_agent_trace
 import services.bq_logger as bq_logger
-from services.telemetry import log_usage_event
 from agents.agent_config import get_model, get_p_model, get_model_settings
+
 
 logger = logging.getLogger("odis_graph")
 
@@ -580,33 +580,9 @@ async def synthesizer_step(
             ctx.state.interaction_id,
             ctx.state.username,
         )
-        # ``usage_events.payload`` remains a flexible JSON column and mirrors
-        # the EUR rate-card breakdown stored in ``agent_state_logs.cost_eur``.
-        await asyncio.to_thread(
-            log_usage_event,
-            "ai_run_usage",
-            payload={
-                "cost_eur": ctx.state.usage.cost_eur,
-                "cost_eur_available": ctx.state.usage.eur_priced,
-                "token_cost_eur": ctx.state.usage.token_cost_eur,
-                "input_tokens": ctx.state.usage.input_tokens,
-                "input_tokens_new": ctx.state.usage.input_tokens_new,
-                "input_tokens_cached": ctx.state.usage.cache_read_tokens,
-                "output_tokens": ctx.state.usage.output_tokens,
-                "cache_hit_ratio": ctx.state.usage.cache_hit_ratio,
-                "grounding_queries": ctx.state.usage.grounding_queries,
-                "grounding_cost_eur": ctx.state.usage.grounding_cost_eur,
-                "places_requests": ctx.state.usage.places_requests,
-                "places_cost_eur": ctx.state.usage.places_cost_eur,
-                "unpriced_model_requests": ctx.state.usage.unpriced_model_requests,
-                "cost_basis": "EUR rate-card estimate; free-tier/account aggregation may differ from invoice",
-            },
-            interaction_id=ctx.state.interaction_id,
-            username=ctx.state.username,
-            org_id=ctx.state.organization_id,
-        )
     except Exception as e:
         logger.warning(f"⚠️ [BQ-LOG] Synthesis logging failed: {e}")
+
 
     # 3. BUILD COMPLETE COMPOSITE REPORT (Decoupled Synthesis + As-is Domain Artifacts)
     city_res = None

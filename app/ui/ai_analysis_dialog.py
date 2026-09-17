@@ -115,8 +115,8 @@ def polling_synthesis_fragment(
     status = status_data.get("status") if status_data else None
 
     if status == "running":
-        st.caption(
-            "L'analyse avancée est en cours de préparation en arrière-plan (~30 secondes). Vous pouvez fermer cette fenêtre, une notification apparaîtra dès que la synthèse sera prête."
+        st.info(
+            "L'analyse avancée est en cours d'exécution en arrière-plan (~30 secondes). Vous pouvez fermer cette fenêtre, une notification apparaîtra dès que la synthèse sera prête."
         )
         if st.button("Annuler l'analyse", key=f"cancel_analysis_{task_key}"):
             cancel_background_city_analysis(task_key)
