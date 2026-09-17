@@ -331,3 +331,29 @@ def test_current_marker_fallback_without_centroid():
     assert payload["current_marker"]["lon"] is None
 
 
+def test_render_vector_map_top_communes_layer_and_pressentie_color(monkeypatch):
+    """Verify that render_vector_map includes top-communes-polygon-layer and yellow gold for pressentie."""
+    from app.ui.map_vector import render_vector_map
+    import streamlit as st
+
+    captured = {}
+
+    def fake_iframe(html, height=1500):
+        captured["html"] = html
+
+    monkeypatch.setattr(st, "iframe", fake_iframe)
+
+    render_vector_map(
+        gdf_scores=None,
+        center=[46.5, 2.0],
+        zoom=7,
+    )
+
+    html = captured.get("html", "")
+    assert len(html) > 0
+    assert "top-communes-polygon-layer" in html
+    assert "[245, 216, 25, 255]" in html
+    assert "[214, 62, 42, 255]" in html
+
+
+

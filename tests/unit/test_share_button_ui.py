@@ -583,3 +583,41 @@ def test_polling_synthesis_fragment_error_state_shows_retry(monkeypatch):
     assert len(error_calls) == 1
     assert "LLM timeout" in error_calls[0]
     assert any("Réessayer" in b[0] for b in button_calls)
+
+
+def test_share_search_modal_renders_unified_actions(monkeypatch):
+    """Verify share_search_modal invokes unified _share_actions_component with slack msg and mailto url."""
+    from ui.results_actions import share_search_modal, _share_actions_component, _slack_share_component
+
+    assert _slack_share_component == _share_actions_component
+
+    rendered_components = []
+
+    def mock_component(*args, **kwargs):
+        rendered_components.append(kwargs)
+
+    monkeypatch.setattr("ui.results_actions._share_actions_component", mock_component)
+    monkeypatch.setattr("ui.results_actions.st.markdown", lambda *args, **kwargs: None)
+    monkeypatch.setattr("ui.results_actions.st.code", lambda *args, **kwargs: None)
+
+    search_results = _create_mock_search_results("69123")
+    monkeypatch.setattr(
+        "ui.results_actions.st.session_state",
+        {
+            "search_results": search_results,
+            "config": MagicMock(),
+            "active_share_id": "share_abc123",
+        },
+    )
+
+    _call_fn(share_search_modal)
+
+    assert len(rendered_components) == 1
+    data = rendered_components[0]["data"]
+    assert "mailto_url" in data
+    assert "mailto:?subject=" in data["mailto_url"]
+    assert "search=share_abc123" in data["mailto_url"]
+    assert "msg" in data
+    assert "search=share_abc123" in data["msg"]
+    assert rendered_components[0]["key"] == "share_actions_share_abc123"
+

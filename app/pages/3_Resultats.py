@@ -481,7 +481,7 @@ if st.session_state.get("processed_gdf") is not None:
     if show_top_5:
         legend_markers.append(("#D63E2A", "Top 5"))
         if search_results and search_results.commune_pressentie:
-            legend_markers.append(("#036BFC", "Ville pressentie"))
+            legend_markers.append(("#F5D819", "Ville pressentie"))
     if not snapshot_mode:
         if "mairie" in selected_ids:
             legend_markers.append(("#F5D819", "Mairies"))

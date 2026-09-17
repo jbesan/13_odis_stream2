@@ -2,6 +2,7 @@ import logging
 import urllib.parse
 from typing import List, Optional
 import streamlit as st
+import streamlit.components.v2 as components_v2
 
 from core.models import SearchResultsData, CommuneResult
 from core.postscoring import sync_commune_data
@@ -10,6 +11,171 @@ from agents.utils import odis_get_bg_result
 from ui import ui_telemetry
 
 logger = logging.getLogger("ui.results.actions")
+
+_SHARE_ACTIONS_HTML = """
+<div class="odis-share-actions-row">
+    <a href="slack://open" id="odis-share-slack-btn" class="odis-share-btn odis-slack-btn" title="Copier le message et ouvrir Slack">
+        <span class="odis-share-btn-icon" id="odis-share-slack-icon">
+            <img src="app/static/logo-slack.svg" width="20" height="20" alt="Slack" />
+        </span>
+        <span id="odis-share-slack-text">Partager sur Slack</span>
+    </a>
+    <a href="mailto:" id="odis-share-email-btn" class="odis-share-btn odis-email-btn" target="_self" title="Envoyer par email">
+        <span class="odis-share-btn-icon" id="odis-share-email-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="20" height="16" x="2" y="4" rx="2"/>
+                <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+            </svg>
+        </span>
+        <span id="odis-share-email-text">Envoyer par Email</span>
+    </a>
+</div>
+"""
+
+_SHARE_ACTIONS_CSS = """
+.odis-share-actions-row {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+    box-sizing: border-box;
+}
+.odis-share-btn {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 2.5rem;
+    padding: 0.25rem 0.75rem;
+    margin: 0;
+    border-radius: 9999px;
+    font-family: inherit;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    text-decoration: none;
+    box-sizing: border-box;
+    transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out, transform 0.1s ease;
+}
+.odis-share-btn:active {
+    transform: scale(0.98);
+}
+.odis-share-btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.odis-share-btn-icon img,
+.odis-share-btn-icon svg {
+    width: 20px;
+    height: 20px;
+    display: block;
+}
+.odis-slack-btn {
+    background-color: #4A154B;
+    color: #FFFFFF !important;
+    border: 1px solid #4A154B;
+}
+.odis-slack-btn:hover {
+    background-color: #611f69;
+    border-color: #611f69;
+    color: #FFFFFF !important;
+}
+.odis-slack-btn:active {
+    background-color: #38103c;
+}
+.odis-slack-btn,
+.odis-slack-btn:visited,
+.odis-slack-btn span {
+    color: #FFFFFF !important;
+}
+.odis-email-btn {
+    background-color: #FFD700;
+    color: #1B4429 !important;
+    border: 1px solid #FFD700;
+}
+.odis-email-btn:hover {
+    background-color: #e6c200;
+    border-color: #e6c200;
+    color: #1B4429 !important;
+}
+.odis-email-btn:active {
+    background-color: #cca300;
+}
+.odis-email-btn,
+.odis-email-btn:visited,
+.odis-email-btn span {
+    color: #1B4429 !important;
+}
+"""
+
+_SHARE_ACTIONS_JS = """
+export default function(component) {
+    const { parentElement, data } = component;
+    const slackBtn = parentElement.querySelector("#odis-share-slack-btn");
+    const slackLabel = parentElement.querySelector("#odis-share-slack-text");
+    const emailBtn = parentElement.querySelector("#odis-share-email-btn");
+    const emailLabel = parentElement.querySelector("#odis-share-email-text");
+
+    if (slackBtn) {
+        slackBtn.onclick = async function(e) {
+            e.preventDefault();
+            console.log("[ODIS] Bouton Slack cliqué !");
+            const msg = data?.msg || "";
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(msg);
+                }
+            } catch (err) {
+                console.warn("[ODIS] Erreur lors de la copie:", err);
+            }
+            if (slackLabel) {
+                slackLabel.innerText = "Copié ! Ouverture...";
+                setTimeout(() => {
+                    if (slackLabel) {
+                        slackLabel.innerText = "Partager sur Slack";
+                    }
+                }, 2500);
+            }
+            console.log("[ODIS] Lancement de slack://open");
+            window.location.href = "slack://open";
+        };
+    }
+
+    if (emailBtn) {
+        if (data?.mailto_url) {
+            emailBtn.href = data.mailto_url;
+        }
+        emailBtn.onclick = function(e) {
+            e.preventDefault();
+            console.log("[ODIS] Bouton Email cliqué !");
+            const url = data?.mailto_url || emailBtn.href;
+            if (url) {
+                if (emailLabel) {
+                    emailLabel.innerText = "Ouverture...";
+                    setTimeout(() => {
+                        if (emailLabel) {
+                            emailLabel.innerText = "Envoyer par Email";
+                        }
+                    }, 2500);
+                }
+                console.log("[ODIS] Lancement de mailto:", url);
+                window.location.href = url;
+            } else {
+                console.warn("[ODIS] mailto_url manquant");
+            }
+        };
+    }
+}
+"""
+
+_share_actions_component = components_v2.component(
+    "odis_share_actions_buttons",
+    html=_SHARE_ACTIONS_HTML,
+    css=_SHARE_ACTIONS_CSS,
+    js=_SHARE_ACTIONS_JS,
+)
+_slack_share_component = _share_actions_component
 
 
 @st.dialog("Export des résultats en PDF")
@@ -158,10 +324,7 @@ def share_search_modal():
         return
 
     # Generate or retrieve active share_id
-    if (
-        "active_share_id" not in st.session_state
-        or not st.session_state.active_share_id
-    ):
+    if not st.session_state.get("active_share_id"):
         with st.spinner("Génération du lien de partage..."):
             from services import share_service
 
@@ -180,7 +343,7 @@ def share_search_modal():
                 return
             st.session_state["active_share_id"] = share_id
     else:
-        share_id = st.session_state.active_share_id
+        share_id = st.session_state.get("active_share_id")
 
     # Construct public shareable URL
     base_url = "https://myapp.fr"
@@ -212,26 +375,12 @@ def share_search_modal():
     subject = "Résultats de recherche OD&IS"
     body = f"Voici le lien pour accéder aux résultats de la recherche : {permalink}"
     slack_msg = f"Voici les résultats de notre recherche OD&IS : {permalink}"
-
-    slack_share_url = f"https://slack.com/app_redirect?channel=&message={urllib.parse.quote(slack_msg)}"
     mailto_url = f"mailto:?subject={urllib.parse.quote(subject)}&body={urllib.parse.quote(body, safe=':/?=')}"
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.link_button(
-            "Partager sur Slack",
-            slack_share_url,
-            icon=":material/chat:",
-            width="stretch",
-        )
-    with col2:
-        st.link_button(
-            "Envoyer par Email",
-            mailto_url,
-            icon=":material/mail:",
-            type="primary",
-            width="stretch",
-        )
+    _share_actions_component(
+        data={"msg": slack_msg, "mailto_url": mailto_url},
+        key=f"share_actions_{share_id}",
+    )
 
 
 @st.fragment(run_every=2.0)

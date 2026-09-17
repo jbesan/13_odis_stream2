@@ -618,7 +618,65 @@ def render_vector_map(
               }}
             }}
 
-            // 3. POI Markers Layer (Level 2: Mairies, Écoles, Santé, Inclusion)
+            // 3. Top 5 & Shortlisted Communes Outlines Layer (Level 2: Outlines)
+            if (payload.top_markers && payload.top_markers.length > 0) {{
+              const topCodgeoMap = new Map();
+              payload.top_markers.forEach(m => {{
+                topCodgeoMap.set(String(m.codgeo), m);
+              }});
+
+              const topFeatures = [];
+              for (let i = 0; i < baseData.features.length; i++) {{
+                const f = baseData.features[i];
+                const code = String(f.properties.codgeo);
+                if (topCodgeoMap.has(code)) {{
+                  topFeatures.push({{
+                    ...f,
+                    properties: {{
+                      ...f.properties,
+                      markerMeta: topCodgeoMap.get(code)
+                    }}
+                  }});
+                }}
+              }}
+
+              if (topFeatures.length > 0) {{
+                deckLayers.push(
+                  new deck.GeoJsonLayer({{
+                    id: 'top-communes-polygon-layer',
+                    data: topFeatures,
+                    filled: false,
+                    stroked: true,
+                    getLineColor: f => {{
+                      const meta = f.properties && f.properties.markerMeta;
+                      if (!meta) return [214, 62, 42, 255];
+                      if (meta.type === 'pressentie') return [245, 216, 25, 255];
+                      return meta.is_highlighted ? [239, 68, 68, 255] : [214, 62, 42, 255];
+                    }},
+                    getLineWidth: f => {{
+                      const meta = f.properties && f.properties.markerMeta;
+                      return (meta && meta.is_highlighted) ? 4.5 : 3;
+                    }},
+                    lineWidthMinPixels: 2.5,
+                    pickable: true,
+                    onHover: info => {{
+                      if (info.object && info.object.properties && info.object.properties.markerMeta) {{
+                        const m = info.object.properties.markerMeta;
+                        const title = m.type === 'pressentie' ? '📌 Ville Souhaitée' : `Top ${{m.rank}}`;
+                        tooltipEl.innerHTML = `<strong>${{title}} : ${{m.name}}</strong><br/><span style="color: #A3E635;">Score : <strong>${{m.score_pct}}</strong></span>`;
+                        tooltipEl.style.display = 'block';
+                        tooltipEl.style.left = `${{info.x}}px`;
+                        tooltipEl.style.top = `${{info.y}}px`;
+                      }} else {{
+                        tooltipEl.style.display = 'none';
+                      }}
+                    }}
+                  }})
+                );
+              }}
+            }}
+
+            // 4. POI Markers Layer (Level 3: Mairies, Écoles, Santé, Inclusion)
             if (payload.poi_markers && payload.poi_markers.length > 0) {{
               deckLayers.push(
                 new deck.ScatterplotLayer({{
@@ -645,14 +703,14 @@ def render_vector_map(
               );
             }}
 
-            // 4. Top 5 & Shortlisted Markers (Level 3: Red/Yellow badges with Rank numbers)
+            // 5. Top 5 & Shortlisted Markers (Level 4: Red/Yellow badges with Rank numbers)
             if (payload.top_markers && payload.top_markers.length > 0) {{
               deckLayers.push(
                 new deck.ScatterplotLayer({{
                   id: 'top5-circles-layer',
                   data: payload.top_markers,
                   getPosition: d => [d.lon, d.lat],
-                  getFillColor: d => d.type === 'pressentie' ? [3, 107, 242, 255] : (d.is_highlighted ? [239, 68, 68, 255] : [214, 62, 42, 255]),
+                  getFillColor: d => d.type === 'pressentie' ? [245, 216, 25, 255] : (d.is_highlighted ? [239, 68, 68, 255] : [214, 62, 42, 255]),
                   getLineColor: d => d.type === 'pressentie' ? [27, 68, 41, 255] : [255, 255, 255, 255],
                   lineWidthMinPixels: 2.5,
                   getRadius: d => d.is_highlighted ? 18 : 15,

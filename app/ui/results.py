@@ -428,7 +428,7 @@ def render_refiner_panel(commune: CommuneResult, h: Optional[str]) -> bool:
         return True
 
     st.info("Analyse des points forts en cours...")
-    st.caption("La synthèse personnalisée apparaîtra ici lorsqu'elle sera prête.")
+    # st.caption("La synthèse personnalisée apparaîtra ici lorsqu'elle sera prête.")
     return False
 
 

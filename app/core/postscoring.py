@@ -3,8 +3,9 @@ import logging
 import os
 import string
 import threading
+import time
 from functools import partial
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 import logfire
 import pandas as pd
 import requests
@@ -59,6 +60,8 @@ from agents.utils import (
 
 logger = logging.getLogger(__name__)
 ENRICHMENT_DEADLINE_SECONDS = 30
+REFINER_DEADLINE_SECONDS = 15.0
+REFINER_MAX_ATTEMPTS = 2
 
 
 def hydration_providers(
@@ -228,6 +231,129 @@ def launch_background_job_curation(
     HydrationRun(codgeos, (provider,), get_odis_bg_store(), hash_val).start()
 
 
+def generate_static_pitch(commune: Union[CommuneResult, Dict[str, Any]]) -> str:
+    """Generates a static pitch list showing the top 3 contributing score indicators.
+
+    Ranks all score details by their weighted contribution (score_normalise * relative_weight)
+    and formats the top 3 as a bulleted markdown string. Used as an AI-free fallback for
+    the refiner pitch.
+
+    Args:
+        commune: A CommuneResult instance or dictionary containing a populated `scores` dict.
+
+    Returns:
+        A markdown-formatted string listing the top 3 score contributors.
+    """
+    all_details = []
+    if hasattr(commune, "scores") and commune.scores:
+        for cat, details in commune.scores.items():
+            for detail in details:
+                if hasattr(detail, "score_normalise") and hasattr(
+                    detail, "relative_weight"
+                ):
+                    score_norm = detail.score_normalise
+                    rel_weight = detail.relative_weight
+                    label = detail.label
+                    valeur = detail.valeur_kpi
+                    unit = detail.unit
+                    score_id = detail.score_id
+                    strong_point = getattr(detail, "strong_point_text", "")
+                    adj = getattr(detail, "high_value_adjective", "")
+                elif isinstance(detail, dict):
+                    score_norm = detail.get("score_normalise", 0.0)
+                    rel_weight = detail.get("relative_weight", 0.0)
+                    label = detail.get("label", "")
+                    valeur = detail.get("valeur_kpi")
+                    unit = detail.get("unit", "")
+                    score_id = detail.get("score_id", "")
+                    strong_point = detail.get("strong_point_text", "")
+                    adj = detail.get("high_value_adjective", "")
+                else:
+                    continue
+
+                contrib = float(score_norm or 0.0) * float(rel_weight or 0.0)
+                all_details.append(
+                    (
+                        contrib,
+                        label,
+                        valeur,
+                        unit,
+                        rel_weight,
+                        score_id,
+                        strong_point,
+                        adj,
+                    )
+                )
+
+    all_details.sort(key=lambda x: x[0], reverse=True)
+    top_3 = all_details[:3]
+    if not top_3:
+        name = (
+            getattr(commune, "name", commune.get("name", "La commune"))
+            if commune
+            else "La commune"
+        )
+        return f"{name} se distingue particulièrement sur vos critères prioritaires."
+
+    pitch_lines = ["**Points forts du territoire :**"]
+    for contrib, label, valeur, unit, rel_weight, score_id, strong_point, adj in top_3:
+        val_str = str(valeur) if valeur is not None else "N/A"
+        unit_str = f" {unit}" if unit and unit not in ["description", ""] else ""
+
+        if strong_point:
+            display_title = strong_point
+        elif adj:
+            display_title = f"{label} ({adj})"
+        else:
+            display_title = label
+
+        # Clean multiline spaces
+        display_title = " ".join(display_title.split())
+
+        if score_id == "mob_gare_scaled":
+            val_str = "Gare SNCF présente" if valeur == "Oui" else "Pas de gare SNCF"
+            unit_str = ""
+            pitch_lines.append(f"- **{display_title}** : {val_str}")
+        else:
+            pitch_lines.append(f"- **{display_title}** : {val_str}{unit_str}")
+
+    return "\n".join(pitch_lines)
+
+
+def _build_fallback_pitches(
+    top_cities: Optional[list] = None,
+    commune_pressentie: Optional[dict] = None,
+) -> dict[str, Any]:
+    """Generate deterministic static pitches for all candidate cities on refiner failure.
+
+    Args:
+        top_cities: Serialized or model candidate cities.
+        commune_pressentie: Serialized or model comparison city.
+
+    Returns:
+        A dictionary with empty global pitch and per-codgeo static pitches.
+    """
+    pitches: dict[str, str] = {}
+    if top_cities:
+        for city in top_cities:
+            codgeo = str(
+                city.get("codgeo")
+                if isinstance(city, dict)
+                else getattr(city, "codgeo", "")
+            ).strip()
+            if codgeo:
+                pitches[codgeo] = generate_static_pitch(city)
+    if commune_pressentie:
+        codgeo = str(
+            commune_pressentie.get("codgeo")
+            if isinstance(commune_pressentie, dict)
+            else getattr(commune_pressentie, "codgeo", "")
+        ).strip()
+        if codgeo:
+            pitches[codgeo] = generate_static_pitch(commune_pressentie)
+    return {"global": "", "pitches": pitches}
+
+
 def launch_background_refining(
     search_criterias: Any,
     results_dict_ignored: dict,
@@ -258,6 +384,7 @@ def launch_background_refining(
     context = logfire.get_context()
     lock = threading.Lock()
     closed = False
+    fallback_pitches = _build_fallback_pitches(top_cities, commune_pressentie)
 
     def publish(payload: dict[str, Any]) -> None:
         """Publish one final result; ignore superseded and late completions.
@@ -276,11 +403,12 @@ def launch_background_refining(
             on_terminal()
 
     timer = threading.Timer(
-        ENRICHMENT_DEADLINE_SECONDS,
+        REFINER_DEADLINE_SECONDS,
         lambda: publish(
             {
                 "status_refiner": "timeout",
                 "pitches_error": "Refiner deadline exceeded",
+                "pitches": fallback_pitches,
             }
         ),
     )
@@ -293,72 +421,111 @@ def launch_background_refining(
         with lock:
             if closed or store.get(hash_val) is not entry:
                 return
-        try:
-            logfire.attach_context(context)
-            client = agent_config.get_gemini_client(attempts=2)
-            state = rehydrate_graph_state(
-                {
-                    "search_criteria": search_criterias,
-                    "search_results": {
-                        "search_hash": hash_val,
-                        "results": top_cities,
-                        "current_geo": current_geo
-                        or (top_cities[0] if top_cities else None),
-                        "commune_pressentie": commune_pressentie,
-                    }
-                    if top_cities
-                    else None,
-                    "execution_mode": "full_analysis",
-                    "interaction_id": interaction_id or "unknown",
-                    "username": username or "unknown",
-                }
-            )
-            deps = ODISDeps(state=state, client=client)
-            model = agent_config.get_p_model("refiner", client=client)
 
-            async def run_agent() -> Any:
-                """Execute the refiner under its transport cancellation deadline."""
-                return await asyncio.wait_for(
-                    refiner_agent.run(
-                        "Génère le briefing du dossier et les explications des résultats.",
-                        deps=deps,
-                        model=model,
-                    ),
-                    timeout=ENRICHMENT_DEADLINE_SECONDS,
+        start_time = time.monotonic()
+        deadline = start_time + REFINER_DEADLINE_SECONDS
+        last_exc: BaseException | None = None
+
+        for attempt in range(1, REFINER_MAX_ATTEMPTS + 1):
+            remaining_total = deadline - time.monotonic()
+            if remaining_total <= 1.0:
+                logger.warning(
+                    "Refiner attempt %d skipped: deadline exhausted (%.1fs left)",
+                    attempt,
+                    remaining_total,
+                )
+                break
+
+            per_attempt_timeout = (
+                min(7.0, remaining_total - 1.0)
+                if attempt < REFINER_MAX_ATTEMPTS
+                else remaining_total
+            )
+
+            try:
+                logfire.attach_context(context)
+                client = agent_config.get_gemini_client(
+                    attempts=1, timeout=per_attempt_timeout
+                )
+                state = rehydrate_graph_state(
+                    {
+                        "search_criteria": search_criterias,
+                        "search_results": {
+                            "search_hash": hash_val,
+                            "results": top_cities,
+                            "current_geo": current_geo
+                            or (top_cities[0] if top_cities else None),
+                            "commune_pressentie": commune_pressentie,
+                        }
+                        if top_cities
+                        else None,
+                        "execution_mode": "full_analysis",
+                        "interaction_id": interaction_id or "unknown",
+                        "username": username or "unknown",
+                    }
+                )
+                deps = ODISDeps(state=state, client=client)
+                model = agent_config.get_p_model("refiner", client=client)
+
+                async def run_agent() -> Any:
+                    """Execute the refiner under its transport cancellation deadline."""
+                    return await asyncio.wait_for(
+                        refiner_agent.run(
+                            "Génère le briefing du dossier et les explications des résultats.",
+                            deps=deps,
+                            model=model,
+                        ),
+                        timeout=per_attempt_timeout,
+                    )
+
+                with asyncio.Runner() as runner:
+                    result = runner.run(run_agent()).output
+
+                publish(
+                    {
+                        "status_refiner": "done",
+                        "odis_brief": sanitize_llm_markdown(result.odis_brief),
+                        "pitches": {
+                            "global": sanitize_llm_markdown(result.global_pitch),
+                            "pitches": {
+                                str(p.codgeo).strip(): sanitize_llm_markdown(p.pitch)
+                                for p in result.pitches_per_city
+                            },
+                        },
+                    }
+                )
+                return
+            except BaseException as exc:
+                last_exc = exc
+                logger.warning(
+                    "Refiner attempt %d/%d failed (%.1fs remaining): %s",
+                    attempt,
+                    REFINER_MAX_ATTEMPTS,
+                    deadline - time.monotonic(),
+                    exc,
                 )
 
-            with asyncio.Runner() as runner:
-                result = runner.run(run_agent()).output
-            publish(
-                {
-                    "status_refiner": "done",
-                    "odis_brief": sanitize_llm_markdown(result.odis_brief),
-                    "pitches": {
-                        "global": sanitize_llm_markdown(result.global_pitch),
-                        "pitches": {
-                            str(p.codgeo).strip(): sanitize_llm_markdown(p.pitch)
-                            for p in result.pitches_per_city
-                        },
-                    },
-                }
-            )
-        except Exception as exc:
-            logger.exception("Background refiner failed")
-            publish(
-                {
-                    "status_refiner": "timeout"
-                    if isinstance(exc, TimeoutError)
-                    else "error",
-                    "pitches_error": "Refiner unavailable",
-                }
-            )
+        logger.exception("Background refiner failed all attempts: %s", last_exc)
+        publish(
+            {
+                "status_refiner": "timeout"
+                if isinstance(last_exc, (TimeoutError, asyncio.TimeoutError))
+                else "error",
+                "pitches_error": "Refiner unavailable",
+                "pitches": fallback_pitches,
+            }
+        )
 
     try:
         submit_background_work(work)
     except RuntimeError:
         logger.exception("Refiner executor unavailable")
         publish(
-            {"status_refiner": "error", "pitches_error": "Refiner executor unavailable"}
+            {
+                "status_refiner": "error",
+                "pitches_error": "Refiner executor unavailable",
+                "pitches": fallback_pitches,
+            }
         )
 
 
@@ -1060,96 +1227,7 @@ def launch_background_audit_log(
     thread.start()
 
 
-from typing import Union
 
-
-def generate_static_pitch(commune: Union[CommuneResult, Dict[str, Any]]) -> str:
-    """Generates a static pitch list showing the top 3 contributing score indicators.
-
-    Ranks all score details by their weighted contribution (score_normalise * relative_weight)
-    and formats the top 3 as a bulleted markdown string. Used as an AI-free fallback for
-    the refiner pitch.
-
-    Args:
-        commune: A CommuneResult instance or dictionary containing a populated `scores` dict.
-
-    Returns:
-        A markdown-formatted string listing the top 3 score contributors.
-    """
-    all_details = []
-    if hasattr(commune, "scores") and commune.scores:
-        for cat, details in commune.scores.items():
-            for detail in details:
-                if hasattr(detail, "score_normalise") and hasattr(
-                    detail, "relative_weight"
-                ):
-                    score_norm = detail.score_normalise
-                    rel_weight = detail.relative_weight
-                    label = detail.label
-                    valeur = detail.valeur_kpi
-                    unit = detail.unit
-                    score_id = detail.score_id
-                    strong_point = getattr(detail, "strong_point_text", "")
-                    adj = getattr(detail, "high_value_adjective", "")
-                elif isinstance(detail, dict):
-                    score_norm = detail.get("score_normalise", 0.0)
-                    rel_weight = detail.get("relative_weight", 0.0)
-                    label = detail.get("label", "")
-                    valeur = detail.get("valeur_kpi")
-                    unit = detail.get("unit", "")
-                    score_id = detail.get("score_id", "")
-                    strong_point = detail.get("strong_point_text", "")
-                    adj = detail.get("high_value_adjective", "")
-                else:
-                    continue
-
-                contrib = float(score_norm or 0.0) * float(rel_weight or 0.0)
-                all_details.append(
-                    (
-                        contrib,
-                        label,
-                        valeur,
-                        unit,
-                        rel_weight,
-                        score_id,
-                        strong_point,
-                        adj,
-                    )
-                )
-
-    all_details.sort(key=lambda x: x[0], reverse=True)
-    top_3 = all_details[:3]
-    if not top_3:
-        name = (
-            getattr(commune, "name", commune.get("name", "La commune"))
-            if commune
-            else "La commune"
-        )
-        return f"{name} se distingue particulièrement sur vos critères prioritaires."
-
-    pitch_lines = ["**Points forts du territoire :**"]
-    for contrib, label, valeur, unit, rel_weight, score_id, strong_point, adj in top_3:
-        val_str = str(valeur) if valeur is not None else "N/A"
-        unit_str = f" {unit}" if unit and unit not in ["description", ""] else ""
-
-        if strong_point:
-            display_title = strong_point
-        elif adj:
-            display_title = f"{label} ({adj})"
-        else:
-            display_title = label
-
-        # Clean multiline spaces
-        display_title = " ".join(display_title.split())
-
-        if score_id == "mob_gare_scaled":
-            val_str = "Gare SNCF présente" if valeur == "Oui" else "Pas de gare SNCF"
-            unit_str = ""
-            pitch_lines.append(f"- **{display_title}** : {val_str}")
-        else:
-            pitch_lines.append(f"- **{display_title}** : {val_str}{unit_str}")
-
-    return "\n".join(pitch_lines)
 
 
 class PostScoringRun:
