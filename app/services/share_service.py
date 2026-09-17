@@ -8,7 +8,7 @@ import ast
 import re
 import copy
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Tuple, Optional, Any, Dict, List
 
 import zoneinfo
@@ -394,6 +394,7 @@ def save_shared_search(
         bucket = gcs_client.bucket(bucket_name)
         blob = bucket.blob(f"searches/{share_id}.json")
         blob.content_encoding = "gzip"
+        blob.custom_time = datetime.now(timezone.utc)
         blob.upload_from_string(
             compressed_bytes,
             content_type="application/json",
@@ -640,6 +641,18 @@ def load_shared_search_snapshot_outcome(
             share_id,
             exc_info=True,
         )
+
+    # Refresh sliding retention TTL (1 year) in GCS via Custom-Time
+    if hasattr(blob, "patch"):
+        try:
+            blob.custom_time = datetime.now(timezone.utc)
+            blob.patch()
+        except Exception as exc:
+            logger.warning(
+                "Failed to refresh custom_time for shared search %s: %s",
+                share_id,
+                exc,
+            )
 
     logger.info("Loaded shared search snapshot from GCS: share_id=%s", share_id)
     return ServiceOutcome(status=OutcomeStatus.SUCCESS, value=snapshot)

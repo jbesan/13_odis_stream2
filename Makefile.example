@@ -12,6 +12,7 @@ PROJECT_ID ?= $(ODIS_GCP_PROJECT_ID)
 REGION ?= $(if $(ODIS_GCP_REGION),$(ODIS_GCP_REGION),europe-west1)
 STAGING_SOURCE_BUCKET ?= $(ODIS_GCP_CLOUDBUILD_BUCKET)
 DATASETS_BUCKET ?= $(if $(GCS_DATASETS_BUCKET),$(GCS_DATASETS_BUCKET),odis-stream2-app-data-euw1)
+SHARES_BUCKET ?= $(if $(GCS_SHARED_SEARCHES_BUCKET),$(GCS_SHARED_SEARCHES_BUCKET),odis-stream2-app-shares-euw1)
 GIT_SHA ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 TAG ?= $(GIT_SHA)
 
@@ -76,7 +77,9 @@ harden-buckets: check-config
 	@echo "Configuring Public Access Prevention on $(STAGING_SOURCE_BUCKET)..."
 	gcloud storage buckets update $(STAGING_SOURCE_BUCKET) --public-access-prevention
 	@echo "Applying 7-day source lifecycle rule on $(STAGING_SOURCE_BUCKET)..."
-	gcloud storage buckets update $(STAGING_SOURCE_BUCKET) --lifecycle-file=.agents/GCP_migration/lifecycle-cloudbuild-source-7d.json
+	gcloud storage buckets update $(STAGING_SOURCE_BUCKET) --lifecycle-file=.agents/infra/retention/lifecycle_cloudbuild_7d.json
+	@echo "Applying 1-year sliding lifecycle rule on gs://$(SHARES_BUCKET)..."
+	gcloud storage buckets update gs://$(SHARES_BUCKET) --lifecycle-file=.agents/infra/retention/lifecycle_shares_1y.json
 	@echo "Bucket hardening complete."
 
 check-us-buckets: check-config

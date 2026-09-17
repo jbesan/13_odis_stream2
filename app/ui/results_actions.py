@@ -204,7 +204,7 @@ def share_search_modal():
     permalink = f"{base_url}/?search={share_id}"
 
     st.markdown(
-        "Le lien ci-dessous permet de retrouver les résultats de cette recherche tels quels sans relancer les calculs associés. Ces résultats sont accessibles pendant **90 jours**."
+        "Le lien ci-dessous permet de retrouver les résultats de cette recherche tels quels sans relancer les calculs associés. Ces résultats sont accessibles pendant **1 an** (prolongé à chaque consultation)."
     )
 
     st.code(permalink, language=None)
