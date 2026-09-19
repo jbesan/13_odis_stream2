@@ -2,6 +2,8 @@ import os
 import yaml
 import pandas as pd
 import geopandas as gpd
+import openpyxl  # noqa: F401  # Mandatory top-level import: fail fast if excel engine is missing
+import python_calamine  # noqa: F401  # Mandatory top-level import: fail fast if calamine engine is missing
 import logging
 import json
 import zipfile

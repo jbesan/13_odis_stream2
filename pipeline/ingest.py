@@ -58,11 +58,11 @@ def _data_project() -> str:
 def _rna_rag_table_id(config: Optional[Dict[str, Any]] = None) -> str:
     """Resolve the target RNA table from config without a source-project default."""
     source_config = (config or {}).get("sources", {}).get("rna_rag", {})
-    table = source_config.get("table", "rna_rag.rna_rag")
+    table = source_config.get("table", "rna_rag.rna_rag_clustered")
     if not isinstance(table, str) or table.count(".") != 1:
         raise ValueError(
             "sources.rna_rag.table must use the dataset.table form (for example "
-            "rna_rag.rna_rag)"
+            "rna_rag.rna_rag_clustered)"
         )
     return f"{_data_project()}.{table}"
 

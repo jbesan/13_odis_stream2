@@ -87,7 +87,7 @@ class RNARagService:
         codgeos: Optional[List[str]] = None,
         bv_code: Optional[str] = None,
         top_k: int = 10,
-        inclusion_only: bool = True,
+        inclusion_only: bool = False,
         threshold: float = 0.70,
     ) -> List[Dict[str, Any]]:
         """
@@ -95,11 +95,11 @@ class RNARagService:
         Uses BigQuery ML.DISTANCE natively for cosine similarity.
 
         Args:
-            query: The search term (e.g. 'football', 'hébergement')
+            query: The search term (e.g. 'football', 'hébergement', 'mosquée')
             codgeos: List of 5-digit INSEE codes (used as fallback or specific filter)
             bv_code: Optional Bassin de Vie code for broader search
             top_k: Number of results to return
-            inclusion_only: If True, filters for is_inclusion_relevant associations
+            inclusion_only: If True, filters strictly for is_inclusion_relevant associations
             threshold: Minimum similarity score (default 0.70)
 
         Returns:
@@ -118,20 +118,19 @@ class RNARagService:
             query_vector = self._get_embedding(query)
 
             # 2. Query BigQuery using native ML.DISTANCE
-            table_id = f"{self.data_project}.rna_rag.rna_rag"
-            import config as cfg
+            table_id = f"{self.data_project}.rna_rag.rna_rag_clustered"
 
             where_geo = (
                 "code_bdv = @bv_code" if bv_code else "codgeo IN UNNEST(@codgeos)"
             )
+            filter_inclusion = "AND is_inclusion_relevant = TRUE" if inclusion_only else ""
 
             query_bq = f"""
                 SELECT id, titre_court as name, primary_category, code_waldec, categorie, description, codgeo,
                        (1.0 - ML.DISTANCE(ARRAY(SELECT element FROM UNNEST(embedding_128.list)), @query_vec, 'COSINE')) as score
                 FROM `{table_id}`
                 WHERE {where_geo}
-                  AND SUBSTR(code_waldec, 1, 3) IN UNNEST(@allowed_prefixes)
-                  {"AND is_inclusion_relevant = TRUE" if inclusion_only else ""}
+                  {filter_inclusion}
                   AND (1.0 - ML.DISTANCE(ARRAY(SELECT element FROM UNNEST(embedding_128.list)), @query_vec, 'COSINE')) > @threshold
                 ORDER BY score DESC
                 LIMIT @top_k
@@ -140,9 +139,6 @@ class RNARagService:
             from google.cloud import bigquery
 
             params = [
-                bigquery.ArrayQueryParameter(
-                    "allowed_prefixes", "STRING", cfg.WALDEC_CATEGORIES
-                ),
                 bigquery.ArrayQueryParameter(
                     "query_vec", "FLOAT64", query_vector.tolist()
                 ),
@@ -186,7 +182,7 @@ class RNARagService:
         try:
             import config as cfg
 
-            table_id = f"{self.data_project}.rna_rag.rna_rag"
+            table_id = f"{self.data_project}.rna_rag.rna_rag_clustered"
             query_bq = f"""
                 SELECT id, titre_court as name, primary_category, code_waldec, categorie, description, max_score, is_refugee_focused, codgeo
                 FROM `{table_id}`
@@ -198,9 +194,6 @@ class RNARagService:
             job_config = bigquery.QueryJobConfig(
                 query_parameters=[
                     bigquery.ArrayQueryParameter("codgeos", "STRING", codgeos),
-                    bigquery.ArrayQueryParameter(
-                        "allowed_prefixes", "STRING", cfg.WALDEC_CATEGORIES
-                    ),
                 ]
             )
 
