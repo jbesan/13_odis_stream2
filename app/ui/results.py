@@ -169,65 +169,6 @@ def render_details_trigger_button(commune: CommuneResult, h: Optional[str]) -> b
     return ready
 
 
-@st.fragment(run_every=2.0)
-def _render_ai_polling_button(commune: CommuneResult, h: Optional[str]) -> bool:
-    """Internal polling fragment for in-progress AI analysis."""
-    task_key = f"analysis_{h}_{commune.codgeo}" if h else f"analysis_{commune.codgeo}"
-    status_data = odis_get_bg_result(task_key) if h else None
-    status = status_data.get("status") if isinstance(status_data, dict) else None
-    has_analysis = bool(
-        getattr(commune, "analysis_report", None)
-        or getattr(commune, "odis_synthesis", None)
-    )
-
-    # If completed or failed while polling, do a single rerun to transition to static button
-    if has_analysis or status in {"done", "error", "timeout", "cancelled"}:
-        st.rerun()
-
-    # Running state
-    if status == "running":
-        start_time = (
-            status_data.get("start_time", 0) if isinstance(status_data, dict) else 0
-        )
-        elapsed = time.time() - start_time if start_time else 0
-        btn_label = (
-            "Analyse Avancée [Lancement...]"
-            if elapsed < 1.0
-            else "Analyse Avancée [En cours...]"
-        )
-        st.button(
-            btn_label,
-            key=f"btn_ia_comm_{commune.codgeo}",
-            icon=":material/wand_stars:",
-            width="stretch",
-            disabled=True,
-        )
-        return False
-
-    # An automatic top-five stage is planned by PostScoringRun. Wait for its
-    # coordinator; this fragment must never create a second, manual-looking
-    # run when the feature flag is enabled.
-    ready = _is_postscoring_ready_for_city(commune, h)
-    if not ready:
-        st.button(
-            "Analyse Avancée [Lancement...]",
-            key=f"btn_ia_comm_{commune.codgeo}",
-            icon=":material/wand_stars:",
-            width="stretch",
-            disabled=True,
-        )
-        return False
-
-    st.button(
-        "Analyse Avancée [Lancement...]",
-        key=f"btn_ia_comm_{commune.codgeo}",
-        icon=":material/wand_stars:",
-        width="stretch",
-        disabled=True,
-    )
-    return False
-
-
 def _is_auto_analysis_planned(commune: CommuneResult, h: Optional[str]) -> bool:
     """Return whether the post-scoring coordinator owns this city's analysis."""
     if not h:
@@ -242,12 +183,12 @@ def _is_auto_analysis_planned(commune: CommuneResult, h: Optional[str]) -> bool:
     return isinstance(step, dict) and step.get("status") in {"waiting", "dispatched"}
 
 
+@st.fragment(run_every=2.0)
 def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
     """Renders the AI Analysis trigger button with up-to-date state in-place.
 
-    Uses static buttons for terminal states (done, error, snapshot) to allow
-    opening modal dialogs directly without fragment interference, and delegates
-    to an isolated polling fragment only during active in-progress executions.
+    Self-refreshing fragment that automatically transitions from preparation to ready,
+    reflects live background execution states, and opens the modal dialog on click.
     """
     has_analysis = bool(
         getattr(commune, "analysis_report", None)
@@ -285,7 +226,8 @@ def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
 
     # 3. Completed state (in memory or freshly finished in bg store)
     if has_analysis or status == "done":
-        if status == "done" and not has_analysis and status_data:
+        just_completed = bool(status == "done" and not has_analysis and status_data)
+        if just_completed:
             _merge_agent_results(
                 status_data.get("result"), str(commune.codgeo), commune
             )
@@ -299,6 +241,10 @@ def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
                 icon="✨",
                 duration="long",
             )
+
+        # If dialog is currently open for this city, refresh page to reveal full synthesis
+        if just_completed and st.session_state.get("active_ia_city_index") == commune.codgeo:
+            st.rerun()
 
         if st.button(
             "Analyse Avancée",
@@ -348,27 +294,54 @@ def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
                 st.rerun()
         return False
 
-    # 5. In-progress executions and planned automatic stages use the polling
-    # fragment. A missing task for a planned city means the coordinator has not
-    # joined its prerequisites yet; it must remain disabled rather than launch
-    # a duplicate task from the UI.
-    auto_planned = _is_auto_analysis_planned(commune, h)
-    if status == "running" or auto_planned:
-        # In bare-mode test environments (no ScriptRunContext), call unwrapped logic directly
-        if get_script_run_ctx() is None:
-            target = getattr(
-                _render_ai_polling_button, "__wrapped__", _render_ai_polling_button
-            )
-            return target(commune, h)
-        return _render_ai_polling_button(commune, h)
+    # 5. Running state
+    if status == "running":
+        start_time = (
+            status_data.get("start_time", 0) if isinstance(status_data, dict) else 0
+        )
+        elapsed = time.time() - start_time if start_time else 0
+        btn_label = (
+            "Analyse Avancée [Lancement...]"
+            if elapsed < 1.0
+            else "Analyse Avancée [En cours...]"
+        )
+        st.button(
+            btn_label,
+            key=f"btn_ia_comm_{commune.codgeo}",
+            icon=":material/wand_stars:",
+            width="stretch",
+            disabled=True,
+        )
+        return False
 
-    # 6. No automatic stage owns this city: expose the manual trigger once the
-    # deterministic prerequisites are ready.
+    # 6. Postscoring readiness check (hydration + refiner)
     ready = _is_postscoring_ready_for_city(commune, h)
+    if not ready:
+        st.button(
+            "Analyse Avancée [Préparation...]",
+            key=f"btn_ia_comm_{commune.codgeo}",
+            icon=":material/wand_stars:",
+            width="stretch",
+            disabled=True,
+        )
+        return False
+
+    # 7. Auto-analysis planned by PostScoringRun coordinator
+    if _is_auto_analysis_planned(commune, h):
+        st.button(
+            "Analyse Avancée [Lancement...]",
+            key=f"btn_ia_comm_{commune.codgeo}",
+            icon=":material/wand_stars:",
+            width="stretch",
+            disabled=True,
+        )
+        return False
+
+    # 8. Ready for manual launch
     can_launch = bool(ready and h and st.session_state.get("search_results"))
     if (
         st.button(
-            "Analyse Avancée" if ready else "Analyse Avancée [Préparation...]",
+            "Analyse Avancée",
             key=f"btn_ia_comm_{commune.codgeo}",
             icon=":material/wand_stars:",
             width="stretch",
