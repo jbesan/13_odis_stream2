@@ -9,7 +9,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "a
 
 from agents.job_hunter import job_hunter_agent
 from agents.state import GraphState, ODISDeps
-from agents.tools import search_job_offers_batch
+from agents.tools import search_job_offers_batch, JobOfferSearchQuery
 
 from core.models import CommuneResult
 
@@ -35,8 +35,8 @@ async def test_search_job_offers_batch_logic():
         mock_logic.return_value = {"offres": [], "total": 10}
 
         queries = [
-            {"rome": "D1102", "location": "75056"},
-            {"rome": "D1104", "location": "75056"},
+            JobOfferSearchQuery(rome="D1102", location="75056"),
+            JobOfferSearchQuery(rome="D1104", location="75056"),
         ]
 
         results = await search_job_offers_batch(queries)
@@ -85,12 +85,12 @@ async def test_job_hunter_execution_with_batch_mock(test_deps):
 
         with (
             patch(
-                "agents.job_hunter.search_referentiels_batch", new_callable=AsyncMock
+                "agents.tools.search_referentiels_batch", new_callable=AsyncMock
             ) as mock_ref,
             patch(
-                "agents.job_hunter.search_job_offers_batch", new_callable=AsyncMock
+                "agents.tools.search_job_offers_batch", new_callable=AsyncMock
             ) as mock_jobs,
-            patch("agents.job_hunter.get_job_details", return_value={}),
+            patch("agents.tools.get_job_details", return_value={}),
         ):
             mock_ref.return_value = {
                 "communes:Paris": [{"code": "75056", "label": "Paris"}]

@@ -20,7 +20,7 @@ async def test_interviewer_agent_prompt_construction(test_deps):
         from unittest.mock import AsyncMock
 
         with patch(
-            "agents.interviewer.search_referentiels_batch", new_callable=AsyncMock
+            "agents.tools.search_referentiels_batch", new_callable=AsyncMock
         ) as mock_ref:
             mock_ref.return_value = {}
             # We just need to check if it runs, which triggers prompt construction
@@ -36,7 +36,7 @@ async def test_interviewer_structured_output(test_deps):
         from unittest.mock import AsyncMock
 
         with patch(
-            "agents.interviewer.search_referentiels_batch", new_callable=AsyncMock
+            "agents.tools.search_referentiels_batch", new_callable=AsyncMock
         ) as mock_ref:
             mock_ref.return_value = {}
             result = await interviewer_agent.run(

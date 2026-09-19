@@ -185,4 +185,43 @@ def test_admin_users_normalization(tmp_path, monkeypatch):
     assert "  Admin@Example.COM  " not in admin_users
 
 
+def test_admin_users_invalid_json_logged(tmp_path, monkeypatch, caplog):
+    """Verify malformed ADMIN_USERS_JSON logs an error and falls back to empty list."""
+    target_path = str(tmp_path / "secrets.toml")
+    monkeypatch.setenv("OIDC_AUTHORIZATION_POLICY_JSON", VALID_POLICY_JSON)
+    monkeypatch.setenv("OIDC_CLIENT_ID", "mock-id")
+    monkeypatch.setenv("OIDC_CLIENT_SECRET", "mock-secret")
+    monkeypatch.setenv("OIDC_COOKIE_SECRET", "mock-cookie-secret-32-chars-long")
+    monkeypatch.setenv("OIDC_REDIRECT_URI", "https://mock.app/oauth2callback")
+    monkeypatch.setenv("ADMIN_USERS_JSON", "{invalid-json")
+
+    with caplog.at_level("ERROR"):
+        generate_secrets_file(target_path, is_cloud_run=False)
+
+    assert "Failed to parse ADMIN_USERS_JSON as JSON" in caplog.text
+    with open(target_path, "rb") as f:
+        data = tomllib.load(f)
+    assert data["auth"]["admin_users"] == []
+
+
+def test_admin_users_non_list_logged(tmp_path, monkeypatch, caplog):
+    """Verify non-list ADMIN_USERS_JSON logs an error and falls back to empty list."""
+    target_path = str(tmp_path / "secrets.toml")
+    monkeypatch.setenv("OIDC_AUTHORIZATION_POLICY_JSON", VALID_POLICY_JSON)
+    monkeypatch.setenv("OIDC_CLIENT_ID", "mock-id")
+    monkeypatch.setenv("OIDC_CLIENT_SECRET", "mock-secret")
+    monkeypatch.setenv("OIDC_COOKIE_SECRET", "mock-cookie-secret-32-chars-long")
+    monkeypatch.setenv("OIDC_REDIRECT_URI", "https://mock.app/oauth2callback")
+    monkeypatch.setenv("ADMIN_USERS_JSON", '{"not": "a list"}')
+
+    with caplog.at_level("ERROR"):
+        generate_secrets_file(target_path, is_cloud_run=False)
+
+    assert "ADMIN_USERS_JSON must be a JSON array, got dict" in caplog.text
+    with open(target_path, "rb") as f:
+        data = tomllib.load(f)
+    assert data["auth"]["admin_users"] == []
+
+
+
 

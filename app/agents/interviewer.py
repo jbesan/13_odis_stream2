@@ -1,11 +1,10 @@
 import logging
-import logfire
-from typing import List, Dict, Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
 from pydantic import BaseModel, Field, ConfigDict
 from pydantic_ai import Agent, RunContext
 from .state import ODISDeps
 from .agent_config import create_agent
-from .tools import search_referentiels_batch
+from .tools import search_referentiels_batch_tool
 import config as cfg
 from core.models import SearchCriterias
 
@@ -14,14 +13,6 @@ if TYPE_CHECKING:
     from .state import ODISDeps
 
 logger = logging.getLogger("autodetect_agent")
-
-
-class SearchQuery(BaseModel):
-    query: str = Field(..., description="Mot clé de recherche")
-    domain: str = Field(
-        ...,
-        description="Domaine de recherche possibles:['formation_codes', 'inclusion_services', 'waldec_codes', 'rome_codes', 'regions', 'departements', 'communes', 'housing_types'].",
-    )
 
 
 class AutoDetectionResult(BaseModel):
@@ -38,11 +29,11 @@ AUTODETECT_SYSTEM_PROMPT = """
 **Objectif**: Analyser un texte non structuré (notes d'entretien, email) et extraire les critères de relocalisation sous un format structuré.
 
 **RÈGLES D'OR**:
-1. Utilise TOUJOURS le tool `search_referentiels_batch` pour normaliser les lieux et métiers en codes officiels (ex: ville -> code INSEE).
+1. Utilise le tool `search_referentiels_batch_tool` pour normaliser les lieux et métiers en codes officiels (ex: ville -> code INSEE).
 2. Remplis UNIQUEMENT les champs du formulaire qui sont explicitement mentionnés dans le texte. Ne devine pas.
 3. **Réponse (`response`)** : Rédige un message très court et courtois pour confirmer que tu as bien extrait les critères (ex: "C'est noté, j'ai bien identifié votre projet de relocalisation à..."). La synthèse narrative complète sera générée ultérieurement par l'agent Refiner.
 
-**DOMAINES DE NORMALISATION** (pour search_referentiels_batch):
+**DOMAINES DE NORMALISATION** (pour search_referentiels_batch_tool):
 - Départ: `Commune actuelle de résidence` (domain: 'communes')
 - Cible: `Zone de recherche (département, région, France)` (domain: 'regions' ou 'departements')
 - Projet Pro: `Métiers ciblés par adulte` (domain: 'rome_codes') et `Formations ciblées` (domain: 'formation_codes')
@@ -57,20 +48,6 @@ AUTODETECT_SYSTEM_PROMPT = """
 - Besoin de santé spécifique: {SANTE_OPTIONS}
 - Profil de pondération: {WEIGHT_PROFILES}
 """
-
-
-@logfire.instrument
-async def search_referentiels_batch_tool(
-    searches: List[SearchQuery],
-) -> Dict[str, List[Dict[str, Any]]]:
-    """
-    Version optimisée pour effectuer plusieurs recherches de référentiels en UN SEUL tour.
-    Utilise cet outil si tu as plusieurs informations à normaliser (ex: ville + métier).
-
-    Args:
-        searches (List[SearchQuery]): Liste d'objets {query, domain}. Domaine de recherche possibles:['formation_codes', 'inclusion_services', 'waldec_codes', 'rome_codes', 'regions', 'departements', 'communes', 'housing_types'].
-    """
-    return await search_referentiels_batch([s.model_dump() for s in searches])
 
 
 interviewer_agent: Agent[ODISDeps, AutoDetectionResult] = create_agent(

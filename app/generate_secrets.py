@@ -289,8 +289,16 @@ def generate_secrets_file(
     try:
         raw_admins = json.loads(os.getenv("ADMIN_USERS_JSON", "[]"))
         if not isinstance(raw_admins, list):
+            logger.error(
+                "ADMIN_USERS_JSON must be a JSON array, got %s. Falling back to empty list.",
+                type(raw_admins).__name__,
+            )
             raw_admins = []
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as exc:
+        logger.error(
+            "Failed to parse ADMIN_USERS_JSON as JSON: %s. Falling back to empty list.",
+            exc,
+        )
         raw_admins = []
 
     admin_users: list[str] = [

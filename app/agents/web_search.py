@@ -38,6 +38,8 @@ WEB_SEARCH_TOOL_ID = "search_web_batch_tool"
 WEB_SEARCH_MODEL = "gemini-3.1-flash-lite"
 WEB_SEARCH_MODEL_ID = f"google:{WEB_SEARCH_MODEL}"
 MAX_WEB_SEARCH_NEEDS = 6
+DEFAULT_WEB_SEARCH_TIMEOUT_SECONDS = 10.0
+WEB_SEARCH_SAFETY_MARGIN_SECONDS = 15.0
 
 
 # Do not constrain the response to JSON or instruct Gemini to suppress native
@@ -263,7 +265,7 @@ async def execute_web_search_batch(
     client: Any,
     model: str = WEB_SEARCH_MODEL,
     node_name: str = "web_search_batch",
-    timeout_seconds: float = 30.0,
+    timeout_seconds: float = DEFAULT_WEB_SEARCH_TIMEOUT_SECONDS,
 ) -> tuple[WebSearchBatchResult, UsageStats]:
     """Execute one direct Gemini grounding request for the complete batch."""
 
@@ -273,12 +275,14 @@ async def execute_web_search_batch(
     if client is None:
         return WebSearchBatchResult(status="unavailable"), UsageStats()
 
+    timeout_ms = max(int(timeout_seconds * 1000), 100)
     config = types.GenerateContentConfig(
         system_instruction=_DIRECT_SYSTEM_INSTRUCTION,
         temperature=0.0,
         max_output_tokens=1600,
         thinking_config=types.ThinkingConfig(thinking_budget=0),
         tools=[types.Tool(google_search=types.GoogleSearch())],
+        http_options=types.HttpOptions(timeout=timeout_ms),
     )
     async with asyncio.timeout(timeout_seconds):
         response = await client.aio.models.generate_content(
@@ -326,14 +330,29 @@ async def search_web_batch_tool(
         "search_count": min(len(searches), MAX_WEB_SEARCH_NEEDS),
         "tool_id": WEB_SEARCH_TOOL_ID,
     }
+    timeout_seconds = DEFAULT_WEB_SEARCH_TIMEOUT_SECONDS
+    if state.run_deadline_at is not None:
+        remaining_for_search = (
+            state.run_deadline_at - time.time() - WEB_SEARCH_SAFETY_MARGIN_SECONDS
+        )
+        if remaining_for_search <= 1.0:
+            logger.warning(
+                "Web search skipped for scope %s: insufficient time before graph deadline (%.1fs remaining, %.1fs safety margin required)",
+                scope,
+                max(state.run_deadline_at - time.time(), 0.0),
+                WEB_SEARCH_SAFETY_MARGIN_SECONDS,
+            )
+            logfire.info(
+                "Web Search batch skipped (insufficient deadline)",
+                **attrs,
+                remaining_seconds=max(state.run_deadline_at - time.time(), 0.0),
+                safety_margin_seconds=WEB_SEARCH_SAFETY_MARGIN_SECONDS,
+            )
+            return WebSearchCompactResult(status="unavailable")
+        timeout_seconds = min(timeout_seconds, remaining_for_search)
+
     try:
         with logfire.span("Web Search batch Gemini", **attrs):
-            timeout_seconds = 30.0
-            if state.run_deadline_at is not None:
-                timeout_seconds = min(
-                    timeout_seconds,
-                    max(state.run_deadline_at - time.time(), 0.1),
-                )
             result, usage = await execute_web_search_batch(
                 searches,
                 client=deps.client,
@@ -355,6 +374,20 @@ async def search_web_batch_tool(
             grounding_confirmed=bool(result.sources or result.grounding_supports),
         )
         return result.to_compact()
+    except TimeoutError:
+        logger.warning(
+            "Direct Gemini web search timed out after %.1fs for scope %s (%d searches); continuing with ungrounded fallback",
+            timeout_seconds,
+            scope,
+            min(len(searches), MAX_WEB_SEARCH_NEEDS),
+        )
+        logfire.info(
+            "Web Search batch timed out",
+            **attrs,
+            timeout_seconds=timeout_seconds,
+            error_type="TimeoutError",
+        )
+        return WebSearchCompactResult(status="unavailable")
     except Exception as exc:
         logger.exception("Direct Gemini web search failed")
         logfire.info(

@@ -907,12 +907,18 @@ def _search_rna_rag_logic(
 def search_rna_rag(
     query: str, codgeo: str, top_k: int = 10
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
-    """
-    Recherche sémantique d'associations dans une commune spécifique (RAG).
-    Retourne les associations les plus pertinentes (score > 0.70) triées par pertinence.
+    """Recherche d'associations locales (RNA) par mot-clé avec classement BM25 pondéré.
+
+    Règles pour maximiser le rappel (recall) :
+    - Utiliser des termes statutaires concrets et directs déclarés en préfecture
+      (ex: 'cours de francais', 'alphabetisation', 'FLE', 'aide alimentaire',
+      'maraude', 'mosquee', 'club de football', 'hebergement d urgence').
+    - Éviter les concepts administratifs abstraits (ex: ne pas chercher 'inclusion des publics vulnerables').
+    - Utiliser des groupes nominaux de 2 à 4 mots sans phrases conversationnelles.
+    - Ne jamais inclure le nom de la ville dans la requête (le filtrage géographique est fait via codgeo).
 
     Args:
-        query: Terme de recherche (ex: 'football', 'hébergement d'urgence').
+        query: Mots-clés concrets de recherche (ex: 'cours de francais FLE', 'club football').
         codgeo: Code INSEE de la commune (5 chiffres).
         top_k: Nombre maximum de résultats à retourner.
     """

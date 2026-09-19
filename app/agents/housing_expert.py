@@ -1,12 +1,11 @@
 import logging
-from typing import List, Dict, Any
 from pydantic_ai import Agent, RunContext
 from pydantic import BaseModel, Field
 from .state import ODISDeps, ODISContextBuilder
 from .agent_config import create_agent, get_swarm_boilerplate
 from .tools import (
-    search_places_batch,
-    compute_routes,
+    search_places_batch_tool,
+    compute_routes_tool,
 )
 
 logger = logging.getLogger("housing_expert")
@@ -34,9 +33,17 @@ class HousingResult(BaseModel):
 HOUSING_EXPERT_SYSTEM_PROMPT = """
 {SWARM_BOILERPLATE}
 
-# Contexte commun du dossier (préfixe stable entre experts) :
+# Projet de vie du bénéficiaire (Briefing du Travailleur Social) :
+{DOSSIER_BRIEFING}
+
+# Critères de recherche du foyer :
 ```json
-{COMMON_CONTEXT}
+{CRITERIA_CONTEXT}
+```
+
+# Commune à analyser :
+```json
+{COMMUNE_CONTEXT}
 ```
 
 # Contexte spécifique au logement :
@@ -54,23 +61,6 @@ HOUSING_EXPERT_SYSTEM_PROMPT = """
 """
 
 
-async def search_places_batch_tool(queries: List[str], location: str) -> Dict[str, Any]:
-    """Recherche des structures ou services de logement d'urgence en mode batch.
-    À utiliser avec parcimonie : un seul appel batch par mission regroupant au maximum 3 à 5 requêtes ciblées indispensables.
-    Args:
-        queries: Liste de requêtes ciblées (ex: ['CHRS', 'CADA', 'CPH'], max 5).
-        location: Ville cible (ex: 'Bordeaux, Nouvelle-Aquitaine').
-    """
-    return await search_places_batch(queries, location)
-
-
-def compute_routes_tool(
-    origin: str, destination: str, mode: str = "transit"
-) -> Dict[str, Any]:
-    """Calcule des itinéraires et temps de trajet."""
-    return compute_routes(origin, destination, mode)
-
-
 housing_expert_agent: Agent[ODISDeps, HousingResult] = create_agent(
     "housing_expert",
     deps_type=ODISDeps,
@@ -82,7 +72,7 @@ housing_expert_agent: Agent[ODISDeps, HousingResult] = create_agent(
 @housing_expert_agent.system_prompt
 async def housing_expert_instructions(ctx: RunContext[ODISDeps]) -> str:
     state = ctx.deps.state
-    common_context, specific_context = ODISContextBuilder.expert_prompt_contexts(
+    contexts = ODISContextBuilder.expert_prompt_contexts(
         state, "housing_expert"
     )
     skill_inst = state.expert_skill_instructions.get(
@@ -92,7 +82,9 @@ async def housing_expert_instructions(ctx: RunContext[ODISDeps]) -> str:
 
     return HOUSING_EXPERT_SYSTEM_PROMPT.format(
         SWARM_BOILERPLATE=boilerplate,
-        COMMON_CONTEXT=common_context,
-        SPECIFIC_CONTEXT=specific_context,
+        DOSSIER_BRIEFING=contexts.briefing,
+        CRITERIA_CONTEXT=contexts.criteria,
+        COMMUNE_CONTEXT=contexts.commune,
+        SPECIFIC_CONTEXT=contexts.specific,
         SKILL_INSTRUCTIONS=skill_inst,
     )

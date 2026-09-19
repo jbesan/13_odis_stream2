@@ -13,6 +13,12 @@ from agents.social_integration_expert import (
     SocialIntegrationResult,
 )
 from agents.ts_agent import ts_agent, SwarmPlan
+from agents.tools import (
+    JobOfferSearchQuery,
+    InclusionJobSearchQuery,
+    RnaSearchQuery,
+    search_inclusion_jobs_batch_tool,
+)
 from agents.state import GraphState, ODISDeps
 from core.models import CommuneResult
 
@@ -86,7 +92,7 @@ async def test_education_agent_tool_calling_offline(mock_deps):
 
     with education_expert_agent.override(model=FunctionModel(call_model)):
         with patch(
-            "agents.education_expert.search_places_batch", new_callable=AsyncMock
+            "agents.tools.search_places_batch", new_callable=AsyncMock
         ) as mock_search:
             mock_search.return_value = [{"name": "Crèche 1"}, {"name": "École 1"}]
 
@@ -126,7 +132,7 @@ async def test_healthcare_agent_tool_calling_offline(mock_deps):
 
     with healthcare_expert_agent.override(model=FunctionModel(call_model)):
         with patch(
-            "agents.healthcare_expert.search_places_batch", new_callable=AsyncMock
+            "agents.tools.search_places_batch", new_callable=AsyncMock
         ) as mock_search:
             mock_search.return_value = [{"name": "Hôpital 1"}, {"name": "PMI 1"}]
 
@@ -174,10 +180,10 @@ async def test_housing_agent_tool_calling_offline(mock_deps):
     with housing_expert_agent.override(model=FunctionModel(call_model)):
         with (
             patch(
-                "agents.housing_expert.search_places_batch", new_callable=AsyncMock
+                "agents.tools.search_places_batch", new_callable=AsyncMock
             ) as mock_search,
             patch(
-                "agents.housing_expert.compute_routes",
+                "agents.tools.compute_routes",
                 return_value={"duration": "45min"},
             ) as mock_routes,
         ):
@@ -223,7 +229,7 @@ async def test_mobility_agent_tool_calling_offline(mock_deps):
 
     with mobility_expert_agent.override(model=FunctionModel(call_model)):
         with patch(
-            "agents.mobility_expert.compute_routes", return_value={"duration": "1h30"}
+            "agents.tools.compute_routes", return_value={"duration": "1h30"}
         ) as mock_routes:
             result = await mobility_expert_agent.run(
                 "Combien de temps pour aller à Bordeaux en train ?", deps=mock_deps
@@ -260,7 +266,7 @@ async def test_job_hunter_agent_tool_calling_offline(mock_deps):
 
     with job_hunter_agent.override(model=FunctionModel(call_model)):
         with patch(
-            "agents.job_hunter.search_job_offers_batch", new_callable=AsyncMock
+            "agents.tools.search_job_offers_batch", new_callable=AsyncMock
         ) as mock_jobs:
             mock_jobs.return_value = {"offres": [{"id": "123"}]}
 
@@ -268,7 +274,9 @@ async def test_job_hunter_agent_tool_calling_offline(mock_deps):
                 "Cherche des offres de mécanicien.", deps=mock_deps
             )
 
-            mock_jobs.assert_called_once_with([{"location": "17347", "rome": "I1604"}])
+            mock_jobs.assert_called_once_with(
+                [JobOfferSearchQuery(location="17347", rome="I1604")]
+            )
             assert isinstance(result.output, JobHunterResult)
             assert result.output.result == "Analyse: 3 offres trouvées."
 
@@ -297,7 +305,7 @@ async def test_social_integration_agent_tool_calling_offline(mock_deps):
 
     with social_integration_expert_agent.override(model=FunctionModel(call_model)):
         with patch(
-            "agents.social_integration_expert.search_rna_rag_batch",
+            "agents.tools.search_rna_rag_batch",
             new_callable=AsyncMock,
         ) as mock_rna:
             mock_rna.return_value = [{"name": "Club Foot"}]
@@ -311,3 +319,58 @@ async def test_social_integration_agent_tool_calling_offline(mock_deps):
             )
             assert isinstance(result.output, SocialIntegrationResult)
             assert result.output.result == "Analyse: 2 associations trouvées."
+
+
+def test_inclusion_and_rna_search_query_insee_validation():
+    """Verify that InclusionJobSearchQuery and RnaSearchQuery accept 5-digit and Corsican INSEE codes but reject departments and free text."""
+    import pydantic
+
+    # Valid metropolitan INSEE (5 digits)
+    q1 = InclusionJobSearchQuery(location="13018")
+    assert q1.location == "13018"
+
+    # Valid Corsican INSEE (2A/2B + 3 digits)
+    q2 = InclusionJobSearchQuery(location="2A004")
+    assert q2.location == "2A004"
+    q3 = InclusionJobSearchQuery(location="2B033")
+    assert q3.location == "2B033"
+
+    # Invalid department code (2 digits) - must fail validation
+    with pytest.raises(pydantic.ValidationError):
+        InclusionJobSearchQuery(location="13")
+
+    # Invalid free-text / postal code with non-digits
+    with pytest.raises(pydantic.ValidationError):
+        InclusionJobSearchQuery(location="Marseille")
+
+    # RNA validation: metropolitan and Corsican
+    rna_metro = RnaSearchQuery(queries=["entraide"], codgeo="33063")
+    assert rna_metro.codgeo == "33063"
+
+    rna_corsica = RnaSearchQuery(queries=["entraide"], codgeo="2A004")
+    assert rna_corsica.codgeo == "2A004"
+
+    # RNA invalid department code
+    with pytest.raises(pydantic.ValidationError):
+        RnaSearchQuery(queries=["entraide"], codgeo="33")
+
+
+@pytest.mark.asyncio
+async def test_search_inclusion_jobs_batch_tool_execution():
+    """Verify that search_inclusion_jobs_batch_tool executes queries and gathers results."""
+    with patch(
+        "agents.tools._search_inclusion_jobs_logic"
+    ) as mock_logic:
+        mock_logic.return_value = {"offres": [{"id": 1, "nom": "Structure A"}], "total": 1}
+
+        queries = [
+            InclusionJobSearchQuery(location="13018", rome="A1203"),
+            InclusionJobSearchQuery(location="2A004"),
+        ]
+        results = await search_inclusion_jobs_batch_tool(queries)
+
+        assert "A1203|13018|" in results
+        assert "|2A004|" in results
+        assert results["A1203|13018|"]["total"] == 1
+        assert results["|2A004|"]["total"] == 1
+        assert mock_logic.call_count == 2

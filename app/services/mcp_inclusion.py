@@ -101,18 +101,18 @@ def _search_inclusion_jobs_logic(
     params: Dict[str, Any] = {"page_size": 20}
 
     if location:
-        # Robust search for INSEE (5 digits) or Dept (2-3 digits)
+        # Robust search for INSEE (5 digits or Corsica 2A/2B + 3 digits) or Dept (2-3 digits or 2A/2B)
         # LLMs sometimes pass "communes:87085" or "87085,rome:"
-        loc_str = str(location)
-        insee_match = re.search(r"\b(\d{5})\b", loc_str)
-        dept_match = re.search(r"\b(\d{2,3})\b", loc_str)
+        loc_str = str(location).strip()
+        insee_match = re.search(r"\b(\d{5}|2[ABab]\d{3})\b", loc_str)
+        dept_match = re.search(r"\b(\d{2,3}|2[ABab])\b", loc_str)
 
         if insee_match:
-            params["code_insee"] = insee_match.group(1)
+            params["code_insee"] = insee_match.group(1).upper()
             params["distance_max_km"] = 20  # 20km radius
             logger.debug(f"🔍 [Inclusion] Searching near INSEE {params['code_insee']}")
         elif dept_match:
-            params["postes_dans_le_departement"] = dept_match.group(1)
+            params["postes_dans_le_departement"] = dept_match.group(1).upper()
             logger.debug(
                 f"🔍 [Inclusion] Searching in Dept {params['postes_dans_le_departement']}"
             )
@@ -124,6 +124,15 @@ def _search_inclusion_jobs_logic(
 
     try:
         response = requests.get(API_URL, headers=headers, params=params, timeout=15)
+        if response.status_code == 404:
+            insee_target = params.get("code_insee") or params.get(
+                "postes_dans_le_departement", location
+            )
+            logger.warning(
+                f"⚠️ [Inclusion] Localisation/Code INSEE '{insee_target}' introuvable sur l'API Emplois Inclusion (404). Retourne 0 offre."
+            )
+            return {"offres": [], "total": 0}
+
         response.raise_for_status()
         data = response.json()
         results = data.get("results", [])

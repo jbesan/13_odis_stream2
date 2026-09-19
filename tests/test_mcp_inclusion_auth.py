@@ -169,3 +169,41 @@ def test_prune_inclusion_structure_and_job_truncation():
     assert job["lieu"]["departement"] == "69"
     assert job["lieu"]["code_insee"] == "69290"
 
+
+def test_search_inclusion_jobs_corsica_insee():
+    """Verify that Corsican INSEE codes (2A/2B) are parsed and uppercase normalized."""
+    with patch("requests.get") as mock_get:
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"results": []}
+        mock_get.return_value = mock_response
+
+        # Test uppercase 2A
+        res_2a = _search_inclusion_jobs_logic(location="2A004")
+        assert res_2a["total"] == 0
+        _, kwargs_2a = mock_get.call_args
+        assert kwargs_2a["params"]["code_insee"] == "2A004"
+        assert kwargs_2a["params"]["distance_max_km"] == 20
+
+        # Test lowercase 2b
+        res_2b = _search_inclusion_jobs_logic(location="2b033")
+        assert res_2b["total"] == 0
+        _, kwargs_2b = mock_get.call_args
+        assert kwargs_2b["params"]["code_insee"] == "2B033"
+        assert kwargs_2b["params"]["distance_max_km"] == 20
+
+
+def test_search_inclusion_jobs_404_handled_gracefully():
+    """Verify that HTTP 404 from Inclusion API returns empty offers without raising errors."""
+    with patch("requests.get") as mock_get:
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_get.return_value = mock_response
+
+        res = _search_inclusion_jobs_logic(location="13440")
+
+        assert "offres" in res
+        assert res["offres"] == []
+        assert res["total"] == 0
+        assert "error" not in res
+
