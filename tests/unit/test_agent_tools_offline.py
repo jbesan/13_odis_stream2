@@ -200,7 +200,10 @@ async def test_housing_agent_tool_calling_offline(mock_deps):
                 "Saint-Jean-d'Angély", "Niort", "transit"
             )
             assert isinstance(result.output, HousingResult)
-            assert result.output.result == "Analyse: structures identifiées et trajet 45min."
+            assert (
+                result.output.result
+                == "Analyse: structures identifiées et trajet 45min."
+            )
 
 
 @pytest.mark.asyncio
@@ -325,23 +328,28 @@ def test_inclusion_and_rna_search_query_insee_validation():
     """Verify that InclusionJobSearchQuery and RnaSearchQuery accept 5-digit and Corsican INSEE codes but reject departments and free text."""
     import pydantic
 
-    # Valid metropolitan INSEE (5 digits)
-    q1 = InclusionJobSearchQuery(location="13018")
+    # Valid metropolitan INSEE (5 digits) with required query
+    q1 = InclusionJobSearchQuery(location="13018", query="maraichage")
     assert q1.location == "13018"
+    assert q1.query == "maraichage"
 
-    # Valid Corsican INSEE (2A/2B + 3 digits)
-    q2 = InclusionJobSearchQuery(location="2A004")
+    # Valid Corsican INSEE (2A/2B + 3 digits) with required query
+    q2 = InclusionJobSearchQuery(location="2A004", query="espaces verts")
     assert q2.location == "2A004"
-    q3 = InclusionJobSearchQuery(location="2B033")
+    q3 = InclusionJobSearchQuery(location="2B033", query="accueil")
     assert q3.location == "2B033"
+
+    # Missing query - must fail validation
+    with pytest.raises(pydantic.ValidationError):
+        InclusionJobSearchQuery(location="13018")
 
     # Invalid department code (2 digits) - must fail validation
     with pytest.raises(pydantic.ValidationError):
-        InclusionJobSearchQuery(location="13")
+        InclusionJobSearchQuery(location="13", query="accueil")
 
     # Invalid free-text / postal code with non-digits
     with pytest.raises(pydantic.ValidationError):
-        InclusionJobSearchQuery(location="Marseille")
+        InclusionJobSearchQuery(location="Marseille", query="accueil")
 
     # RNA validation: metropolitan and Corsican
     rna_metro = RnaSearchQuery(queries=["entraide"], codgeo="33063")
@@ -358,19 +366,20 @@ def test_inclusion_and_rna_search_query_insee_validation():
 @pytest.mark.asyncio
 async def test_search_inclusion_jobs_batch_tool_execution():
     """Verify that search_inclusion_jobs_batch_tool executes queries and gathers results."""
-    with patch(
-        "agents.tools._search_inclusion_jobs_logic"
-    ) as mock_logic:
-        mock_logic.return_value = {"offres": [{"id": 1, "nom": "Structure A"}], "total": 1}
+    with patch("agents.tools._search_inclusion_jobs_logic") as mock_logic:
+        mock_logic.return_value = {
+            "offres": [{"id": 1, "nom": "Structure A"}],
+            "total": 1,
+        }
 
         queries = [
-            InclusionJobSearchQuery(location="13018", rome="A1203"),
-            InclusionJobSearchQuery(location="2A004"),
+            InclusionJobSearchQuery(location="13018", rome="A1203", query="jardinier"),
+            InclusionJobSearchQuery(location="2A004", query="accueil"),
         ]
         results = await search_inclusion_jobs_batch_tool(queries)
 
-        assert "A1203|13018|" in results
-        assert "|2A004|" in results
-        assert results["A1203|13018|"]["total"] == 1
-        assert results["|2A004|"]["total"] == 1
+        assert "A1203|13018|jardinier" in results
+        assert "|2A004|accueil" in results
+        assert results["A1203|13018|jardinier"]["total"] == 1
+        assert results["|2A004|accueil"]["total"] == 1
         assert mock_logic.call_count == 2

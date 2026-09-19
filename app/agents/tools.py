@@ -120,9 +120,10 @@ class InclusionJobSearchQuery(BaseModel):
         examples=["A1203"],
         description="Code ROME officiel de 5 caractères.",
     )
-    query: Optional[str] = Field(
-        None,
-        description="Mot-clé libre optionnel pour filtrer le titre du poste SIAE.",
+    query: str = Field(
+        min_length=2,
+        examples=["Chargé d'accueil", "Espaces verts"],
+        description="Mot-clé libre obligatoire pour filtrer les offres SIAE (intitulé ou description du poste).",
     )
 
 
@@ -402,9 +403,7 @@ async def search_rna_rag_batch(
 
 async def search_rna_rag_batch_tool(params: RnaSearchQuery) -> List[Dict[str, Any]]:
     """Recherche BM25 sur le Répertoire National des Associations (RNA) officiel sur l'ensemble du bassin de vie de la commune."""
-    return await search_rna_rag_batch(
-        params.queries, params.codgeo, top_k=params.top_k
-    )
+    return await search_rna_rag_batch(params.queries, params.codgeo, top_k=params.top_k)
 
 
 # ==============================================================================
