@@ -515,6 +515,10 @@ if st.session_state.get("processed_gdf") is not None:
                 st.caption("👇 Cliquez sur une ville pour afficher les détails.", text_alignment="center", width="stretch")
             # A. Ville Souhaitée (if present)
             if search_results.commune_pressentie:
+                st.markdown(
+                    '<style> [class*="st-key-btn_top_pressentie"] .stButton button { background-color: #F5D819 !important; color: #1B4429 !important; } </style>',
+                    unsafe_allow_html=True,
+                )
                 p_commune = search_results.commune_pressentie
                 is_active = is_highlighted and highlighted_index == -1
                 btn_type = "primary" if is_active else "secondary"
@@ -524,7 +528,7 @@ if st.session_state.get("processed_gdf") is not None:
                     f"**{score_pct}** - {p_commune.name} (ville pressentie)",
                     help=f"Ville Souhaitée : {p_commune.name}",
                     key="btn_top_pressentie",
-                    type="secondary",
+                    type="primary",
                     width="stretch",
                     on_click=ui_results._result_highlight_callback,
                     args=(-1,),
@@ -534,7 +538,7 @@ if st.session_state.get("processed_gdf") is not None:
                     ui_results._display_result_details(p_commune)
                     st.write("")
                 
-                st.space("small")
+                st.space("xsmall")
 
             # B. Top 5 Results (Vertical list)
             for i, c in enumerate(search_results.results[:5]):
