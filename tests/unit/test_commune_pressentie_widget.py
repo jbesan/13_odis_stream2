@@ -196,7 +196,7 @@ def test_render_mobility_form_city_size_select_slider_and_caption():
     )
     mock_slider.assert_called_once()
     mock_caption.assert_called_once_with(
-        "Bassin de vie ciblé idéalement entre **5 000** et **50 000** habitants"
+        'Bassin de vie ciblé idéalement entre **5 000** et **50 000** habitants', width='stretch', text_alignment='center'
     )
 
 
