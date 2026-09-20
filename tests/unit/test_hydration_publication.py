@@ -56,18 +56,20 @@ def test_action_publishes_data_before_opening_modal(
         assert city.employment.matching_job_offers[0][0].id == "job-1"
         return True
 
-    published = []
+    reruns = []
     monkeypatch.setattr(results_actions.st, "button", click)
-    modal = (
-        "pdf_modal" if action == "render_export_pdf_button" else "share_search_modal"
-    )
-    monkeypatch.setattr(
-        results_actions, modal, lambda: published.append(results.model_dump())
-    )
+    monkeypatch.setattr(results_actions.st, "rerun", lambda **kwargs: reruns.append(kwargs))
     function = getattr(results_actions, action)
     getattr(function, "__wrapped__", function)(h="publication")
+    expected_state_key = (
+        "active_pdf_modal"
+        if action == "render_export_pdf_button"
+        else "active_share_dialog"
+    )
+    assert results_actions.st.session_state[expected_state_key] is True
+    assert reruns == [{"scope": "app"}]
     assert (
-        published[0]["results"][0]["employment"]["matching_job_offers"][0][0]["id"]
+        results.model_dump()["results"][0]["employment"]["matching_job_offers"][0][0]["id"]
         == "job-1"
     )
 

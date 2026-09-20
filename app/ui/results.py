@@ -2,7 +2,6 @@ import logging
 import time
 from typing import Optional
 import streamlit as st
-from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 import config as cfg
 from core.models import (
@@ -16,6 +15,7 @@ from agents.utils import (
     odis_get_bg_result,
 )
 from core import maps_deck
+from ui.dialog_state import keep_only_dialog, request_dialog
 from ui import ui_telemetry
 
 # Sub-module imports & re-exports for complete backward compatibility
@@ -36,7 +36,6 @@ from ui.ai_analysis_dialog import (
     _on_ia_dialog_dismiss,
     ia_analysis_content,
     _merge_agent_results,
-    polling_synthesis_fragment,
     polling_chat_fragment,
     _render_sources_popover,
     _get_or_build_analysis_report,
@@ -99,7 +98,6 @@ __all__ = [
     "polling_associations_fragment",
     "polling_inclusion_services_fragment",
     "polling_jobs_fragment",
-    "polling_synthesis_fragment",
     "polling_chat_fragment",
     "ia_analysis_content",
     "_render_sources_popover",
@@ -163,8 +161,8 @@ def render_details_trigger_button(commune: CommuneResult, h: Optional[str]) -> b
         width="stretch",
         disabled=btn_disabled,
     ):
-        st.session_state.active_details_index = commune.codgeo
-        show_details_dialog(commune.codgeo)
+        request_dialog(st.session_state, "active_details_index", commune.codgeo)
+        st.rerun(scope="app")
 
     return ready
 
@@ -188,7 +186,8 @@ def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
     """Renders the AI Analysis trigger button with up-to-date state in-place.
 
     Self-refreshing fragment that automatically transitions from preparation to ready,
-    reflects live background execution states, and opens the modal dialog on click.
+    reflects live background execution states, and opens the completed report on click.
+    The modal is never opened while the background analysis is still running.
     """
     has_analysis = bool(
         getattr(commune, "analysis_report", None)
@@ -200,14 +199,18 @@ def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
     if immutable_snapshot:
         if has_analysis:
             if st.button(
-                "Consulter l'Analyse Avancée",
+                "Consulter l'analyse",
                 key=f"btn_ia_comm_{commune.codgeo}",
                 icon=":material/wand_stars:",
                 width="stretch",
                 disabled=False,
             ):
-                st.session_state["active_ia_city_index"] = commune.codgeo
-                show_ia_analysis_dialog(commune.codgeo)
+                request_dialog(
+                    st.session_state, "active_ia_city_index", commune.codgeo
+                )
+                # The dialog is dispatched by the root script. A fragment-only
+                # rerun would update the state but never execute that dispatcher.
+                st.rerun(scope="app")
             return True
         else:
             st.button(
@@ -242,22 +245,20 @@ def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
                 duration="long",
             )
 
-        # If dialog is currently open for this city, refresh page to reveal full synthesis
-        if just_completed and st.session_state.get("active_ia_city_index") == commune.codgeo:
-            st.rerun()
-
         if st.button(
-            "Analyse Avancée",
+            "Consulter l'analyse",
             key=f"btn_ia_comm_{commune.codgeo}",
             icon=":material/wand_stars:",
             width="stretch",
             disabled=False,
         ):
-            st.session_state["active_ia_city_index"] = commune.codgeo
+            request_dialog(st.session_state, "active_ia_city_index", commune.codgeo)
             ui_telemetry.track_ui_event(
                 "run_ia_analysis", {"codgeo": commune.codgeo, "name": commune.name}
             )
-            show_ia_analysis_dialog(commune.codgeo)
+            # The dialog is dispatched by the root script. A fragment-only
+            # rerun would update the state but never execute that dispatcher.
+            st.rerun(scope="app")
         return True
 
     # 4. Error / Timeout / Cancelled -> Retry state
@@ -291,7 +292,7 @@ def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
                     icon="🧠",
                     duration="short",
                 )
-                st.rerun()
+                st.rerun(scope="fragment")
         return False
 
     # 5. Running state
@@ -349,7 +350,6 @@ def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
         )
         and can_launch
     ):
-        st.session_state["active_ia_city_index"] = commune.codgeo
         ui_telemetry.track_ui_event(
             "run_ia_analysis", {"codgeo": commune.codgeo, "name": commune.name}
         )
@@ -368,7 +368,7 @@ def render_ai_trigger_button(commune: CommuneResult, h: Optional[str]) -> bool:
             icon="🧠",
             duration="short",
         )
-        st.rerun()
+        st.rerun(scope="fragment")
     return ready
 
 
@@ -464,18 +464,33 @@ def _on_result_feedback(cid: str, c_name: str, score: float, fb_key: str) -> Non
 
 
 def render_active_dialogs() -> None:
-    """Open any result dialog requested by a button on the current rerun."""
+    """Open one dialog requested by a button on the current full rerun."""
     active_ia_index = st.session_state.get("active_ia_city_index")
     if active_ia_index is not None:
+        keep_only_dialog(st.session_state, "active_ia_city_index")
         show_ia_analysis_dialog(active_ia_index)
+        return
 
     active_details_index = st.session_state.get("active_details_index")
     if active_details_index is not None:
+        keep_only_dialog(st.session_state, "active_details_index")
         show_details_dialog(active_details_index)
+        return
 
     active_ccas_index = st.session_state.get("active_ccas_index")
     if active_ccas_index is not None:
+        keep_only_dialog(st.session_state, "active_ccas_index")
         show_ccas_dialog(active_ccas_index)
+        return
+
+    if st.session_state.get("active_pdf_modal"):
+        keep_only_dialog(st.session_state, "active_pdf_modal")
+        pdf_modal()
+        return
+
+    if st.session_state.get("active_share_dialog"):
+        keep_only_dialog(st.session_state, "active_share_dialog")
+        share_search_modal()
 
 
 def _display_result_details(commune: CommuneResult) -> None:
@@ -525,8 +540,8 @@ def _display_result_details(commune: CommuneResult) -> None:
                 else None
             ),
         ):
-            st.session_state.active_ccas_index = commune.codgeo
-            show_ccas_dialog(commune.codgeo)
+            request_dialog(st.session_state, "active_ccas_index", commune.codgeo)
+            st.rerun(scope="app")
 
         # --- Radar Chart with Comparison ---
         # st.space("small")

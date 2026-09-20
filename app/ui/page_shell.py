@@ -117,4 +117,8 @@ def render_account_sidebar_actions(*, show_admin: bool = True) -> None:
     if show_admin:
         components.render_admin_sidebar_link()
     components.render_about_sidebar_link()
+    if st.session_state.get("active_about_dialog"):
+        from ui.sources_dialog import show_about_dialog
+
+        show_about_dialog()
     components.render_logout_sidebar_button()

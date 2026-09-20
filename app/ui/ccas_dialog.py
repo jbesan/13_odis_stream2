@@ -1,10 +1,11 @@
 from typing import Any
 import pandas as pd
 import streamlit as st
+from ui.dialog_state import clear_dialog
 
 
 def _on_ccas_dialog_dismiss():
-    st.session_state.active_ccas_index = None
+    clear_dialog(st.session_state, "active_ccas_index")
 
 
 @st.dialog(

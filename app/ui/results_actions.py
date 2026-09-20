@@ -8,6 +8,7 @@ from core.models import SearchResultsData, CommuneResult
 from core.postscoring import sync_commune_data
 from core.pdf_generator import generate_pdf_report
 from agents.utils import odis_get_bg_result
+from ui.dialog_state import clear_dialog, request_dialog
 from ui import ui_telemetry
 
 logger = logging.getLogger("ui.results.actions")
@@ -178,7 +179,12 @@ _share_actions_component = components_v2.component(
 _slack_share_component = _share_actions_component
 
 
-@st.dialog("Export des résultats en PDF")
+def _on_pdf_modal_dismiss() -> None:
+    """Clear the pending PDF dialog request when the modal is dismissed."""
+    clear_dialog(st.session_state, "active_pdf_modal")
+
+
+@st.dialog("Export des résultats en PDF", on_dismiss=_on_pdf_modal_dismiss)
 def pdf_modal():
     """Dialog to handle PDF generation and download."""
     # State 1: Loading / Generating
@@ -242,9 +248,10 @@ def pdf_modal():
             )
         with col2:
             if st.button("Fermer", width="stretch"):
+                clear_dialog(st.session_state, "active_pdf_modal")
                 st.session_state.pdf_modal_data = None
                 st.session_state.pop("pdf_modal_warnings", None)
-                st.rerun()
+                st.rerun(scope="app")
 
 
 def _is_hydration_ready_for_city(commune: CommuneResult, h: Optional[str]) -> bool:
@@ -310,10 +317,16 @@ def render_export_pdf_button(h: str):
         key=f"pdf_btn_{h}",
         disabled=btn_disabled,
     ):
-        pdf_modal()
+        request_dialog(st.session_state, "active_pdf_modal")
+        st.rerun(scope="app")
 
 
-@st.dialog("Partager cette recherche")
+def _on_share_dialog_dismiss() -> None:
+    """Clear the pending share dialog request when the modal is dismissed."""
+    clear_dialog(st.session_state, "active_share_dialog")
+
+
+@st.dialog("Partager cette recherche", on_dismiss=_on_share_dialog_dismiss)
 def share_search_modal():
     """Dialog to generate, display, and copy shared permalink URL."""
     config = st.session_state.get("config")
@@ -413,4 +426,5 @@ def render_share_search_button(
         key=f"{key_prefix}_{h}",
         disabled=btn_disabled,
     ):
-        share_search_modal()
+        request_dialog(st.session_state, "active_share_dialog")
+        st.rerun(scope="app")

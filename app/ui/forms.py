@@ -475,10 +475,13 @@ def render_mobility_form(app_data: dict[str, Any]) -> None:
     trapezoid = cfg.get_trapezoid_for_range(start_city, end_city)
     b_val = trapezoid["b"]
     c_val = trapezoid["c"]
+    
     st.caption(
-        f"💡 Bassin de vie ciblé idéalement entre {b_val:,} et {c_val:,} habitants".replace(
+        f"Bassin de vie ciblé idéalement entre **{b_val:,}** et **{c_val:,}** habitants".replace(
             ",", " "
-        )
+        ),
+        width="stretch",
+        text_alignment="center"
     )
     # Maintain legacy label in session state for backward compatibility
     st.session_state["ui_target_city_size_label"] = (

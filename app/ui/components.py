@@ -95,7 +95,7 @@ def render_admin_sidebar_link() -> None:
 
 def render_about_sidebar_link() -> None:
     """Renders the 'À propos' button in the sidebar opening the about dialog."""
-    from ui.sources_dialog import show_about_dialog
+    from ui.dialog_state import request_dialog
 
     if st.button(
         "À propos",
@@ -104,7 +104,8 @@ def render_about_sidebar_link() -> None:
         type="tertiary",
         icon=":material/info:",
     ):
-        show_about_dialog()
+        request_dialog(st.session_state, "active_about_dialog")
+        st.rerun(scope="app")
 
 
 

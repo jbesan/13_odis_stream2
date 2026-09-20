@@ -110,15 +110,18 @@ def test_show_about_dialog_empty_sources_shows_info():
 
 
 def test_render_about_sidebar_link():
+    session_state = {}
     with patch("streamlit.button", return_value=True) as mock_button, \
-         patch("ui.sources_dialog.show_about_dialog") as mock_show_dialog:
+         patch("ui.components.st.session_state", session_state), \
+         patch("ui.components.st.rerun") as mock_rerun:
         from ui.components import render_about_sidebar_link
 
         render_about_sidebar_link()
 
         assert mock_button.called
         assert mock_button.call_args[0][0] == "À propos"
-        assert mock_show_dialog.called
+        assert session_state["active_about_dialog"] is True
+        mock_rerun.assert_called_once_with(scope="app")
 
 
 def test_format_age_and_ttl_dynamic():

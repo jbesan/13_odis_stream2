@@ -18,12 +18,13 @@ from agents.source_registry import (
     is_vertex_grounding_redirect,
     source_references_for_result,
 )
+from ui.dialog_state import clear_dialog
 
 logger = logging.getLogger("ui.ai_analysis_dialog")
 
 
 def _on_ia_dialog_dismiss():
-    st.session_state.active_ia_city_index = None
+    clear_dialog(st.session_state, "active_ia_city_index")
 
 
 def _merge_agent_results(final_state_results, codgeo: str, commune: CommuneResult):
@@ -89,78 +90,6 @@ def _merge_agent_results(final_state_results, codgeo: str, commune: CommuneResul
                 commune.analysis_report = CityAnalysisReport.model_validate(new_report)
             else:
                 commune.analysis_report = new_report
-
-
-def polling_synthesis_fragment(
-    task_key: str,
-    nom: str,
-    codgeo: str,
-    search_criterias: Any,
-    commune: CommuneResult,
-    h: str,
-):
-    """Component that handles fallback display if dialog is opened before analysis finishes."""
-    status_data = odis_get_bg_result(task_key)
-    if not status_data:
-        status_data = launch_background_city_analysis(
-            nom,
-            codgeo,
-            search_criterias,
-            st.session_state.search_results,
-            h,
-            username=st.session_state.get("username", "unknown"),
-            organization_id=getattr(st.session_state.get("org"), "id", None),
-        )
-
-    status = status_data.get("status") if status_data else None
-
-    if status == "running":
-        st.info(
-            "L'analyse avancée est en cours d'exécution en arrière-plan (~30 secondes). Vous pouvez fermer cette fenêtre, une notification apparaîtra dès que la synthèse sera prête."
-        )
-        if st.button("Annuler l'analyse", key=f"cancel_analysis_{task_key}"):
-            cancel_background_city_analysis(task_key)
-            st.rerun()
-        return
-
-    if status in {"error", "timeout", "cancelled"}:
-        st.error(
-            (status_data.get("error") if status_data else None)
-            or (
-                "L'analyse a été annulée."
-                if status == "cancelled"
-                else "L'analyse IA n'a pas pu être réalisée. Réessayez."
-            )
-        )
-        if st.button("Réessayer", key=f"retry_analysis_{task_key}"):
-            # Product decision: a retry replaces the prior displayed analysis.
-            # Clearing the live object also makes ia_analysis_content return to
-            # the polling state immediately after the rerun.
-            commune.odis_synthesis.clear()
-            commune.expert_analysis.clear()
-            commune.expert_artifacts.clear()
-            commune.expert_sources.clear()
-            launch_background_city_analysis(
-                nom,
-                codgeo,
-                search_criterias,
-                st.session_state.search_results,
-                h,
-                username=st.session_state.get("username", "unknown"),
-                organization_id=getattr(st.session_state.get("org"), "id", None),
-                retry=True,
-            )
-            st.rerun()
-    elif status == "done":
-        _merge_agent_results(status_data.get("result"), codgeo, commune)
-        if not commune.odis_synthesis:
-            commune.odis_synthesis = [
-                {
-                    "role": "assistant",
-                    "content": "⚠️ *Synthèse introuvable ou erreur de génération.*",
-                }
-            ]
-        st.rerun()  # One single final rerun to reveal full report
 
 
 @st.fragment(run_every=2.0)
@@ -426,14 +355,17 @@ def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
 
     immutable_snapshot = bool(st.session_state.get("immutable_shared_snapshot"))
 
-    # 2. Trigger analysis if synthesis is missing (Polled within its own fragment)
+    # 2. A dialog is only opened once the report is already available.
     if not commune.odis_synthesis and not getattr(commune, "analysis_report", None):
         if immutable_snapshot:
             st.info(
                 "Aucune analyse avancée n'a été réalisée pour cette commune avant l'enregistrement de l'instantané."
             )
-            return
-        polling_synthesis_fragment(task_key, nom, codgeo, search_criterias, commune, h)
+        else:
+            st.info(
+                "L'analyse avancée n'est pas encore disponible. Fermez cette fenêtre "
+                "et réessayez lorsque le bouton indiquera qu'elle est prête."
+            )
         return
 
     # 3. Render Full Structured Analysis Report directly
@@ -498,7 +430,7 @@ def ia_analysis_content(nom: str, codgeo: str, search_criterias: Any):
 
 @st.dialog(title=" ", width="large", on_dismiss=_on_ia_dialog_dismiss)
 def show_ia_analysis_dialog(index: Any):
-    """Displays AI synthesis and chat for a city in a modal."""
+    """Displays a completed AI synthesis and chat for a city in a modal."""
     if (
         "search_results" not in st.session_state
         or not st.session_state.search_results

@@ -16,13 +16,14 @@ from core.enrichment_status import EnrichmentStatus
 from core.postscoring import sync_commune_data
 from utils.data_loader import fetch_salesforce_jaccueille_bdv
 from agents.utils import odis_get_bg_result
+from ui.dialog_state import clear_dialog
 from ui import ui_telemetry
 
 logger = logging.getLogger("ui.details_dialog")
 
 
 def _on_details_dialog_dismiss():
-    st.session_state.active_details_index = None
+    clear_dialog(st.session_state, "active_details_index")
 
 
 def _enrichment_status_for_city(

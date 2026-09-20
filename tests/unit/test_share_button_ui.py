@@ -185,25 +185,65 @@ def test_buttons_enabled_when_commune_results_hydrated_flag_is_true(monkeypatch)
     assert button_calls[-1][1].get("disabled") is False
 
 
-def test_render_active_dialogs_dispatches_all_result_dialogs(monkeypatch):
+def test_render_active_dialogs_dispatches_only_one_dialog(monkeypatch):
     calls = []
 
-    monkeypatch.setattr("ui.results.st.session_state", {
+    session_state = {
         "active_details_index": "33009",
         "active_ccas_index": "33009",
         "active_ia_city_index": "33009",
-    })
+    }
+    monkeypatch.setattr("ui.results.st.session_state", session_state)
     monkeypatch.setattr("ui.results.show_details_dialog", lambda index: calls.append(("details", index)))
     monkeypatch.setattr("ui.results.show_ccas_dialog", lambda index: calls.append(("ccas", index)))
     monkeypatch.setattr("ui.results.show_ia_analysis_dialog", lambda index: calls.append(("ia", index)))
 
     render_active_dialogs()
 
-    assert calls == [
-        ("ia", "33009"),
-        ("details", "33009"),
-        ("ccas", "33009"),
-    ]
+    assert calls == [("ia", "33009")]
+    assert session_state["active_details_index"] is None
+    assert session_state["active_ccas_index"] is None
+
+
+def test_render_active_dialogs_dispatches_action_dialogs(monkeypatch):
+    """Verify export and share requests use the same root dispatcher."""
+    for state_key, dialog_name in (
+        ("active_pdf_modal", "pdf"),
+        ("active_share_dialog", "share"),
+    ):
+        calls = []
+        session_state = {state_key: True}
+        monkeypatch.setattr("ui.results.st.session_state", session_state)
+        monkeypatch.setattr("ui.results.pdf_modal", lambda: calls.append("pdf"))
+        monkeypatch.setattr(
+            "ui.results.share_search_modal", lambda: calls.append("share")
+        )
+
+        render_active_dialogs()
+
+        assert calls == [dialog_name]
+
+
+def test_render_details_trigger_button_requests_root_dispatch(monkeypatch):
+    """Verify a fragment click requests, rather than opens, the details dialog."""
+    reruns = []
+    search_results = _create_mock_search_results("69123")
+    commune = search_results.results[0]
+    session_state = {"search_results": search_results}
+
+    monkeypatch.setattr("ui.results.st.session_state", session_state)
+    monkeypatch.setattr("ui.results._is_hydration_ready_for_city", lambda c, h: True)
+    monkeypatch.setattr(st, "button", lambda label, **kwargs: True)
+    monkeypatch.setattr(st, "rerun", lambda **kwargs: reruns.append(kwargs))
+    monkeypatch.setattr(
+        "ui.results.show_details_dialog",
+        lambda codgeo: (_ for _ in ()).throw(AssertionError("dialog opened in fragment")),
+    )
+
+    _call_fn(render_details_trigger_button, commune=commune, h="hash_123")
+
+    assert session_state["active_details_index"] == "69123"
+    assert reruns == [{"scope": "app"}]
 
 
 def test_render_ai_trigger_button_in_immutable_snapshot_with_existing_analysis(monkeypatch):
@@ -227,8 +267,33 @@ def test_render_ai_trigger_button_in_immutable_snapshot_with_existing_analysis(m
 
     assert len(button_calls) == 1
     label, kwargs = button_calls[0]
-    assert label == "Consulter l'Analyse Avancée"
+    assert label == "Consulter l'analyse"
     assert kwargs.get("disabled") is False
+
+
+def test_render_ai_trigger_button_snapshot_click_requests_app_rerun(monkeypatch):
+    """Verify a stored analysis also opens through the root dispatcher."""
+    reruns = []
+    monkeypatch.setattr(st, "button", lambda label, **kwargs: True)
+    monkeypatch.setattr(
+        st,
+        "rerun",
+        lambda **kwargs: reruns.append(kwargs),
+    )
+
+    search_results = _create_mock_search_results("33063")
+    commune = search_results.results[0]
+    commune.odis_synthesis = [{"role": "assistant", "content": "Synthèse"}]
+    session_state = {
+        "search_results": search_results,
+        "immutable_shared_snapshot": True,
+    }
+    monkeypatch.setattr("ui.results.st.session_state", session_state)
+
+    _call_fn(render_ai_trigger_button, commune=commune, h="hash_123")
+
+    assert session_state["active_ia_city_index"] == "33063"
+    assert reruns == [{"scope": "app"}]
 
 
 def test_render_ai_trigger_button_in_immutable_snapshot_without_analysis(monkeypatch):
@@ -260,12 +325,18 @@ def test_render_ai_trigger_button_in_immutable_snapshot_without_analysis(monkeyp
 def test_render_ai_trigger_button_in_live_mode(monkeypatch):
     """Verify manual and in-progress live analysis states."""
     button_calls = []
+    reruns = []
 
     def mock_button(label, **kwargs):
         button_calls.append((label, kwargs))
         return False
 
     monkeypatch.setattr(st, "button", mock_button)
+    monkeypatch.setattr(
+        st,
+        "rerun",
+        lambda **kwargs: reruns.append(kwargs),
+    )
     search_results = _create_mock_search_results("33063")
     commune = search_results.results[0]
     commune.odis_synthesis = None
@@ -327,10 +398,11 @@ def test_render_ai_trigger_button_in_live_mode(monkeypatch):
         lambda k: {"status": "done", "result": {}},
     )
     _call_fn(render_ai_trigger_button, commune=commune, h="hash_123")
-    assert button_calls[4][0] == "Analyse Avancée"
+    assert button_calls[4][0] == "Consulter l'analyse"
     assert button_calls[4][1].get("disabled") in (False, None)
     assert len(toasts) == 1
     assert "disponible" in toasts[0]
+    assert reruns == []
 
 
 def test_render_ai_trigger_button_waits_for_planned_auto_stage(monkeypatch):
@@ -375,13 +447,16 @@ def test_render_ai_trigger_button_manual_click_launches_when_auto_disabled(monke
     reruns = []
     monkeypatch.setattr(st, "button", lambda label, **kwargs: True)
     monkeypatch.setattr(st, "toast", lambda *args, **kwargs: None)
-    monkeypatch.setattr(st, "rerun", lambda: reruns.append(True))
+    monkeypatch.setattr(
+        st,
+        "rerun",
+        lambda **kwargs: reruns.append(kwargs),
+    )
     monkeypatch.setattr(
         "ui.results.launch_background_city_analysis",
         lambda **kwargs: launched.append(kwargs),
     )
     monkeypatch.setattr("ui.results.ui_telemetry.track_ui_event", lambda *args: None)
-    monkeypatch.setattr("ui.results.show_ia_analysis_dialog", lambda *args: None)
     monkeypatch.setattr("ui.results.cfg.is_auto_analyse_top_cities_enabled", lambda: False)
     monkeypatch.setattr("ui.results._is_postscoring_ready_for_city", lambda c, h: True)
     monkeypatch.setattr("ui.results.odis_get_bg_result", lambda key: None)
@@ -398,18 +473,23 @@ def test_render_ai_trigger_button_manual_click_launches_when_auto_disabled(monke
 
     assert len(launched) == 1
     assert launched[0]["trigger"] == "user_modal"
-    assert reruns == [True]
+    assert reruns == [{"scope": "fragment"}]
+    assert "active_ia_city_index" not in st.session_state
 
 
 def test_render_ai_trigger_button_retry_action(monkeypatch):
-    """Verify clicking retry on failed AI analysis re-launches analysis and reruns."""
+    """Verify retry re-launches analysis without opening a dialog."""
     launched = []
     toasts = []
     reruns = []
 
     monkeypatch.setattr(st, "button", lambda label, **kwargs: True)
     monkeypatch.setattr(st, "toast", lambda msg, **kwargs: toasts.append(msg))
-    monkeypatch.setattr(st, "rerun", lambda: reruns.append(True))
+    monkeypatch.setattr(
+        st,
+        "rerun",
+        lambda **kwargs: reruns.append(kwargs),
+    )
     monkeypatch.setattr(
         "ui.results.launch_background_city_analysis",
         lambda **kwargs: launched.append(kwargs),
@@ -436,16 +516,22 @@ def test_render_ai_trigger_button_retry_action(monkeypatch):
     assert launched[0]["trigger"] == "city_card_retry"
     assert len(toasts) == 1
     assert "lancée..." in toasts[0]
-    assert len(reruns) == 1
+    assert reruns == [{"scope": "fragment"}]
 
 
-def test_render_ai_trigger_button_opens_dialog_directly(monkeypatch):
-    """Verify clicking done button directly opens dialog and sets active city index."""
+def test_render_ai_trigger_button_requests_dialog_on_app_rerun(monkeypatch):
+    """Verify the completed button defers dialog opening to the root dispatcher."""
     dialog_calls = []
     telemetry_calls = []
+    reruns = []
 
     monkeypatch.setattr(st, "button", lambda label, **kwargs: True)
     monkeypatch.setattr("ui.results.show_ia_analysis_dialog", lambda codgeo: dialog_calls.append(codgeo))
+    monkeypatch.setattr(
+        st,
+        "rerun",
+        lambda **kwargs: reruns.append(kwargs),
+    )
     monkeypatch.setattr("ui.results.ui_telemetry.track_ui_event", lambda event, data: telemetry_calls.append((event, data)))
     monkeypatch.setattr(
         "ui.results.odis_get_bg_result",
@@ -462,127 +548,46 @@ def test_render_ai_trigger_button_opens_dialog_directly(monkeypatch):
 
     res = _call_fn(render_ai_trigger_button, commune=commune, h="hash_123")
     assert res is True
-    assert dialog_calls == ["33063"]
+    assert dialog_calls == []
     assert session_state.get("active_ia_city_index") == "33063"
+    assert reruns == [{"scope": "app"}]
     assert len(telemetry_calls) == 1
     assert telemetry_calls[0][0] == "run_ia_analysis"
 
 
-from ui.ai_analysis_dialog import polling_synthesis_fragment
+def test_ia_analysis_content_does_not_start_missing_analysis(monkeypatch):
+    """Verify the modal only presents a status if an analysis is unavailable."""
+    from ui.ai_analysis_dialog import ia_analysis_content
 
-
-def test_polling_synthesis_fragment_nonblocking_running_state(monkeypatch):
-    """Verify that when synthesis is running, an informative note and cancel button are rendered without blocking sleep."""
     info_calls = []
-    button_calls = []
-
-    monkeypatch.setattr("ui.ai_analysis_dialog.st.info", lambda text: info_calls.append(text))
-    monkeypatch.setattr("ui.ai_analysis_dialog.st.caption", lambda text: None)
-    monkeypatch.setattr(
-        "ui.ai_analysis_dialog.st.button",
-        lambda label, **kwargs: (button_calls.append((label, kwargs)) or False),
-    )
-
+    launched = []
     search_results = _create_mock_search_results("69123")
     commune = search_results.results[0]
+    commune.analysis_report = None
+    search_results.get_by_code.return_value = commune
+
     monkeypatch.setattr(
         "ui.ai_analysis_dialog.st.session_state",
-        {"search_results": search_results},
-    )
-    monkeypatch.setattr(
-        "ui.ai_analysis_dialog.odis_get_bg_result",
-        lambda task_key: {"status": "running", "start_time": 100.0},
-    )
-
-    _call_fn(
-        polling_synthesis_fragment,
-        task_key="analysis_69123_hash_123",
-        nom="Lyon",
-        codgeo="69123",
-        search_criterias=MagicMock(),
-        commune=commune,
-        h="hash_123",
-    )
-
-    assert len(info_calls) == 1
-    assert "en cours d'exécution en arrière-plan" in info_calls[0]
-    assert any("Annuler l'analyse" in b[0] for b in button_calls)
-
-
-def test_polling_synthesis_fragment_done_state_merges_and_reruns(monkeypatch):
-    """Verify that when synthesis finishes, results are merged and st.rerun() is invoked."""
-    search_results = _create_mock_search_results("69123")
-    commune = search_results.results[0]
-    monkeypatch.setattr(
-        "ui.ai_analysis_dialog.st.session_state",
-        {"search_results": search_results},
-    )
-    monkeypatch.setattr(
-        "ui.ai_analysis_dialog.odis_get_bg_result",
-        lambda task_key: {
-            "status": "done",
-            "result": {
-                "results": [
-                    {
-                        "codgeo": "69123",
-                        "odis_synthesis": [{"role": "assistant", "content": "Synthèse Lyon"}],
-                    }
-                ]
-            },
+        {
+            "search_results": search_results,
+            "active_search_hash": "hash_123",
+            "immutable_shared_snapshot": False,
         },
     )
-    rerun_calls = []
-    monkeypatch.setattr("ui.ai_analysis_dialog.st.rerun", lambda: rerun_calls.append(True))
-
-    _call_fn(
-        polling_synthesis_fragment,
-        task_key="analysis_69123_hash_123",
-        nom="Lyon",
-        codgeo="69123",
-        search_criterias=MagicMock(),
-        commune=commune,
-        h="hash_123",
-    )
-
-    assert len(rerun_calls) == 1
-    assert commune.odis_synthesis[0]["content"] == "Synthèse Lyon"
-
-
-def test_polling_synthesis_fragment_error_state_shows_retry(monkeypatch):
-    """Verify that when synthesis fails, an error and a retry button are rendered."""
-    error_calls = []
-    button_calls = []
-
-    monkeypatch.setattr("ui.ai_analysis_dialog.st.error", lambda text: error_calls.append(text))
     monkeypatch.setattr(
-        "ui.ai_analysis_dialog.st.button",
-        lambda label, **kwargs: (button_calls.append((label, kwargs)) or False),
-    )
-
-    search_results = _create_mock_search_results("69123")
-    commune = search_results.results[0]
-    monkeypatch.setattr(
-        "ui.ai_analysis_dialog.st.session_state",
-        {"search_results": search_results},
+        "ui.ai_analysis_dialog.st.info",
+        lambda text: info_calls.append(text),
     )
     monkeypatch.setattr(
-        "ui.ai_analysis_dialog.odis_get_bg_result",
-        lambda task_key: {"status": "error", "error": "LLM timeout"},
+        "ui.ai_analysis_dialog.launch_background_city_analysis",
+        lambda *args, **kwargs: launched.append((args, kwargs)),
     )
 
-    _call_fn(
-        polling_synthesis_fragment,
-        task_key="analysis_69123_hash_123",
-        nom="Lyon",
-        codgeo="69123",
-        search_criterias=MagicMock(),
-        commune=commune,
-        h="hash_123",
-    )
+    _call_fn(ia_analysis_content, "Lyon", "69123", MagicMock())
 
-    assert len(error_calls) == 1
-    assert "LLM timeout" in error_calls[0]
-    assert any("Réessayer" in b[0] for b in button_calls)
+    assert launched == []
+    assert len(info_calls) == 1
+    assert "pas encore disponible" in info_calls[0]
 
 
 def test_share_search_modal_renders_unified_actions(monkeypatch):
@@ -620,4 +625,3 @@ def test_share_search_modal_renders_unified_actions(monkeypatch):
     assert "msg" in data
     assert "search=share_abc123" in data["msg"]
     assert rendered_components[0]["key"] == "share_actions_share_abc123"
-

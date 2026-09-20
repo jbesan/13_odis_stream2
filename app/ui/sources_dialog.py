@@ -9,6 +9,7 @@ import streamlit as st
 
 from core.models import ScoresConfigFileSchema
 from services.service_outcomes import OutcomeStatus, ServiceOutcome
+from ui.dialog_state import clear_dialog
 from utils.data_loader import load_active_data_manifest
 
 logger = logging.getLogger(__name__)
@@ -396,7 +397,12 @@ def _render_legal_terms_tab() -> None:
         )
 
 
-@st.dialog("À propos d'ODIS", width="large")
+def _on_about_dialog_dismiss() -> None:
+    """Clear the pending about dialog request when the modal is dismissed."""
+    clear_dialog(st.session_state, "active_about_dialog")
+
+
+@st.dialog("À propos d'ODIS", width="large", on_dismiss=_on_about_dialog_dismiss)
 def show_about_dialog() -> None:
     """Renders the Streamlit dialog modal with tabs for terms of use, data sources, and scoring methodology."""
     tab_terms, tab_sources, tab_scoring = st.tabs(
@@ -426,4 +432,3 @@ def show_about_dialog() -> None:
 
 # Backward-compatible alias
 show_sources_dialog = show_about_dialog
-

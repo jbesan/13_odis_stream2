@@ -56,6 +56,9 @@ class AppSession:
         "active_ia_city_index": lambda: None,
         "active_details_index": lambda: None,
         "active_ccas_index": lambda: None,
+        "active_pdf_modal": lambda: None,
+        "active_share_dialog": lambda: None,
+        "active_about_dialog": lambda: None,
     }
 
     def __init__(self, state: MutableMapping[str, Any]):
@@ -83,6 +86,7 @@ class AppSession:
     def begin_search(self, config: Any, data_release: str) -> None:
         """Start a mutable search on the active data release."""
         self._retire_current_run()
+        self._clear_active_dialogs()
         self.state["pdf_data"] = None
         self.state["pdf_modal_data"] = None
         self.state["active_share_id"] = None
@@ -129,6 +133,7 @@ class AppSession:
     ) -> None:
         """Publish an immutable shared result without creating live workers."""
         self._retire_current_run()
+        self._clear_active_dialogs()
         self.state.update(
             {
                 "config": config,
@@ -158,6 +163,12 @@ class AppSession:
         key = self.state.get("active_search_hash")
         if key and not self.state.get("immutable_shared_snapshot"):
             self._drop_workers_for(key)
+
+    def _clear_active_dialogs(self) -> None:
+        """Clear dialog requests before publishing a different result view."""
+        for key, factory in self.RESULT_VIEW_DEFAULTS.items():
+            if key.startswith("active_"):
+                self.state[key] = factory()
 
     def _drop_workers_for(self, search_hash: str) -> None:
         store = self.state.get("odis_bg_store")
