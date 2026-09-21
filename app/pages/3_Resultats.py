@@ -532,7 +532,7 @@ if st.session_state.get("processed_gdf") is not None:
                     width="stretch",
                     on_click=ui_results._result_highlight_callback,
                     args=(-1,),
-                    icon=":material/bookmark_added:"
+                    icon=":material/stars:"
                 )
                 if is_active:
                     ui_results._display_result_details(p_commune)

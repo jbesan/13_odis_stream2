@@ -1,6 +1,7 @@
 import logging
 import urllib.parse
 from typing import List, Optional
+import idna
 import streamlit as st
 import streamlit.components.v2 as components_v2
 
@@ -326,6 +327,26 @@ def _on_share_dialog_dismiss() -> None:
     clear_dialog(st.session_state, "active_share_dialog")
 
 
+def _decode_idna_host(host: str) -> str:
+    """Decode a Punycode (IDNA) host header to readable Unicode.
+
+    Args:
+        host: Host header value, possibly containing a port (e.g. 'xn--mobilits-h1a.jaccueille.fr:443').
+
+    Returns:
+        Decoded host string (e.g. 'mobilités.jaccueille.fr:443').
+    """
+    if not host:
+        return host
+    hostname, sep, port = host.partition(":")
+    try:
+        decoded_hostname = idna.decode(hostname)
+    except idna.IDNAError as exc:
+        logger.warning("Failed to decode IDNA host '%s': %s", hostname, exc)
+        decoded_hostname = hostname
+    return f"{decoded_hostname}{sep}{port}"
+
+
 @st.dialog("Partager cette recherche", on_dismiss=_on_share_dialog_dismiss)
 def share_search_modal():
     """Dialog to generate, display, and copy shared permalink URL."""
@@ -368,6 +389,7 @@ def share_search_modal():
         )
         host = headers.get("host") or headers.get("Host")
         if host:
+            host = _decode_idna_host(host)
             scheme = (
                 "https"
                 if "localhost" not in host and "127.0.0.1" not in host

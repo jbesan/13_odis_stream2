@@ -47,7 +47,9 @@ def test_render_share_search_button_disabled_when_postscoring_not_done(monkeypat
 
     monkeypatch.setattr(st, "button", mock_button)
     search_results = _create_mock_search_results()
-    monkeypatch.setattr("ui.results_actions.st.session_state", {"search_results": search_results})
+    monkeypatch.setattr(
+        "ui.results_actions.st.session_state", {"search_results": search_results}
+    )
     monkeypatch.setattr("ui.results_actions.odis_get_bg_result", lambda h: None)
 
     _call_fn(render_share_search_button, h="hash_123", button_text="Partager")
@@ -68,7 +70,9 @@ def test_render_share_search_button_enabled_when_postscoring_done(monkeypatch):
 
     monkeypatch.setattr(st, "button", mock_button)
     search_results = _create_mock_search_results("69123")
-    monkeypatch.setattr("ui.results_actions.st.session_state", {"search_results": search_results})
+    monkeypatch.setattr(
+        "ui.results_actions.st.session_state", {"search_results": search_results}
+    )
     mock_bg_res = {
         "status_refiner": "done",
         "jobs_enrichment": {"69123": {"status": "success_nonempty"}},
@@ -95,7 +99,9 @@ def test_render_export_pdf_button_states(monkeypatch):
 
     monkeypatch.setattr(st, "button", mock_button)
     search_results = _create_mock_search_results("69123")
-    monkeypatch.setattr("ui.results_actions.st.session_state", {"search_results": search_results})
+    monkeypatch.setattr(
+        "ui.results_actions.st.session_state", {"search_results": search_results}
+    )
 
     # 1. Not done
     monkeypatch.setattr("ui.results_actions.odis_get_bg_result", lambda h: None)
@@ -129,7 +135,9 @@ def test_render_details_trigger_button_states(monkeypatch):
     monkeypatch.setattr(st, "button", mock_button)
     search_results = _create_mock_search_results("69123")
     commune = search_results.results[0]
-    monkeypatch.setattr("ui.results.st.session_state", {"search_results": search_results})
+    monkeypatch.setattr(
+        "ui.results.st.session_state", {"search_results": search_results}
+    )
 
     # 1. Hydration running
     monkeypatch.setattr("ui.results_actions.odis_get_bg_result", lambda h: None)
@@ -164,8 +172,12 @@ def test_buttons_enabled_when_commune_results_hydrated_flag_is_true(monkeypatch)
     search_results = _create_mock_search_results("69123")
     commune = search_results.results[0]
     commune.commune_results_hydrated = True
-    monkeypatch.setattr("ui.results_actions.st.session_state", {"search_results": search_results})
-    monkeypatch.setattr("ui.results.st.session_state", {"search_results": search_results})
+    monkeypatch.setattr(
+        "ui.results_actions.st.session_state", {"search_results": search_results}
+    )
+    monkeypatch.setattr(
+        "ui.results.st.session_state", {"search_results": search_results}
+    )
     # volatile bg store is completely empty / None
     monkeypatch.setattr("ui.results_actions.odis_get_bg_result", lambda h: None)
 
@@ -194,9 +206,15 @@ def test_render_active_dialogs_dispatches_only_one_dialog(monkeypatch):
         "active_ia_city_index": "33009",
     }
     monkeypatch.setattr("ui.results.st.session_state", session_state)
-    monkeypatch.setattr("ui.results.show_details_dialog", lambda index: calls.append(("details", index)))
-    monkeypatch.setattr("ui.results.show_ccas_dialog", lambda index: calls.append(("ccas", index)))
-    monkeypatch.setattr("ui.results.show_ia_analysis_dialog", lambda index: calls.append(("ia", index)))
+    monkeypatch.setattr(
+        "ui.results.show_details_dialog", lambda index: calls.append(("details", index))
+    )
+    monkeypatch.setattr(
+        "ui.results.show_ccas_dialog", lambda index: calls.append(("ccas", index))
+    )
+    monkeypatch.setattr(
+        "ui.results.show_ia_analysis_dialog", lambda index: calls.append(("ia", index))
+    )
 
     render_active_dialogs()
 
@@ -237,7 +255,9 @@ def test_render_details_trigger_button_requests_root_dispatch(monkeypatch):
     monkeypatch.setattr(st, "rerun", lambda **kwargs: reruns.append(kwargs))
     monkeypatch.setattr(
         "ui.results.show_details_dialog",
-        lambda codgeo: (_ for _ in ()).throw(AssertionError("dialog opened in fragment")),
+        lambda codgeo: (_ for _ in ()).throw(
+            AssertionError("dialog opened in fragment")
+        ),
     )
 
     _call_fn(render_details_trigger_button, commune=commune, h="hash_123")
@@ -246,7 +266,9 @@ def test_render_details_trigger_button_requests_root_dispatch(monkeypatch):
     assert reruns == [{"scope": "app"}]
 
 
-def test_render_ai_trigger_button_in_immutable_snapshot_with_existing_analysis(monkeypatch):
+def test_render_ai_trigger_button_in_immutable_snapshot_with_existing_analysis(
+    monkeypatch,
+):
     """Verify that in immutable snapshot mode, if an analysis already exists, the button is enabled."""
     button_calls = []
 
@@ -258,10 +280,13 @@ def test_render_ai_trigger_button_in_immutable_snapshot_with_existing_analysis(m
     search_results = _create_mock_search_results("33063")
     commune = search_results.results[0]
     commune.odis_synthesis = [{"role": "assistant", "content": "Synthèse sauvegardée"}]
-    monkeypatch.setattr("ui.results.st.session_state", {
-        "search_results": search_results,
-        "immutable_shared_snapshot": True,
-    })
+    monkeypatch.setattr(
+        "ui.results.st.session_state",
+        {
+            "search_results": search_results,
+            "immutable_shared_snapshot": True,
+        },
+    )
 
     _call_fn(render_ai_trigger_button, commune=commune, h="hash_123")
 
@@ -309,10 +334,13 @@ def test_render_ai_trigger_button_in_immutable_snapshot_without_analysis(monkeyp
     commune = search_results.results[0]
     commune.odis_synthesis = None
     commune.analysis_report = None
-    monkeypatch.setattr("ui.results.st.session_state", {
-        "search_results": search_results,
-        "immutable_shared_snapshot": True,
-    })
+    monkeypatch.setattr(
+        "ui.results.st.session_state",
+        {
+            "search_results": search_results,
+            "immutable_shared_snapshot": True,
+        },
+    )
 
     _call_fn(render_ai_trigger_button, commune=commune, h="hash_123")
 
@@ -341,11 +369,16 @@ def test_render_ai_trigger_button_in_live_mode(monkeypatch):
     commune = search_results.results[0]
     commune.odis_synthesis = None
     commune.analysis_report = None
-    monkeypatch.setattr("ui.results.st.session_state", {
-        "search_results": search_results,
-        "immutable_shared_snapshot": False,
-    })
-    monkeypatch.setattr("ui.results.cfg.is_auto_analyse_top_cities_enabled", lambda: False)
+    monkeypatch.setattr(
+        "ui.results.st.session_state",
+        {
+            "search_results": search_results,
+            "immutable_shared_snapshot": False,
+        },
+    )
+    monkeypatch.setattr(
+        "ui.results.cfg.is_auto_analyse_top_cities_enabled", lambda: False
+    )
     # 1. Postscoring not ready -> Lancement (disabled)
     monkeypatch.setattr("ui.results._is_postscoring_ready_for_city", lambda c, h: False)
     monkeypatch.setattr("ui.results.odis_get_bg_result", lambda k: None)
@@ -417,17 +450,24 @@ def test_render_ai_trigger_button_waits_for_planned_auto_stage(monkeypatch):
     )
     search_results = _create_mock_search_results("33063")
     commune = search_results.results[0]
-    monkeypatch.setattr("ui.results.st.session_state", {
-        "search_results": search_results,
-        "immutable_shared_snapshot": False,
-    })
-    monkeypatch.setattr("ui.results.cfg.is_auto_analyse_top_cities_enabled", lambda: True)
+    monkeypatch.setattr(
+        "ui.results.st.session_state",
+        {
+            "search_results": search_results,
+            "immutable_shared_snapshot": False,
+        },
+    )
+    monkeypatch.setattr(
+        "ui.results.cfg.is_auto_analyse_top_cities_enabled", lambda: True
+    )
     monkeypatch.setattr("ui.results._is_postscoring_ready_for_city", lambda c, h: True)
     monkeypatch.setattr(
         "ui.results.odis_get_bg_result",
-        lambda key: {"auto_analysis_steps": {"33063": {"status": "waiting"}}}
-        if key == "hash_123"
-        else None,
+        lambda key: (
+            {"auto_analysis_steps": {"33063": {"status": "waiting"}}}
+            if key == "hash_123"
+            else None
+        ),
     )
     monkeypatch.setattr(
         "ui.results.launch_background_city_analysis",
@@ -457,17 +497,22 @@ def test_render_ai_trigger_button_manual_click_launches_when_auto_disabled(monke
         lambda **kwargs: launched.append(kwargs),
     )
     monkeypatch.setattr("ui.results.ui_telemetry.track_ui_event", lambda *args: None)
-    monkeypatch.setattr("ui.results.cfg.is_auto_analyse_top_cities_enabled", lambda: False)
+    monkeypatch.setattr(
+        "ui.results.cfg.is_auto_analyse_top_cities_enabled", lambda: False
+    )
     monkeypatch.setattr("ui.results._is_postscoring_ready_for_city", lambda c, h: True)
     monkeypatch.setattr("ui.results.odis_get_bg_result", lambda key: None)
 
     search_results = _create_mock_search_results("33063")
     commune = search_results.results[0]
-    monkeypatch.setattr("ui.results.st.session_state", {
-        "search_results": search_results,
-        "config": object(),
-        "immutable_shared_snapshot": False,
-    })
+    monkeypatch.setattr(
+        "ui.results.st.session_state",
+        {
+            "search_results": search_results,
+            "config": object(),
+            "immutable_shared_snapshot": False,
+        },
+    )
 
     _call_fn(render_ai_trigger_button, commune=commune, h="hash_123")
 
@@ -501,13 +546,16 @@ def test_render_ai_trigger_button_retry_action(monkeypatch):
 
     search_results = _create_mock_search_results("33063")
     commune = search_results.results[0]
-    monkeypatch.setattr("ui.results.st.session_state", {
-        "search_results": search_results,
-        "config": MagicMock(),
-        "immutable_shared_snapshot": False,
-        "ia_analysis_launch_toasted": {"33063"},
-        "ia_analysis_toasted": {"33063"},
-    })
+    monkeypatch.setattr(
+        "ui.results.st.session_state",
+        {
+            "search_results": search_results,
+            "config": MagicMock(),
+            "immutable_shared_snapshot": False,
+            "ia_analysis_launch_toasted": {"33063"},
+            "ia_analysis_toasted": {"33063"},
+        },
+    )
 
     res = _call_fn(render_ai_trigger_button, commune=commune, h="hash_123")
     assert res is False
@@ -526,13 +574,18 @@ def test_render_ai_trigger_button_requests_dialog_on_app_rerun(monkeypatch):
     reruns = []
 
     monkeypatch.setattr(st, "button", lambda label, **kwargs: True)
-    monkeypatch.setattr("ui.results.show_ia_analysis_dialog", lambda codgeo: dialog_calls.append(codgeo))
+    monkeypatch.setattr(
+        "ui.results.show_ia_analysis_dialog", lambda codgeo: dialog_calls.append(codgeo)
+    )
     monkeypatch.setattr(
         st,
         "rerun",
         lambda **kwargs: reruns.append(kwargs),
     )
-    monkeypatch.setattr("ui.results.ui_telemetry.track_ui_event", lambda event, data: telemetry_calls.append((event, data)))
+    monkeypatch.setattr(
+        "ui.results.ui_telemetry.track_ui_event",
+        lambda event, data: telemetry_calls.append((event, data)),
+    )
     monkeypatch.setattr(
         "ui.results.odis_get_bg_result",
         lambda k: {"status": "done", "result": {}},
@@ -592,7 +645,11 @@ def test_ia_analysis_content_does_not_start_missing_analysis(monkeypatch):
 
 def test_share_search_modal_renders_unified_actions(monkeypatch):
     """Verify share_search_modal invokes unified _share_actions_component with slack msg and mailto url."""
-    from ui.results_actions import share_search_modal, _share_actions_component, _slack_share_component
+    from ui.results_actions import (
+        share_search_modal,
+        _share_actions_component,
+        _slack_share_component,
+    )
 
     assert _slack_share_component == _share_actions_component
 
@@ -625,3 +682,61 @@ def test_share_search_modal_renders_unified_actions(monkeypatch):
     assert "msg" in data
     assert "search=share_abc123" in data["msg"]
     assert rendered_components[0]["key"] == "share_actions_share_abc123"
+
+
+def test_decode_idna_host():
+    """Verify _decode_idna_host decodes punycode domains and preserves ports."""
+    from ui.results_actions import _decode_idna_host
+
+    assert (
+        _decode_idna_host("xn--mobilits-h1a.jaccueille.fr") == "mobilités.jaccueille.fr"
+    )
+    assert (
+        _decode_idna_host("xn--mobilits-h1a.jaccueille.fr:443")
+        == "mobilités.jaccueille.fr:443"
+    )
+    assert _decode_idna_host("localhost:8501") == "localhost:8501"
+    assert _decode_idna_host("odis.jaccueille.fr") == "odis.jaccueille.fr"
+    assert _decode_idna_host("mobilités.jaccueille.fr") == "mobilités.jaccueille.fr"
+    assert _decode_idna_host("") == ""
+
+
+def test_share_search_modal_decodes_punycode_host(monkeypatch):
+    """Verify share_search_modal formats URL using decoded unicode domain instead of punycode."""
+    from ui.results_actions import share_search_modal
+
+    rendered_components = []
+    code_outputs = []
+
+    monkeypatch.setattr(
+        "ui.results_actions._share_actions_component",
+        lambda *args, **kwargs: rendered_components.append(kwargs),
+    )
+    monkeypatch.setattr("ui.results_actions.st.markdown", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "ui.results_actions.st.code", lambda code, **kwargs: code_outputs.append(code)
+    )
+
+    # Mock st.context.headers with punycode host
+    class MockContext:
+        headers = {"host": "xn--mobilits-h1a.jaccueille.fr"}
+
+    monkeypatch.setattr("ui.results_actions.st.context", MockContext(), raising=False)
+
+    search_results = _create_mock_search_results("69123")
+    monkeypatch.setattr(
+        "ui.results_actions.st.session_state",
+        {
+            "search_results": search_results,
+            "config": MagicMock(),
+            "active_share_id": "share_xyz789",
+        },
+    )
+
+    _call_fn(share_search_modal)
+
+    expected_url = "https://mobilités.jaccueille.fr/?search=share_xyz789"
+    assert len(code_outputs) == 1
+    assert code_outputs[0] == expected_url
+    assert len(rendered_components) == 1
+    assert expected_url in rendered_components[0]["data"]["msg"]

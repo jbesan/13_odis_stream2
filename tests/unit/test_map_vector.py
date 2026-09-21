@@ -7,14 +7,16 @@ from app.core.models import CommuneResult, SearchResultsData
 
 def test_prepare_map_payload_minimal_size():
     p1 = Polygon([[2.0, 46.0], [2.1, 46.0], [2.1, 46.1], [2.0, 46.1]])
-    
+
     # Synthetic scores dataframe indexed by codgeo
-    df = pd.DataFrame({
-        "codgeo": ["01001", "75056"],
-        "weighted_score": [0.85, 0.92],
-        "polygon": [p1, p1],
-    }).set_index("codgeo")
-    
+    df = pd.DataFrame(
+        {
+            "codgeo": ["01001", "75056"],
+            "weighted_score": [0.85, 0.92],
+            "polygon": [p1, p1],
+        }
+    ).set_index("codgeo")
+
     c1 = CommuneResult(
         codgeo="75056",
         name="Paris",
@@ -30,7 +32,7 @@ def test_prepare_map_payload_minimal_size():
         commune_pressentie=None,
         search_hash="test-hash-vector",
     )
-    
+
     payload = prepare_map_payload(
         gdf_scores=df,
         center=[48.85, 2.35],
@@ -38,7 +40,7 @@ def test_prepare_map_payload_minimal_size():
         search_results=search_results,
         selected_ids={"edu", "sante"},
     )
-    
+
     assert "scores" in payload
     assert payload["scores"]["01001"] == 0.85
     assert payload["scores"]["75056"] == 0.92
@@ -68,13 +70,15 @@ def test_prepare_map_payload_poi_filtering():
         commune_pressentie=None,
         search_hash="test-hash-pois",
     )
-    pois_df = pd.DataFrame({
-        "codgeo": ["75056", "75056"],
-        "name": ["Mairie de Paris", "École Primaire"],
-        "type": ["Mairie", "École Primaire"],
-        "category": ["mairie", "education"],
-        "geometry": [Point(2.35, 48.85), Point(2.36, 48.86)],
-    })
+    pois_df = pd.DataFrame(
+        {
+            "codgeo": ["75056", "75056"],
+            "name": ["Mairie de Paris", "École Primaire"],
+            "type": ["Mairie", "École Primaire"],
+            "category": ["mairie", "education"],
+            "geometry": [Point(2.35, 48.85), Point(2.36, 48.86)],
+        }
+    )
 
     # 1. Mairie selected
     payload_mairie = prepare_map_payload(
@@ -122,13 +126,15 @@ def test_prepare_map_payload_inclusion_filtering():
         commune_pressentie=None,
         search_hash="test-hash-inc",
     )
-    pois_df = pd.DataFrame({
-        "codgeo": ["75056", "75056"],
-        "name": ["Structure A", "Structure B"],
-        "type": ["acces-aux-droits", "logement-hebergement"],
-        "category": ["incl_services", "incl_services"],
-        "geometry": [Point(2.35, 48.85), Point(2.36, 48.86)],
-    })
+    pois_df = pd.DataFrame(
+        {
+            "codgeo": ["75056", "75056"],
+            "name": ["Structure A", "Structure B"],
+            "type": ["acces-aux-droits", "logement-hebergement"],
+            "category": ["incl_services", "incl_services"],
+            "geometry": [Point(2.35, 48.85), Point(2.36, 48.86)],
+        }
+    )
 
     # 1. Inclusion active, no specific filter
     payload = prepare_map_payload(
@@ -356,4 +362,31 @@ def test_render_vector_map_top_communes_layer_and_pressentie_color(monkeypatch):
     assert "[214, 62, 42, 255]" in html
 
 
+def test_render_vector_map_pressentie_pastille_border_and_star(monkeypatch):
+    """Verify that render_vector_map configures stroked ScatterplotLayer and star in TextLayer."""
+    from app.ui.map_vector import render_vector_map
+    import streamlit as st
 
+    captured = {}
+
+    def fake_iframe(html, height=1500):
+        captured["html"] = html
+
+    monkeypatch.setattr(st, "iframe", fake_iframe)
+
+    render_vector_map(
+        gdf_scores=None,
+        center=[46.5, 2.0],
+        zoom=7,
+    )
+
+    html = captured.get("html", "")
+    assert "top5-circles-layer" in html
+    assert "stroked: true" in html
+    assert (
+        "getLineColor: d => d.type === 'pressentie' ? [27, 68, 41, 255] : [255, 255, 255, 255]"
+        in html
+    )
+    assert "top5-texts-layer" in html
+    assert "characterSet: 'auto'" in html
+    assert "d.type === 'pressentie' ? '★' : String(d.rank)" in html
