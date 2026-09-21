@@ -4,7 +4,7 @@ import pytest
 import agents.agent_config as _agents_agent_config  # noqa: F401
 import agents.graph as _agents_graph  # noqa: F401
 from config import is_auto_analyse_top_cities_enabled
-from core.models import CommuneResult, SearchResultsData
+from core.models import CommuneResult, SearchResultsData, SearchCriterias
 from core.postscoring import launch_post_scoring_tasks
 from agents.utils import launch_background_city_analysis, run_logic
 from agents.state import GraphState
@@ -49,20 +49,26 @@ def test_launch_post_scoring_tasks_triggers_auto_analysis_for_top_5_cities(monke
         current_geo=current_geo,
         commune_pressentie=pressentie,
     )
-    config = MagicMock()
-    config.inc_services_selection = []
+    config = SearchCriterias()
     engine = MagicMock()
 
     with (
-        patch("core.postscoring.get_odis_bg_store", return_value={}),
-        patch("core.postscoring.launch_background_refining"),
-        patch("core.postscoring.launch_background_association_enrichment"),
-        patch("core.postscoring.launch_background_inclusion_enrichment"),
-        patch("core.postscoring.launch_background_job_curation"),
+        patch("core.postscoring.get_odis_bg_store", return_value={}) as get_store,
+        patch("core.postscoring.launch_background_refining") as refiner,
+        patch("core.hydration.HydrationRun.start"),
         patch("core.postscoring.launch_background_audit_log"),
-        patch("core.postscoring.launch_background_city_analysis") as mock_launch_analysis,
+        patch(
+            "core.postscoring.launch_background_city_analysis"
+        ) as mock_launch_analysis,
     ):
         launch_post_scoring_tasks(engine, config, search_results, "hash_123")
+
+        assert mock_launch_analysis.call_count == 0
+        entry = get_store.return_value["hash_123"]
+        entry["hydration_run"].expire()
+        assert mock_launch_analysis.call_count == 0
+        entry["status_refiner"] = "done"
+        refiner.call_args.kwargs["on_terminal"]()
 
         # Must be called exactly 5 times (for the top 5 recommendation cities only)
         assert mock_launch_analysis.call_count == 5
@@ -89,21 +95,24 @@ def test_launch_post_scoring_tasks_bypasses_auto_analysis_when_disabled(monkeypa
         results=cities,
         current_geo=current_geo,
     )
-    config = MagicMock()
-    config.inc_services_selection = []
+    config = SearchCriterias()
     engine = MagicMock()
 
     with (
-        patch("core.postscoring.get_odis_bg_store", return_value={}),
+        patch("core.postscoring.get_odis_bg_store", return_value={}) as get_store,
         patch("core.postscoring.launch_background_refining"),
-        patch("core.postscoring.launch_background_association_enrichment"),
-        patch("core.postscoring.launch_background_inclusion_enrichment"),
-        patch("core.postscoring.launch_background_job_curation"),
+        patch("core.hydration.HydrationRun.start"),
         patch("core.postscoring.launch_background_audit_log"),
-        patch("core.postscoring.launch_background_city_analysis") as mock_launch_analysis,
+        patch(
+            "core.postscoring.launch_background_city_analysis"
+        ) as mock_launch_analysis,
     ):
         launch_post_scoring_tasks(engine, config, search_results, "hash_123")
         assert mock_launch_analysis.call_count == 0
+        assert (
+            get_store.return_value["hash_123"]["auto_analysis_steps"]["75056"]["status"]
+            == "skipped"
+        )
 
 
 def test_launch_background_city_analysis_records_trigger_attribute():
@@ -163,4 +172,3 @@ async def test_run_logic_passes_custom_trigger_to_span():
         )
 
     assert captured["span_attributes"]["trigger"] == "post_scoring_auto"
-

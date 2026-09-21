@@ -58,11 +58,11 @@ def _data_project() -> str:
 def _rna_rag_table_id(config: Optional[Dict[str, Any]] = None) -> str:
     """Resolve the target RNA table from config without a source-project default."""
     source_config = (config or {}).get("sources", {}).get("rna_rag", {})
-    table = source_config.get("table", "rna_rag.rna_rag")
+    table = source_config.get("table", "rna_rag.rna_rag_clustered")
     if not isinstance(table, str) or table.count(".") != 1:
         raise ValueError(
             "sources.rna_rag.table must use the dataset.table form (for example "
-            "rna_rag.rna_rag)"
+            "rna_rag.rna_rag_clustered)"
         )
     return f"{_data_project()}.{table}"
 
@@ -3432,9 +3432,7 @@ def clean_formations(config: Dict[str, Any], logger: PipelineLogger):
         # Read with header=None, skip first 2 rows (based on inspection)
         # Row 2 (index 2) has data "100.0 Formations générales"
         # So we can read from row 2 onwards.
-        # Actually, read_excel with header=None gives index 0, 1...
-        # We saw row 0, 1 are NaN. Row 2 has data.
-        df_ref = pd.read_excel(ref_path, header=None, skiprows=2)
+        df_ref = load_dataset(ref_path, ref_cfg, header=None, skiprows=2)
         # Columns 0: Code, 1: Label
         if len(df_ref.columns) >= 2:
             df_ref = df_ref.iloc[:, :2]

@@ -7,9 +7,8 @@ from typing import Optional
 
 import streamlit as st
 
-from services import telemetry
 from services.app_session import AppSession
-from ui import components
+from ui import components, ui_telemetry
 from ui.idle_sleep import inject_idle_disconnect
 from utils import auth, common
 
@@ -87,7 +86,7 @@ def enter_page(
         st.error(f"⚠️ {error}")
 
     if page_name:
-        telemetry.log_page_view(page_name)
+        ui_telemetry.log_page_view(page_name)
 
 
 def render_sidebar_logo() -> None:
@@ -117,5 +116,9 @@ def render_account_sidebar_actions(*, show_admin: bool = True) -> None:
     st.divider()
     if show_admin:
         components.render_admin_sidebar_link()
-    components.render_sources_sidebar_link()
+    components.render_about_sidebar_link()
+    if st.session_state.get("active_about_dialog"):
+        from ui.sources_dialog import show_about_dialog
+
+        show_about_dialog()
     components.render_logout_sidebar_button()

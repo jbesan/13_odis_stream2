@@ -49,7 +49,7 @@ def resolve_org_for_oidc(email: str) -> Optional[Org]:
     A specifically mapped email overrides any domain-level mapping.
     """
     normalized_email = normalize_email(email)
-    if not normalized_email:
+    if not normalized_email or not is_email_authorized(normalized_email):
         return None
 
     domain = normalized_email.rsplit("@", maxsplit=1)[1]
@@ -84,18 +84,23 @@ def get_login_session_id() -> str:
 def is_admin(username: Optional[str] = None) -> bool:
     """Checks if the given or current session user is an administrator."""
     if not username:
-        try:
-            username = st.session_state.get("username")
-        except (AttributeError, RuntimeError) as exc:
-            logger.debug("st.session_state is unavailable in is_admin: %s", exc)
-        except Exception as exc:
-            logger.warning(
-                "Error reading username from st.session_state in is_admin: %s", exc
-            )
+        username = st.session_state.get("username")
+    if not username:
+        user_obj = st.session_state.get("user")
+        if user_obj and hasattr(user_obj, "username") and user_obj.username:
+            username = user_obj.username
     if not username:
         return False
     admin_users = getattr(cfg, "ADMIN_USERS", set())
-    return username in admin_users
+    if username in admin_users:
+        return True
+    normalized = normalize_email(username) or username.strip().casefold()
+    normalized_admins = {
+        (normalize_email(a) or a.strip().casefold())
+        for a in admin_users
+        if isinstance(a, str)
+    }
+    return normalized in normalized_admins
 
 
 def check_password() -> bool:

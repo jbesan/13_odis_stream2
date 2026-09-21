@@ -1,6 +1,6 @@
 import streamlit as st
 from datetime import datetime, timezone
-from services.telemetry import get_interaction_id
+from ui.ui_telemetry import get_ui_interaction_id as get_interaction_id
 from google.cloud import bigquery
 import os
 import logging

@@ -1,10 +1,9 @@
 import logging
-from typing import List, Dict, Any
 from pydantic_ai import Agent, RunContext
 from pydantic import BaseModel, Field
 from .state import ODISDeps, ODISContextBuilder
 from .agent_config import create_agent, get_swarm_boilerplate
-from .tools import search_places_batch
+from .tools import search_places_batch_tool
 
 logger = logging.getLogger("education_expert")
 
@@ -31,9 +30,17 @@ class EducationResult(BaseModel):
 EDUCATION_EXPERT_SYSTEM_PROMPT = """
 {SWARM_BOILERPLATE}
 
-# Contexte commun du dossier (préfixe stable entre experts) :
+# Projet de vie du bénéficiaire (Briefing du Travailleur Social) :
+{DOSSIER_BRIEFING}
+
+# Critères de recherche du foyer :
 ```json
-{COMMON_CONTEXT}
+{CRITERIA_CONTEXT}
+```
+
+# Commune à analyser :
+```json
+{COMMUNE_CONTEXT}
 ```
 
 # Contexte spécifique à l'éducation :
@@ -50,33 +57,6 @@ EDUCATION_EXPERT_SYSTEM_PROMPT = """
 """
 
 
-async def search_places_batch_tool(queries: List[str], location: str) -> Dict[str, Any]:
-    """Recherche des crèches, écoles maternelles, primaires, collèges ou lycées en mode batch.
-    À utiliser avec parcimonie : un seul appel batch par mission regroupant au maximum 3 à 5 requêtes ciblées indispensables.
-    Args:
-        queries: Liste de requêtes ciblées (ex: ['école primaire', 'collège', 'crèche'], max 5).
-        location: Ville cible (ex: 'Bordeaux, Nouvelle-Aquitaine').
-    """
-    return await search_places_batch(queries, location)
-
-
-# async def search_rna_rag_batch_tool(
-#     queries: List[str], codgeo: str, top_k: int = 10
-# ) -> List[Dict[str, Any]]:
-#     """
-#     Recherche sémantique d'associations d'accompagnement scolaire ou de parents d'élèves (RNA).
-
-#     Args:
-#         queries: Liste de termes de recherche.
-#                  ATTENTION : Ne mets JAMAIS le nom de la ville dans ces requêtes car le filtrage géographique est déjà géré par l'outil via `codgeo`.
-#                  Exemple correct : ['cours de langue FLE', 'accompagnement administratif'].
-#                  Exemple incorrect : ['FLE Aix-en-Provence'].
-#         codgeo: Code INSEE de la commune.
-#         top_k: Nombre maximum de résultats.
-#     """
-#     return await search_rna_rag_batch(queries, codgeo, top_k=top_k)
-
-
 education_expert_agent: Agent[ODISDeps, EducationResult] = create_agent(
     "education_expert",
     deps_type=ODISDeps,
@@ -88,7 +68,7 @@ education_expert_agent: Agent[ODISDeps, EducationResult] = create_agent(
 @education_expert_agent.system_prompt
 async def education_expert_instructions(ctx: RunContext[ODISDeps]) -> str:
     state = ctx.deps.state
-    common_context, specific_context = ODISContextBuilder.expert_prompt_contexts(
+    contexts = ODISContextBuilder.expert_prompt_contexts(
         state, "education_expert"
     )
     skill_inst = state.expert_skill_instructions.get(
@@ -98,7 +78,10 @@ async def education_expert_instructions(ctx: RunContext[ODISDeps]) -> str:
 
     return EDUCATION_EXPERT_SYSTEM_PROMPT.format(
         SWARM_BOILERPLATE=boilerplate,
-        COMMON_CONTEXT=common_context,
-        SPECIFIC_CONTEXT=specific_context,
+        DOSSIER_BRIEFING=contexts.briefing,
+        CRITERIA_CONTEXT=contexts.criteria,
+        COMMUNE_CONTEXT=contexts.commune,
+        SPECIFIC_CONTEXT=contexts.specific,
         SKILL_INSTRUCTIONS=skill_inst,
     )
+

@@ -1,8 +1,8 @@
 import logging
 import os
+import tomllib
 import warnings
 from typing import Any, Dict, List, Optional, Set, Literal
-import streamlit as st
 from pydantic import BaseModel, Field, ConfigDict
 
 logger = logging.getLogger(__name__)
@@ -100,17 +100,102 @@ METROPOLITAN_REGION_CODES: List[str] = [
 
 # 96 Metropolitan Departments (01-19, 2A, 2B, 21-95; excluding DROM 971-976)
 METROPOLITAN_DEPT_CODES: List[str] = [
-    "01", "02", "03", "04", "05", "06", "07", "08", "09", "10",
-    "11", "12", "13", "14", "15", "16", "17", "18", "19",
-    "2A", "2B",
-    "21", "22", "23", "24", "25", "26", "27", "28", "29",
-    "30", "31", "32", "33", "34", "35", "36", "37", "38", "39",
-    "40", "41", "42", "43", "44", "45", "46", "47", "48", "49",
-    "50", "51", "52", "53", "54", "55", "56", "57", "58", "59",
-    "60", "61", "62", "63", "64", "65", "66", "67", "68", "69",
-    "70", "71", "72", "73", "74", "75", "76", "77", "78", "79",
-    "80", "81", "82", "83", "84", "85", "86", "87", "88", "89",
-    "90", "91", "92", "93", "94", "95",
+    "01",
+    "02",
+    "03",
+    "04",
+    "05",
+    "06",
+    "07",
+    "08",
+    "09",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16",
+    "17",
+    "18",
+    "19",
+    "2A",
+    "2B",
+    "21",
+    "22",
+    "23",
+    "24",
+    "25",
+    "26",
+    "27",
+    "28",
+    "29",
+    "30",
+    "31",
+    "32",
+    "33",
+    "34",
+    "35",
+    "36",
+    "37",
+    "38",
+    "39",
+    "40",
+    "41",
+    "42",
+    "43",
+    "44",
+    "45",
+    "46",
+    "47",
+    "48",
+    "49",
+    "50",
+    "51",
+    "52",
+    "53",
+    "54",
+    "55",
+    "56",
+    "57",
+    "58",
+    "59",
+    "60",
+    "61",
+    "62",
+    "63",
+    "64",
+    "65",
+    "66",
+    "67",
+    "68",
+    "69",
+    "70",
+    "71",
+    "72",
+    "73",
+    "74",
+    "75",
+    "76",
+    "77",
+    "78",
+    "79",
+    "80",
+    "81",
+    "82",
+    "83",
+    "84",
+    "85",
+    "86",
+    "87",
+    "88",
+    "89",
+    "90",
+    "91",
+    "92",
+    "93",
+    "94",
+    "95",
 ]
 
 METROPOLITAN_REGION_CODES_SET: Set[str] = set(METROPOLITAN_REGION_CODES)
@@ -126,15 +211,29 @@ HEBERGEMENT_OPTIONS = [
     "Chez l'habitant",
 ]
 LOGEMENT_OPTIONS = ["Location", "Logement Social"]
+LOGEMENT_LABELS: Dict[str, str] = {
+    "Location": "Location parc privé",
+    "Logement Social": "Logement Social",
+}
+HEBERGEMENT_LABELS: Dict[str, str] = {opt: opt for opt in HEBERGEMENT_OPTIONS}
 SANTE_OPTIONS = [
     "Hôpital",
     "Maternité",
     "Soutien Psychologique",
     "Dialyse",
-    "Maison de santé",
+    # "Maison de santé",
     "Addictologie",
     "Santé maternelle et infantile (PMI)",
 ]
+SANTE_LABELS: Dict[str, str] = {
+    "Hôpital": "Suivi à l'hôpital",
+    "Maternité": "Suivi dans une maternité",
+    "Soutien Psychologique": "Soutien Psychologique",
+    "Dialyse": "Dialyse",
+    # "Maison de santé": "Maison de santé",
+    "Addictologie": "Addictologie",
+    "Santé maternelle et infantile (PMI)": "Santé maternelle et infantile (PMI)",
+}
 POIDS_OPTIONS = [0.0, 0.25, 0.5, 0.75, 1.0]
 HOUSING_TYPE_OPTIONS = {
     "appt_all": "Appartement (Tous types)",
@@ -145,14 +244,43 @@ HOUSING_TYPE_OPTIONS = {
 
 # --- Bassin de Vie Demographic Sizing (Trapezoidal Membership) ---
 CITY_SIZE_MAPPING = {
-    "🚜 Commune rurale": {"a": 0, "b": 1000, "c": 30000, "d": 60000},
-    "🏡 Bourg": {"a": 2000, "b": 10000, "c": 70000, "d": 130000},
-    "🏘️ Petite Ville": {"a": 10000, "b": 30000, "c": 200000, "d": 450000},
-    "🏙️ Ville moyenne": {"a": 30000, "b": 80000, "c": 500000, "d": 1200000},
+    "🚜 Commune rurale": {"a": 0, "b": 500, "c": 3000, "d": 8000},
+    "🏡 Bourg": {"a": 2000, "b": 5000, "c": 15000, "d": 30000},
+    "🏘️ Petite Ville": {"a": 10000, "b": 20000, "c": 50000, "d": 100000},
+    "🏙️ Ville moyenne": {"a": 35000, "b": 70000, "c": 300000, "d": 800000},
 }
-DEFAULT_CITY_SIZE = "🏘️ Petite Ville"
-DEFAULT_TRAPEZOID = CITY_SIZE_MAPPING[DEFAULT_CITY_SIZE]
+DEFAULT_CITY_SIZE_RANGE = ("🏡 Bourg", "🏘️ Petite Ville")
+DEFAULT_CITY_SIZE = ["🏡 Bourg", "🏘️ Petite Ville"]
 TARGET_CITY_SIZE_OPTIONS = list(CITY_SIZE_MAPPING.keys())
+
+
+def get_trapezoid_for_range(min_label: str, max_label: str) -> dict[str, int]:
+    """Computes the dynamic trapezoid bounds [a, b, c, d] for a range of city sizes.
+
+    Args:
+        min_label: Lower bound city size category.
+        max_label: Upper bound city size category.
+
+    Returns:
+        Dict with keys 'a', 'b', 'c', 'd'.
+    """
+    min_bounds = CITY_SIZE_MAPPING.get(
+        min_label, CITY_SIZE_MAPPING[TARGET_CITY_SIZE_OPTIONS[0]]
+    )
+    max_bounds = CITY_SIZE_MAPPING.get(
+        max_label, CITY_SIZE_MAPPING[TARGET_CITY_SIZE_OPTIONS[-1]]
+    )
+    return {
+        "a": min_bounds["a"],
+        "b": min_bounds["b"],
+        "c": max_bounds["c"],
+        "d": max_bounds["d"],
+    }
+
+
+DEFAULT_TRAPEZOID = get_trapezoid_for_range(
+    DEFAULT_CITY_SIZE_RANGE[0], DEFAULT_CITY_SIZE_RANGE[1]
+)
 DEMOGRAPHIC_MIN_FLOOR = 0.30
 
 # --- Weight Profiles (F-15) ---
@@ -208,6 +336,10 @@ class Org(BaseModel):
     defaults: Dict[str, Any] = Field(default_factory=dict)
     ai_free_mode: bool = False
     enable_interactive_chat: bool = False
+    zones_user_description: Optional[str] = Field(
+        default=None,
+        description="Texte explicatif destiné à l'utilisateur détaillant le périmètre ou les restrictions géographiques de l'organisation.",
+    )
 
     model_config = ConfigDict(populate_by_name=True, revalidate_instances="never")
 
@@ -221,25 +353,31 @@ class User(BaseModel):
     model_config = ConfigDict(populate_by_name=True, revalidate_instances="never")
 
 
+def _load_secrets_toml() -> Dict[str, Any]:
+    """Loads secrets.toml using standard library tomllib."""
+    candidates = [
+        os.path.join(APP_DIR, ".streamlit", "secrets.toml"),
+        os.path.join(PROJECT_ROOT, ".streamlit", "secrets.toml"),
+        "/app/.streamlit/secrets.toml",
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            try:
+                with open(p, "rb") as f:
+                    return tomllib.load(f)
+            except Exception as e:
+                logger.warning("Error reading secrets from %s: %s", p, e)
+    return {}
+
+
 def load_organization_profiles() -> Dict[str, Org]:
-    """Loads organization profiles from Streamlit secrets.
+    """Loads organization profiles from secrets.toml.
 
     Returns an empty dict if no organizations are configured in secrets.
     """
-    try:
-        from streamlit.errors import StreamlitSecretNotFoundError
-    except ImportError:
-        StreamlitSecretNotFoundError = FileNotFoundError  # type: ignore[misc, assignment]
-
-    try:
-        if "organizations" not in st.secrets:
-            return {}
-        raw_orgs = st.secrets["organizations"]
-    except (StreamlitSecretNotFoundError, FileNotFoundError):
-        logger.debug("Streamlit secrets not found, using empty organization profiles.")
-        return {}
-    except Exception as exc:
-        logger.warning("Unable to access Streamlit secrets: %s", exc)
+    raw_secrets = _load_secrets_toml()
+    raw_orgs = raw_secrets.get("organizations", {})
+    if not raw_orgs:
         return {}
 
     try:
@@ -275,26 +413,22 @@ PROJECTED_CRS = "EPSG:2154"  # RGF93 / Lambert-93, suitable for metropolitan Fra
 
 
 def _get_auth_secret(key: str, default: Any) -> Any:
-    """Read an auth configuration value from st.secrets, with a safe fallback.
+    """Read an auth configuration value from secrets.toml, with a safe fallback.
 
     Reads from the [auth] section or top-level of .streamlit/secrets.toml.
-    Falls back to `default` when Streamlit is not running (e.g. during tests or pipeline runs).
+    Falls back to `default` when secrets are unavailable.
 
     Args:
         key: The key within the secrets configuration.
         default: The fallback value if the secret is unavailable.
 
     Returns:
-        The secret value, or `default` if Streamlit secrets are inaccessible.
+        The secret value, or `default` if secrets are inaccessible.
     """
-    try:
-        import streamlit as st
-
-        if key in st.secrets:
-            return st.secrets[key]
-        return st.secrets.get("auth", {}).get(key, default)
-    except Exception:
-        return default
+    raw_secrets = _load_secrets_toml()
+    if key in raw_secrets:
+        return raw_secrets[key]
+    return raw_secrets.get("auth", {}).get(key, default)
 
 
 # The OIDC authorization policy is supplied by Secret Manager at runtime and
@@ -309,7 +443,11 @@ OIDC_DOMAIN_ORG_MAPPING: Dict[str, str] = dict(
 OIDC_EMAIL_ORG_MAPPING: Dict[str, str] = dict(_get_auth_secret("email_org_mapping", {}))
 
 # --- Admins Allowlist ---
-ADMIN_USERS: Set[str] = set(_get_auth_secret("admin_users", ["jacques-local"]))
+ADMIN_USERS: Set[str] = {
+    u.strip().casefold()
+    for u in _get_auth_secret("admin_users", ["jacques-local"])
+    if isinstance(u, str) and u.strip()
+}
 
 
 # --- Inclusion Defaults ---
@@ -352,6 +490,7 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     "nb_enfants": 0,
     "codes_metiers": [],
     "codes_formations": [],
+    "recherche_siae": True,
     "classe_enfants": [],
     "inc_services_selection": DEFAULT_INC_SERVICES_CORE,
     "inc_asso_add_selection": [],
@@ -360,7 +499,7 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     "weight_profile": "Équilibré",
     "besoin_sante": [],
     "notes_qualitatives": "",
-    "freq_retour": "1 fois/mois",
+    "freq_retour": "1 fois/an",
     "target_city_size": DEFAULT_CITY_SIZE,
     "target_population_a": DEFAULT_TRAPEZOID["a"],
     "target_population_b": DEFAULT_TRAPEZOID["b"],
@@ -476,6 +615,36 @@ DEMO_SCENARIOS = {
         "target_population_c": CITY_SIZE_MAPPING["🏡 Bourg"]["c"],
         "target_population_d": CITY_SIZE_MAPPING["🏡 Bourg"]["d"],
     },
+    "lancement": {
+        "nb_adultes": 1,
+        "nb_enfants": 2,
+        "codes_metiers": [["I1604"]],
+        "commune_actuelle": "69123",
+        "freq_retour": "1 fois/an",
+        "loc_search_area": "region",
+        "loc_search_code": ["84"],
+        "hebergement_cible": ["Location avec Intermédiation"],
+        "logement": "Logement Social",
+        "type_logement": "appt_all",
+        "classe_enfants": ["Maternelle", "Elémentaire"],
+        "inc_services_selection": DEFAULT_INC_SERVICES_CORE
+        + ["lecture-ecriture-calcul--maitriser-le-francais"],
+        "inc_asso_add_selection": ["011075"],
+        "weight_profile": "Profil personnalisé",
+        "poids_emploi": 1.0,
+        "poids_logement": 1.0,
+        "poids_education": 0.5,
+        "poids_inclusion": 0.5,
+        "poids_sante": 0.25,
+        "poids_mobilite": 0.25,
+        "besoin_sante": ["Soutien Psychologique", "Addictologie"],
+        "notes_qualitatives": "Souhaite passer son permis, cherche la proximité d'une église évangélique.",
+        "target_city_size": ["🏘️ Petite Ville", "🏙️ Ville moyenne"],
+        "target_population_a": CITY_SIZE_MAPPING["🏘️ Petite Ville"]["a"],
+        "target_population_b": CITY_SIZE_MAPPING["🏘️ Petite Ville"]["b"],
+        "target_population_c": CITY_SIZE_MAPPING["🏙️ Ville moyenne"]["c"],
+        "target_population_d": CITY_SIZE_MAPPING["🏙️ Ville moyenne"]["d"],
+    },
 }
 
 
@@ -510,28 +679,23 @@ WALDEC_REFUGEE_LABELS = {
 }
 
 
-def is_ai_free_mode() -> bool:
-    """
-    Checks if the application is running in 'AI-free' mode.
+def is_ai_free_mode(org: Optional[Org] = None) -> bool:
+    """Checks if the application is running in 'AI-free' mode.
+
     Returns True if ODIS_AI_FREE_MODE is set to 'true', '1' or 'yes' in environment,
-    or if the active organization setting has 'ai_free_mode' set to True.
+    or if the provided organization setting has 'ai_free_mode' set to True.
+
+    Args:
+        org: Optional Org instance.
+
+    Returns:
+        bool: True if AI-free mode is active.
     """
     if os.environ.get("ODIS_AI_FREE_MODE", "False").lower() in ("true", "1", "yes"):
         return True
 
-    try:
-        org = st.session_state.get("org")
-        if org and getattr(org, "ai_free_mode", False):
-            return True
-    except (AttributeError, RuntimeError) as exc:
-        logger.debug(
-            "st.session_state is unavailable in current context (is_ai_free_mode): %s",
-            exc,
-        )
-    except Exception as exc:
-        logger.warning(
-            "Error reading org from st.session_state in is_ai_free_mode: %s", exc
-        )
+    if org and getattr(org, "ai_free_mode", False):
+        return True
 
     return False
 
@@ -560,33 +724,21 @@ def is_interactive_chat_enabled(
 ) -> bool:
     """Checks if interactive chat under city analysis is enabled.
 
-    Interactive chat is enabled if the active organization profile explicitly enables it
+    Interactive chat is enabled if the provided organization profile explicitly enables it
     (or if ODIS_ENABLE_INTERACTIVE_CHAT is set to 'true' in the environment).
     It is automatically disabled if AI-free mode is active.
 
     Returns:
         bool: True if interactive chat is allowed for the active session.
     """
-    if is_ai_free_mode():
+    if is_ai_free_mode(org=org):
         return False
 
     env_override = os.environ.get("ODIS_ENABLE_INTERACTIVE_CHAT", "").strip().lower()
     if env_override in ("true", "1", "yes"):
         return True
 
-    active_org = org
-    if not active_org:
-        try:
-            active_org = st.session_state.get("org")
-        except (AttributeError, RuntimeError) as exc:
-            logger.debug(
-                "st.session_state is unavailable in current context (is_interactive_chat_enabled): %s",
-                exc,
-            )
-        except Exception as exc:
-            logger.warning("Error reading active_org from st.session_state: %s", exc)
-
-    if active_org and getattr(active_org, "enable_interactive_chat", False):
+    if org and getattr(org, "enable_interactive_chat", False):
         return True
 
     org_context = getattr(search_config, "org_context", None) if search_config else None

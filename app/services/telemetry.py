@@ -5,12 +5,11 @@ import time
 from datetime import datetime
 
 import zoneinfo
-import streamlit as st
 import os
+from collections.abc import MutableMapping
 from google.cloud import bigquery
 from core.models import SearchCriterias, SearchResultsData
 from typing import Any, Optional, Set
-from utils import auth
 
 # Use root logger for critical visibility in background threads
 logger = logging.getLogger(__name__)
@@ -130,59 +129,40 @@ def normalize_interaction_id(value: Any) -> Optional[str]:
     return normalized
 
 
-def get_interaction_id() -> str:
-    """Retrieves or generates a unique interaction ID for the current session state."""
-    val = normalize_interaction_id(getattr(st.session_state, "interaction_id", None))
-    if val is None:
-        try:
-            val = normalize_interaction_id(st.session_state.get("interaction_id"))
-        except (AttributeError, RuntimeError) as exc:
-            _telemetry_logger.debug(
-                "st.session_state is unavailable in get_interaction_id: %s", exc
-            )
-            val = None
-        except Exception as exc:
-            _telemetry_logger.warning(
-                "Error reading interaction_id from st.session_state: %s", exc
-            )
-            val = None
+def generate_interaction_id() -> str:
+    """Generate a random 8-character interaction ID in pure Python."""
+    return str(uuid.uuid4())[:8]
 
-    if val is None:
-        new_id = str(uuid.uuid4())[:8]
-        try:
-            st.session_state["interaction_id"] = new_id
-        except (AttributeError, RuntimeError) as exc:
-            _telemetry_logger.debug(
-                "st.session_state unavailable when storing interaction_id: %s", exc
-            )
-        except Exception as exc:
-            _telemetry_logger.warning(
-                "Failed to store interaction_id in session_state: %s", exc
-            )
-        return new_id
 
-    return str(val)
+def get_interaction_id(session_dict: Optional[MutableMapping[str, Any]] = None) -> str:
+    """Retrieve or generate an interaction ID.
+
+    If session_dict is provided, looks up or stores the interaction ID in that dict.
+    Otherwise, generates a fresh interaction ID.
+    """
+    if session_dict is not None:
+        val = normalize_interaction_id(session_dict.get("interaction_id"))
+        if val is None:
+            new_id = generate_interaction_id()
+            session_dict["interaction_id"] = new_id
+            return new_id
+        return str(val)
+    return generate_interaction_id()
 
 
 def resolve_interaction_id(value: Any = None) -> str:
-    """Prefer an explicit ID, otherwise return the current/generated session ID."""
+    """Prefer an explicit ID, otherwise generate a fresh interaction ID."""
     explicit = normalize_interaction_id(value)
-    return explicit or get_interaction_id()
+    return explicit or generate_interaction_id()
 
 
-def reset_interaction_id() -> str:
-    """Generates a new interaction ID (e.g., on a new search)."""
-    new_id = str(uuid.uuid4())[:8]
-    try:
-        st.session_state["interaction_id"] = new_id
-    except (AttributeError, RuntimeError) as exc:
-        _telemetry_logger.debug(
-            "st.session_state unavailable in reset_interaction_id: %s", exc
-        )
-    except Exception as exc:
-        _telemetry_logger.warning(
-            "Failed to set interaction_id in reset_interaction_id: %s", exc
-        )
+def reset_interaction_id(
+    session_dict: Optional[MutableMapping[str, Any]] = None,
+) -> str:
+    """Generates a new interaction ID. If session_dict is provided, stores it there."""
+    new_id = generate_interaction_id()
+    if session_dict is not None:
+        session_dict["interaction_id"] = new_id
     return new_id
 
 
@@ -196,21 +176,8 @@ def log_event(
     if payload is None:
         payload = {}
 
-    try:
-        if not username:
-            username = st.session_state.get("username", "unknown")
-        if not interaction_id:
-            interaction_id = get_interaction_id()
-    except (AttributeError, RuntimeError) as exc:
-        _telemetry_logger.debug("st.session_state unavailable in log_event: %s", exc)
-        username = username or "unknown"
-        interaction_id = interaction_id or "unknown"
-    except Exception as exc:
-        _telemetry_logger.warning(
-            "Failed to resolve session state in log_event: %s", exc
-        )
-        username = username or "unknown"
-        interaction_id = interaction_id or "unknown"
+    interaction_id = interaction_id or "unknown"
+    username = username or "unknown"
 
     event_data = {
         "event_name": event_name,
@@ -232,6 +199,7 @@ def log_usage_event(
     interaction_id: Optional[str] = None,
     username: Optional[str] = None,
     org_id: Optional[str] = None,
+    login_session_id: Optional[str] = None,
 ):
     """Logs a functional usage event (page view, feature click, etc.) to BigQuery usage_events table."""
     if not os.getenv("GOOGLE_CLOUD_PROJECT") and not os.getenv("GCP_PROJECT"):
@@ -241,31 +209,10 @@ def log_usage_event(
         payload = {}
 
     try:
-        try:
-            if not username:
-                username = st.session_state.get("username", "unknown")
-            if not interaction_id:
-                interaction_id = get_interaction_id()
-            if not org_id:
-                org = st.session_state.get("org")
-                org_id = org.id if org and hasattr(org, "id") else "unknown"
-            login_session_id = auth.get_login_session_id()
-        except (AttributeError, RuntimeError) as exc:
-            _telemetry_logger.debug(
-                "st.session_state unavailable in log_usage_event: %s", exc
-            )
-            username = username or "unknown"
-            interaction_id = interaction_id or "unknown"
-            org_id = org_id or "unknown"
-            login_session_id = "unknown"
-        except Exception as exc:
-            _telemetry_logger.warning(
-                "Error resolving session metadata in log_usage_event: %s", exc
-            )
-            username = username or "unknown"
-            interaction_id = interaction_id or "unknown"
-            org_id = org_id or "unknown"
-            login_session_id = "unknown"
+        username = username or "unknown"
+        interaction_id = interaction_id or "unknown"
+        org_id = org_id or "unknown"
+        login_session_id = login_session_id or "unknown"
 
         try:
             paris_tz = zoneinfo.ZoneInfo("Europe/Paris")
@@ -317,28 +264,9 @@ def log_saved_search_event(
         return
 
     try:
-        try:
-            if not username:
-                username = st.session_state.get("username", "unknown")
-            if not interaction_id:
-                interaction_id = get_interaction_id()
-            if not org_id:
-                org = st.session_state.get("org")
-                org_id = org.id if org and hasattr(org, "id") else "unknown"
-        except (AttributeError, RuntimeError) as exc:
-            _telemetry_logger.debug(
-                "st.session_state unavailable in log_saved_search_event: %s", exc
-            )
-            username = username or "unknown"
-            interaction_id = interaction_id or "unknown"
-            org_id = org_id or "unknown"
-        except Exception as exc:
-            _telemetry_logger.warning(
-                "Error resolving session metadata in log_saved_search_event: %s", exc
-            )
-            username = username or "unknown"
-            interaction_id = interaction_id or "unknown"
-            org_id = org_id or "unknown"
+        username = username or "unknown"
+        interaction_id = interaction_id or "unknown"
+        org_id = org_id or "unknown"
 
         try:
             paris_tz = zoneinfo.ZoneInfo("Europe/Paris")
@@ -372,24 +300,9 @@ def log_saved_search_event(
         logger.error(f"❌ [TELEMETRY] Failed to queue saved_searches event to BQ: {e}")
 
 
-def log_page_view(page_name: str):
-    """Logs page navigation event to BQ, deduplicating consecutive re-runs on the same page."""
-    try:
-        current_page = st.session_state.get("current_page")
-        if current_page != page_name:
-            previous_page = current_page
-            st.session_state["previous_page"] = previous_page
-            st.session_state["current_page"] = page_name
-
-            log_usage_event(
-                "page_view",
-                {
-                    "page": page_name,
-                    "origin": previous_page or "direct_entry",
-                },
-            )
-    except Exception as e:
-        logger.error(f"Failed to log page view: {e}")
+def log_page_view(page_name: str, *args: Any, **kwargs: Any) -> None:
+    """Deprecated: Page views must be tracked via ui.ui_telemetry.log_page_view."""
+    pass
 
 
 def _safe_json_format(obj: Any) -> Any:
@@ -439,28 +352,9 @@ def log_search_complete(
 
     try:
         # Resolve metadata
-        try:
-            if not interaction_id:
-                interaction_id = get_interaction_id()
-            if not username:
-                username = st.session_state.get("username", "unknown")
-            if not org_id:
-                org = st.session_state.get("org")
-                org_id = org.id if org and hasattr(org, "id") else "unknown"
-        except (AttributeError, RuntimeError) as exc:
-            _telemetry_logger.debug(
-                "st.session_state unavailable in log_search_event: %s", exc
-            )
-            interaction_id = interaction_id or "unknown"
-            username = username or "unknown"
-            org_id = org_id or "unknown"
-        except Exception as exc:
-            _telemetry_logger.warning(
-                "Error resolving session metadata in log_search_event: %s", exc
-            )
-            interaction_id = interaction_id or "unknown"
-            username = username or "unknown"
-            org_id = org_id or "unknown"
+        interaction_id = interaction_id or "unknown"
+        username = username or "unknown"
+        org_id = org_id or "unknown"
 
         try:
             paris_tz = zoneinfo.ZoneInfo("Europe/Paris")

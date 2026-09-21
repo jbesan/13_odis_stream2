@@ -1,12 +1,11 @@
 import logging
-from typing import List, Dict, Any
 from pydantic_ai import Agent, RunContext
 from pydantic import BaseModel, Field
 from .state import ODISDeps, ODISContextBuilder
 from .agent_config import create_agent, get_swarm_boilerplate
 from .tools import (
-    search_places_batch,
-    search_rna_rag_batch,
+    search_places_batch_tool,
+    search_rna_rag_batch_tool,
 )
 
 logger = logging.getLogger("healthcare_expert")
@@ -34,9 +33,17 @@ class HealthcareResult(BaseModel):
 HEALTHCARE_EXPERT_SYSTEM_PROMPT = """
 {SWARM_BOILERPLATE}
 
-# Contexte commun du dossier (préfixe stable entre experts) :
+# Projet de vie du bénéficiaire (Briefing du Travailleur Social) :
+{DOSSIER_BRIEFING}
+
+# Critères de recherche du foyer :
 ```json
-{COMMON_CONTEXT}
+{CRITERIA_CONTEXT}
+```
+
+# Commune à analyser :
+```json
+{COMMUNE_CONTEXT}
 ```
 
 # Contexte spécifique à la santé :
@@ -53,33 +60,6 @@ HEALTHCARE_EXPERT_SYSTEM_PROMPT = """
 """
 
 
-async def search_places_batch_tool(queries: List[str], location: str) -> Dict[str, Any]:
-    """Recherche des hôpitaux, centres médicaux ou PMI en mode batch.
-    À utiliser avec parcimonie : un seul appel batch par mission regroupant au maximum 3 à 5 requêtes ciblées indispensables.
-    Args:
-        queries: Liste de requêtes ciblées (ex: ['PMI', 'hôpital', 'centre médical'], max 5).
-        location: Ville cible (ex: 'Bordeaux, Nouvelle-Aquitaine').
-    """
-    return await search_places_batch(queries, location)
-
-
-async def search_rna_rag_batch_tool(
-    queries: List[str], codgeo: str, top_k: int = 10
-) -> List[Dict[str, Any]]:
-    """
-    Recherche sémantique d'associations de santé locales (RNA).
-
-    Args:
-        queries: Liste de termes de recherche.
-                 ATTENTION : Ne mets JAMAIS le nom de la ville dans ces requêtes car le filtrage géographique est déjà géré par l'outil via `codgeo`.
-                 Exemple correct : ['cours de langue FLE', 'accompagnement administratif'].
-                 Exemple incorrect : ['FLE Aix-en-Provence'].
-        codgeo: Code INSEE de la commune.
-        top_k: Nombre maximum de résultats.
-    """
-    return await search_rna_rag_batch(queries, codgeo, top_k=top_k)
-
-
 healthcare_expert_agent: Agent[ODISDeps, HealthcareResult] = create_agent(
     "healthcare_expert",
     deps_type=ODISDeps,
@@ -91,7 +71,7 @@ healthcare_expert_agent: Agent[ODISDeps, HealthcareResult] = create_agent(
 @healthcare_expert_agent.system_prompt
 async def healthcare_expert_instructions(ctx: RunContext[ODISDeps]) -> str:
     state = ctx.deps.state
-    common_context, specific_context = ODISContextBuilder.expert_prompt_contexts(
+    contexts = ODISContextBuilder.expert_prompt_contexts(
         state, "healthcare_expert"
     )
     skill_inst = state.expert_skill_instructions.get(
@@ -101,7 +81,10 @@ async def healthcare_expert_instructions(ctx: RunContext[ODISDeps]) -> str:
 
     return HEALTHCARE_EXPERT_SYSTEM_PROMPT.format(
         SWARM_BOILERPLATE=boilerplate,
-        COMMON_CONTEXT=common_context,
-        SPECIFIC_CONTEXT=specific_context,
+        DOSSIER_BRIEFING=contexts.briefing,
+        CRITERIA_CONTEXT=contexts.criteria,
+        COMMUNE_CONTEXT=contexts.commune,
+        SPECIFIC_CONTEXT=contexts.specific,
         SKILL_INSTRUCTIONS=skill_inst,
     )
+

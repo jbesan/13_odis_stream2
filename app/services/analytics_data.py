@@ -149,9 +149,33 @@ def _query_outcome(
     return ServiceOutcome(status=OutcomeStatus.SUCCESS, value=dataframe)
 
 
+def resolve_analytics_project(client: Any = None, env: str | None = "production") -> str:
+    """Resolve which BigQuery project contains the target environment's logs."""
+    configured = os.getenv("ODIS_ANALYTICS_PROJECT")
+    if configured:
+        return configured
+    if env == "local":
+        return getattr(client, "project", "odis-stream2") if client else "odis-stream2"
+    return os.getenv("ODIS_DATA_PROJECT", "odis-stream2-app")
+
+
+def build_env_filter(env: str | None) -> str:
+    """Build a SQL condition for filtering by deployment environment."""
+    if not env or env == "all":
+        return ""
+    if env == "local":
+        return "AND (env = 'local' OR env IS NULL)"
+    return f"AND env = '{env}'"
+
+
 @st.cache_data
-def fetch_analytics_data(_client: Any, days: int) -> AnalyticsDataResult:
-    """Fetch analytics while keeping empty, failed and partial results distinct."""
+def fetch_analytics_data(
+    _client: Any,
+    days: int,
+    env: str | None = "production",
+    project_id: str | None = None,
+) -> AnalyticsDataResult:
+    """Fetch search and usage events from BigQuery for the given time window and environment."""
     if _client is None:
         unavailable = ServiceOutcome[pd.DataFrame](
             status=OutcomeStatus.UNAVAILABLE,
@@ -159,11 +183,14 @@ def fetch_analytics_data(_client: Any, days: int) -> AnalyticsDataResult:
         )
         return AnalyticsDataResult(searches=unavailable, usage=unavailable)
 
+    target_project = project_id or resolve_analytics_project(_client, env)
+    env_filter = build_env_filter(env)
+
     query_searches = f"""
         SELECT
             interaction_id,
             timestamp,
-            IFNULL(env, 'production') AS env,
+            env,
             username,
             IFNULL(org_id, 'défaut') AS org_id,
             IFNULL(search_hash, '') AS search_hash,
@@ -172,8 +199,9 @@ def fetch_analytics_data(_client: Any, days: int) -> AnalyticsDataResult:
             weights,
             top_results,
             detailed_breakdown
-        FROM `{_client.project}.{dataset_id}.search_events`
+        FROM `{target_project}.{dataset_id}.search_events`
         WHERE TIMESTAMP(timestamp) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {days} DAY)
+          {env_filter}
         ORDER BY timestamp DESC
     """
     query_usage = f"""
@@ -181,13 +209,14 @@ def fetch_analytics_data(_client: Any, days: int) -> AnalyticsDataResult:
             interaction_id,
             login_session_id,
             timestamp,
-            IFNULL(env, 'production') AS env,
+            env,
             username,
             IFNULL(org_id, 'défaut') AS org_id,
             event_name,
             payload
-        FROM `{_client.project}.{dataset_id}.usage_events`
+        FROM `{target_project}.{dataset_id}.usage_events`
         WHERE TIMESTAMP(timestamp) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {days} DAY)
+          {env_filter}
         ORDER BY timestamp DESC
     """
     return AnalyticsDataResult(
@@ -227,35 +256,79 @@ def fetch_gcp_billing_data(
             currency,
             SUM(cost) AS cost_gross,
             SUM((SELECT IFNULL(SUM(c.amount), 0) FROM UNNEST(credits) c)) AS credits,
-            SUM(cost + (SELECT IFNULL(SUM(c.amount), 0) FROM UNNEST(credits) c)) AS cost_net
+            SUM(cost + (SELECT IFNULL(SUM(c.amount), 0) FROM UNNEST(credits) c)) AS cost_net,
+            SUM(IFNULL(usage.amount_in_pricing_units, usage.amount)) AS usage_amount,
+            IFNULL(ANY_VALUE(usage.pricing_unit), ANY_VALUE(usage.unit)) AS usage_unit
         FROM `{billing_table}`
         WHERE usage_start_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {days} DAY)
           AND project.id IN ({project_list_sql})
         GROUP BY usage_date, project_id, project_name, service_name, sku_description, currency
-        ORDER BY usage_date DESC, cost_net DESC
+        ORDER BY usage_date DESC, cost_gross DESC
     """
     return _query_outcome(_client, query_billing, "gcp_billing_export")
 
 
+def format_billing_usage(amount: float | None, unit: str | None) -> str:
+    """Format numeric billing usage amount and unit into a readable string."""
+    if amount is None or pd.isna(amount) or amount == 0:
+        return "-"
+    unit_str = str(unit).strip() if unit and not pd.isna(unit) else ""
+    unit_map = {
+        "second": "s",
+        "seconds": "s",
+        "gibibyte second": "GiB·s",
+        "gibibyte month": "GiB·mois",
+        "gibibyte": "GiB",
+        "byte-seconds": "o·s",
+        "bytes": "o",
+        "month": "mois",
+        "count": "tokens/req",
+        "requests": "req",
+    }
+    short_unit = unit_map.get(unit_str.lower(), unit_str)
+    if amount >= 1_000_000:
+        val_str = f"{amount:,.0f}".replace(",", " ")
+    elif amount >= 100:
+        val_str = f"{amount:,.1f}".replace(",", " ")
+    elif amount >= 1:
+        val_str = f"{amount:.2f}"
+    else:
+        val_str = f"{amount:.4f}"
+    return f"{val_str} {short_unit}".strip()
+
+
+
 @st.cache_data
 def fetch_agent_costs_data(
-    _client: Any, days: int, env: str | None = "production"
+    _client: Any,
+    days: int,
+    env: str | None = "production",
+    project_id: str | None = None,
 ) -> ServiceOutcome[pd.DataFrame]:
-    """Fetch AI agent execution estimated costs aggregated by day."""
+    """Fetch AI agent execution estimated costs and detailed telemetry aggregated by day."""
     if _client is None:
         return ServiceOutcome[pd.DataFrame](
             status=OutcomeStatus.UNAVAILABLE,
             error_code="ANALYTICS-BQ-UNAVAILABLE",
         )
 
-    env_filter = f"AND (env = '{env}' OR env IS NULL)" if env else ""
+    target_project = project_id or resolve_analytics_project(_client, env)
+    env_filter = build_env_filter(env)
 
     query_agent_costs = f"""
         SELECT
             DATE(timestamp) AS usage_date,
             COUNT(*) AS run_count,
-            SUM(cost_eur) AS total_estimated_cost_eur
-        FROM `{_client.project}.{dataset_id}.agent_state_logs`
+            SUM(cost_eur) AS total_estimated_cost_eur,
+            SUM(SAFE_CAST(JSON_VALUE(cost_details, '$.input_tokens_new') AS INT64)) AS input_tokens_new,
+            SUM(SAFE_CAST(JSON_VALUE(cost_details, '$.input_tokens_cached') AS INT64)) AS input_tokens_cached,
+            SUM(SAFE_CAST(JSON_VALUE(cost_details, '$.output_tokens') AS INT64)) AS output_tokens,
+            SUM(SAFE_CAST(JSON_VALUE(cost_details, '$.grounding_queries') AS INT64)) AS grounding_queries,
+            SUM(SAFE_CAST(JSON_VALUE(cost_details, '$.places_requests') AS INT64)) AS places_requests,
+            SUM(SAFE_CAST(JSON_VALUE(cost_details, '$.token_cost_eur') AS FLOAT64)) AS token_cost_eur,
+            SUM(SAFE_CAST(JSON_VALUE(cost_details, '$.grounding_cost_eur') AS FLOAT64)) AS grounding_cost_eur,
+            SUM(SAFE_CAST(JSON_VALUE(cost_details, '$.places_cost_eur') AS FLOAT64)) AS places_cost_eur
+        FROM `{target_project}.{dataset_id}.agent_state_logs`
         WHERE TIMESTAMP(timestamp) >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {days} DAY)
           {env_filter}
         GROUP BY usage_date

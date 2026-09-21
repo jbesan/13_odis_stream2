@@ -169,3 +169,151 @@ def test_prune_inclusion_structure_and_job_truncation():
     assert job["lieu"]["departement"] == "69"
     assert job["lieu"]["code_insee"] == "69290"
 
+
+def test_search_inclusion_jobs_corsica_insee():
+    """Verify that Corsican INSEE codes (2A/2B) are parsed and uppercase normalized."""
+    with patch("requests.get") as mock_get:
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"results": []}
+        mock_get.return_value = mock_response
+
+        # Test uppercase 2A
+        res_2a = _search_inclusion_jobs_logic(location="2A004")
+        assert res_2a["total"] == 0
+        _, kwargs_2a = mock_get.call_args
+        assert kwargs_2a["params"]["code_insee"] == "2A004"
+        assert kwargs_2a["params"]["distance_max_km"] == 20
+
+        # Test lowercase 2b
+        res_2b = _search_inclusion_jobs_logic(location="2b033")
+        assert res_2b["total"] == 0
+        _, kwargs_2b = mock_get.call_args
+        assert kwargs_2b["params"]["code_insee"] == "2B033"
+        assert kwargs_2b["params"]["distance_max_km"] == 20
+
+
+def test_search_inclusion_jobs_404_handled_gracefully():
+    """Verify that HTTP 404 from Inclusion API returns empty offers without raising errors."""
+    with patch("requests.get") as mock_get:
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_get.return_value = mock_response
+
+        res = _search_inclusion_jobs_logic(location="13440")
+
+        assert "offres" in res
+        assert res["offres"] == []
+        assert res["total"] == 0
+        assert "error" not in res
+
+
+def test_search_inclusion_jobs_filter_by_query():
+    """Verify that _search_inclusion_jobs_logic filters offers based on query in title or body."""
+    mock_results = [
+        {
+            "id": "siae-1",
+            "name": "Structure 1",
+            "postes": [
+                {
+                    "id": 101,
+                    "rome": "Chargé / Chargée d'accueil (M1601)",
+                    "appellation_modifiee": "Hôte d'accueil",
+                    "description": "Accueil du public",
+                    "profil_recherche": "Bonne élocution",
+                },
+                {
+                    "id": 102,
+                    "rome": "Jardinier / Jardinière paysagiste (A1208)",
+                    "appellation_modifiee": "Agent espaces verts",
+                    "description": "Tonte de pelouse",
+                    "profil_recherche": "Endurant",
+                },
+            ],
+        },
+        {
+            "id": "siae-2",
+            "name": "Structure 2",
+            "postes": [
+                {
+                    "id": 201,
+                    "rome": "Agent d'entretien (I1203)",
+                    "appellation_modifiee": "Agent de maintenance",
+                    "description": "Réparation et accueil des prestataires",
+                    "profil_recherche": "Polyvalent",
+                }
+            ],
+        },
+    ]
+
+    with patch("requests.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"results": mock_results}
+        mock_get.return_value = mock_resp
+
+        # 1. Search for "Chargé d'accueil" -> should match only poste 101
+        res = _search_inclusion_jobs_logic(location="13004", query="Chargé d'accueil")
+        assert res["total"] == 1
+        assert len(res["offres"]) == 1
+        assert res["offres"][0]["id"] == "siae-1"
+        assert len(res["offres"][0]["postes"]) == 1
+        assert res["offres"][0]["postes"][0]["id"] == 101
+
+        # 2. Search for accent-free query "charge d accueil"
+        res_accent = _search_inclusion_jobs_logic(
+            location="13004", query="charge d accueil"
+        )
+        assert res_accent["total"] == 1
+        assert res_accent["offres"][0]["postes"][0]["id"] == 101
+
+        # 3. Search for query matching description: "prestataires" -> matches poste 201 in structure 2
+        res_desc = _search_inclusion_jobs_logic(location="13004", query="prestataires")
+        assert res_desc["total"] == 1
+        assert res_desc["offres"][0]["id"] == "siae-2"
+        assert res_desc["offres"][0]["postes"][0]["id"] == 201
+
+
+def test_search_inclusion_jobs_combined_rome_and_query_or_logic():
+    """Verify that when both ROME and query are provided, flexible OR logic maximizes recall."""
+    mock_results = [
+        {
+            "id": "siae-1",
+            "name": "Structure Mixte",
+            "postes": [
+                {
+                    "id": 1,
+                    "rome": "Chargé d'accueil (M1601)",
+                    "appellation_modifiee": "Accueil",
+                    "description": "Accueil",
+                },
+                {
+                    "id": 2,
+                    "rome": "Jardinier paysagiste (A1208)",
+                    "appellation_modifiee": "Espaces verts",
+                    "description": "Espaces verts",
+                },
+                {
+                    "id": 3,
+                    "rome": "Peintre en bâtiment (F1606)",
+                    "appellation_modifiee": "Peintre",
+                    "description": "Peinture intérieure",
+                },
+            ],
+        }
+    ]
+
+    with patch("requests.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"results": mock_results}
+        mock_get.return_value = mock_resp
+
+        # ROME is A1208 (matches poste 2), Query is "accueil" (matches poste 1)
+        # OR logic keeps both poste 1 and poste 2, but rejects poste 3
+        res = _search_inclusion_jobs_logic(
+            location="13004", rome="A1208", query="accueil"
+        )
+        assert res["total"] == 1
+        matched_ids = [p["id"] for p in res["offres"][0]["postes"]]
+        assert sorted(matched_ids) == [1, 2]

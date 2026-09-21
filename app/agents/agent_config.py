@@ -2,6 +2,7 @@ import os
 from typing import Literal, Any
 from pydantic_ai import Agent
 from google import genai
+from google.genai import types
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic_ai.models import ModelSettings
@@ -174,14 +175,23 @@ def get_p_model(agent_name: str, client: genai.Client | None = None) -> GoogleMo
     return GroundingGoogleModel(model_name, provider=provider)
 
 
-def get_gemini_client(attempts: int = 3, location: str | None = None) -> genai.Client:
+def get_gemini_client(
+    attempts: int = 3,
+    location: str | None = None,
+    timeout: float | None = 30.0,
+) -> genai.Client:
     """Returns a configured Google GenAI client based on settings.
 
     Uses Vertex AI on the configured location unconditionally.
-    """
-    from google import genai
-    from google.genai import types
 
+    Args:
+        attempts: Number of HTTP retry attempts for 429/503 status codes.
+        location: Target GCP location override (defaults to settings/eu).
+        timeout: Request timeout in seconds (converted to milliseconds for HttpOptions).
+
+    Returns:
+        A configured genai.Client instance.
+    """
     project = get_gcp_project()
     loc = location or agent_settings.gcp_location or "eu"
 
@@ -197,7 +207,12 @@ def get_gemini_client(attempts: int = 3, location: str | None = None) -> genai.C
         max_delay=10.0,
         http_status_codes=[429, 503],
     )
-    http_opts = types.HttpOptions(retry_options=retry_opts, base_url=base_url)
+    timeout_ms = int(timeout * 1000) if timeout is not None else None
+    http_opts = types.HttpOptions(
+        timeout=timeout_ms,
+        retry_options=retry_opts,
+        base_url=base_url,
+    )
 
     return genai.Client(
         vertexai=True, project=project, location=loc, http_options=http_opts
@@ -218,10 +233,8 @@ def get_swarm_boilerplate(
             "**Instructions opérationnelles**:\n"
             "- Ne recherche jamais une deuxième fois des éléments déjà à ta disposition.\n"
             "- Priorisation des outils : N'utilise `search_web_batch_tool` que lorsque les autres outils n'ont rien donné ou ne sont pas pertinents sur un point essentiel.\n"
-            "- `search_places_batch_tool` (recherche de lieux et équipements locaux Google Places) doit être utilisé avec grande parcimonie : limite-toi à un seul appel batch par mission regroupant au maximum 3 à 5 requêtes ciblées indispensables (ex: 2 ou 3 structures clés). Ne cherche jamais via Places ce qui figure déjà dans le dossier ou les référentiels.\n"
             "- Pour un outil donné, regroupe toutes les recherches indépendantes dans un seul appel batch.\n"
             "- Si plusieurs outils sont indépendants, appelle-les dans la même réponse, sans attendre le premier résultat.\n"
-            "- `search_web_batch_tool` est limité à un seul appel par mission : donne-lui une liste de besoins indépendants (termes clés, question et lieu si nécessaire), jamais une recherche à la fois.\n"
             "- Budget limité : tu disposes d'au plus 5 requêtes au modèle pour cette mission, appels de suivi compris. Ce budget concerne les tours du modèle, pas le nombre de recherches regroupées dans un batch : planifie dès le premier tour et garde un tour pour la réponse finale.\n"
         )
     elif agent_type == "coordinator":

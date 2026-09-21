@@ -98,10 +98,12 @@ Represents the complete scoring details and qualitative output for a single comm
   - `mobility`: `MobilityMetrics` (transit stop densities, EPCI boundary checks).
   - `territoire`: `TerritoryMetrics` (strategic zone boost tags, insecurity indexes).
 - **AI Content**: Holds the `refiner_pitch` (refinement narrative), `expert_analysis` (raw expert agent markdowns), and `odis_synthesis` (conversational history payload).
+- **Post-scoring publication**: `commune_results_hydrated` becomes `True` only after all providers in the execution plan have returned terminal, validated results and their owned fields have been copied into the model. `hydration_sources` keeps each provider's terminal status and error code.
 
 ### 2.3 `SearchResultsData`
 The parent wrapper containing the global session results.
 - `search_hash`: The criteria MD5 hash used for execution validation.
+- `execution_id`: Unique identity for this live attempt. `background_key` uses it for workers and falls back to `search_hash` for legacy snapshots.
 - `results`: List of the top-N recommended `CommuneResult` objects sorted in descending order of `global_score`.
 - `current_geo`: Reference `CommuneResult` for the user's starting city.
 - `commune_pressentie`: Optional comparison `CommuneResult` for the user's shortlisted city.
@@ -132,16 +134,29 @@ AI agents are utilized strictly for dynamic parameter translation and qualitativ
 2.  **On-Demand Qualitative Enrichment**: When a user is viewing the scored recommendations list and expands a city's details, they can trigger a **"Full AI Analysis"**. This launches the parallel multi-agent graph swarm (`app/agents/graph.py`) to gather web and RAG context and compile a targeted city briefing.
 
 ### 3.2 UI Synchronization Lifecycle
-When initiating long-running scoring or AI swarm tasks:
-1.  The UI spawns a background thread via [launch_background_city_analysis](file:///Users/jacques/dev/13_odis_stream2/app/agents/utils.py#L130).
-2.  The UI displays a loading widget inside a `@st.fragment(run_every=2.0)` polling component.
-3.  The thread writes state updates to the session-specific `st.session_state['odis_bg_store']`.
-4.  Once the status changes to `"done"`, the UI triggers a page rerun to render the new state.
+When initiating long-running scoring or enrichment tasks:
+1.  `SearchController` assigns an `execution_id` after deterministic scoring and
+    calls `launch_post_scoring_tasks`.
+2.  `HydrationRun` publishes the complete provider plan, then fans out bounded
+    association, service and job workers. Workers write typed terminal outcomes
+    to `get_odis_bg_store()` and never mutate the displayed models.
+3.  The Results page and its `@st.fragment(run_every=2.0)` actions call the
+    synchronizer before reading readiness. A per-commune join/reduce validates
+    a private copy, publishes provider-owned fields, and writes
+    `commune_results_hydrated = True` last.
+4.  The optional `PostScoringRun` analysis stage waits for the same hydration
+    publication and a terminal refiner; it is explicitly skipped when
+    `ODIS_AUTO_ANALYSE_TOP_CITIES` is disabled. The manual analysis button
+    remains independent.
 
 Form widget state is intentionally not wrapped in a second reactive store. Each widget has one native `ui_*` Session State value. `FormState.hydrate()` applies defaults, organization/demo profiles, auto-detection and shared criteria before widgets render; `FormState.collect()` is the sole conversion to `SearchCriterias`. Composite mirrors such as checkbox-list copies, expert flags and organization boost dictionaries are derived instead of persisted.
 
 ### 3.3 The State Reducer Pattern
-Because background threads and the `pydantic-graph` swarm run outside the main Streamlit thread, ODIS implements a **state reducer pattern** (`merge_search_results` in `app/agents/state.py`) to update the UI:
+Because deterministic hydration workers and the `pydantic-graph` swarm run outside the main Streamlit thread, ODIS implements two explicit reducers:
+- `HydrationRun.reduce_into` validates and publishes provider-owned data on the UI thread without partial writes.
+- `merge_search_results` in `app/agents/state.py` merges qualitative agent output into the active `CommuneResult`.
+
+The reducers update the UI:
 - Upon background thread completion, the reducer intercepts the newly generated `expert_analysis` and `refiner_pitch` payloads.
 - It matches the target city within `st.session_state.search_results` (using the INSEE `codgeo` or normalized name).
 - It merges the qualitative fields into the active `CommuneResult` in-place, triggering a clean reactive UI refresh.
@@ -172,8 +187,15 @@ The mathematical engine of the application. It receives the verified GCS release
 - Evaluates mandatory baseline criteria and incorporates regional boosts.
 - Details are documented in [SCORING.md](file:///Users/jacques/dev/13_odis_stream2/SCORING.md).
 
-### 4.3 Post-Scoring Hydration (`app/core/postscoring.py`)
-An asynchronous service that runs immediately after scoring. It queries external APIs (France Travail for live jobs, Les emplois de l'inclusion for solidarity structures) and runs database-level RAG searches for associations in BigQuery, packing the returned records into the `CommuneResult` model.
+### 4.3 Post-Scoring Hydration (`app/core/hydration.py`, `app/core/hydration_payloads.py`, `app/core/postscoring.py`)
+An asynchronous service that runs immediately after scoring. `HydrationPlan` and
+`HydrationRun` fan out typed associations, Data Inclusion services and France
+Travail jobs, join results per commune, and reduce them transactionally into
+`CommuneResult`. The shared executor and deadline bound all sessions; a unique
+execution key rejects late results from replaced searches. `PostScoringRun`
+coordinates the bounded refiner and optional top-five AI analysis. The latter
+uses the LLM graph only when the flag is enabled; the deterministic hydration
+orchestrator remains separate from `pydantic-graph`.
 
 ### 4.4 Results UI & "En Savoir Plus" Pane (`app/pages/3_Resultats.py` & `app/ui/results.py`)
 Renders the final sorted list of candidate communes.

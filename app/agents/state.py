@@ -1,12 +1,15 @@
 import json
 import logging
-from typing import List, Dict, Any, Optional, Literal
+from typing import List, Dict, Any, Optional, Literal, NamedTuple
 from dataclasses import dataclass, field
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 from google import genai
 from core.models import SearchCriterias, SearchResultsData, CommuneResult, CriteriaItem
-from core.evidence import DomainArtifact as EvidenceDomainArtifact
-from services.ai_pricing import estimate_google_grounding_cost_eur, estimate_places_cost_eur
+from core.evidence import DomainArtifact as EvidenceDomainArtifact, WebSearchBatchResult
+from services.ai_pricing import (
+    estimate_google_grounding_cost_eur,
+    estimate_places_cost_eur,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +74,7 @@ class UsageStats(BaseModel):
         )
         self.places_cost_eur = estimate_places_cost_eur(self.places_requests)
         self.cost_eur = (
-            self.token_cost_eur
-            + self.grounding_cost_eur
-            + self.places_cost_eur
+            self.token_cost_eur + self.grounding_cost_eur + self.places_cost_eur
             if self.eur_priced
             else 0.0
         )
@@ -168,10 +169,20 @@ class ODISDeps:
     # never mutate the aggregate UsageStats concurrently.
     web_search_usage: Dict[str, UsageStats] = field(default_factory=dict)
     web_search_call_counts: Dict[str, int] = field(default_factory=dict)
+    web_search_results: Dict[str, WebSearchBatchResult] = field(default_factory=dict)
 
     # Allow arbitrary types for genai.Client
     class Meta:
         arbitrary_types_allowed = True
+
+
+class ExpertPromptContexts(NamedTuple):
+    """Structured context components for legacy expert prompts to maximize readability and prefix caching."""
+
+    briefing: str
+    criteria: str
+    commune: str
+    specific: str
 
 
 class ODISContextBuilder:
@@ -262,8 +273,12 @@ class ODISContextBuilder:
             "Population": commune.population,
             "Bassin de vie": commune.name_bdv or commune.codgeo_bdv or "N/A",
             "Score global": int((commune.global_score or 0.0) * 100),
-            "Adéquation besoins": int((commune.score_besoins or commune.global_score or 0.0) * 100),
-            "Adéquation démographique": int((commune.coeff_population_gauss or 1.0) * 100),
+            "Adéquation besoins": int(
+                (commune.score_besoins or commune.global_score or 0.0) * 100
+            ),
+            "Adéquation démographique": int(
+                (commune.coeff_population_gauss or 1.0) * 100
+            ),
         }
 
     @classmethod
@@ -453,31 +468,38 @@ class ODISContextBuilder:
     @classmethod
     def expert_prompt_contexts(
         cls, state: "GraphState", agent_name: str
-    ) -> tuple[str, str]:
-        """Return the stable shared prefix and the expert-specific context.
+    ) -> ExpertPromptContexts:
+        """Return the stable shared prefix components and the expert-specific context.
 
-        The shared block is assembled identically for every legacy expert and
-        is serialized compactly so Gemini can recognize the same prompt prefix
-        across the parallel expert runs.  The expert-specific block is kept
-        after it; the current mission remains the final user message and is
-        therefore deliberately absent here.
+        The shared components (briefing narrative, criteria JSON, and commune identity JSON)
+        are assembled identically for every legacy expert so Gemini can recognize the same
+        prompt prefix across the parallel expert runs. The expert-specific block is kept
+        after it; the current mission remains the final user message and is deliberately
+        absent here.
         """
         if agent_name not in cls.DOMAIN_EXPERTS:
             raise ValueError(f"{agent_name!r} is not a domain expert")
 
-        common: Dict[str, Any] = {}
-        if state.odis_brief:
-            common["Résumé du dossier (Briefing)"] = state.odis_brief
-        if state.search_criteria:
-            common["Critères de recherche"] = cls._format_criteria(
-                state.search_criteria
-            )
+        briefing_text = (
+            state.odis_brief.strip()
+            if state.odis_brief
+            else "Aucun briefing particulier renseigné."
+        )
+
+        criteria_dict = (
+            cls._format_criteria(state.search_criteria)
+            if state.search_criteria
+            else {}
+        )
+        criteria_json = cls._dump_context(criteria_dict, compact=True)
 
         focus_city = cls._focus_city(state)
-        if focus_city:
-            common["Commune analysée (Identité)"] = cls._format_commune_identity(
-                focus_city
-            )
+        commune_dict = (
+            cls._format_commune_identity(focus_city)
+            if focus_city
+            else {}
+        )
+        commune_json = cls._dump_context(commune_dict, compact=True)
 
         specific: Dict[str, Any] = {}
         if focus_city:
@@ -503,8 +525,13 @@ class ODISContextBuilder:
                         focus_city.territoire
                     )
 
-        return cls._dump_context(common, compact=True), cls._dump_context(
-            specific, compact=True
+        specific_json = cls._dump_context(specific, compact=True)
+
+        return ExpertPromptContexts(
+            briefing=briefing_text,
+            criteria=criteria_json,
+            commune=commune_json,
+            specific=specific_json,
         )
 
     @classmethod
@@ -522,13 +549,19 @@ class ODISContextBuilder:
             A formatted JSON string ready to inject into a system prompt.
         """
         if agent_name in cls.DOMAIN_EXPERTS:
-            common_context, specific_context = cls.expert_prompt_contexts(
-                state, agent_name
-            )
-            common = json.loads(common_context)
-            specific = json.loads(specific_context)
-            common.update(specific)
-            return cls._dump_context(common, compact=False)
+            ctxs = cls.expert_prompt_contexts(state, agent_name)
+            merged: Dict[str, Any] = {}
+            if state.odis_brief:
+                merged["Résumé du dossier (Briefing)"] = ctxs.briefing
+            if ctxs.criteria and ctxs.criteria != "{}":
+                merged["Critères de recherche"] = json.loads(ctxs.criteria)
+            if ctxs.commune and ctxs.commune != "{}":
+                commune_data = json.loads(ctxs.commune)
+                merged["Commune à analyser"] = commune_data
+                merged["Commune analysée (Identité)"] = commune_data
+            if ctxs.specific and ctxs.specific != "{}":
+                merged.update(json.loads(ctxs.specific))
+            return cls._dump_context(merged, compact=False)
 
         criteria = state.search_criteria
         focus_city = None

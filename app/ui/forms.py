@@ -159,53 +159,73 @@ def render_employment_form(app_data: dict[str, Any]) -> None:
                 return str(code)
 
             st.multiselect(
-                f"Métiers ciblés Adulte {i + 1}",
+                f"Métiers ciblés par l'adulte {i + 1}",
                 available_options,
                 format_func=format_rome_label,
                 key=f"ui_metiers_adult_{i}",
-                help="Recherchez par nom de métier (Référentiel ROME). La liste affiche les métiers les plus demandés en nombre de postes.",
-                wrap=True
+                help="Recherchez par nom de métier (Référentiel ROME). La liste affiche les métiers les plus demandés en nombre de postes (>100).",
+                wrap=True,
             )
         with col2:
             st.multiselect(
-                f"Formations recherchées Adulte {i + 1}",
+                f"Formations recherchées par l'adulte {i + 1}",
                 codform_select.index,
                 format_func=lambda x: codform_select.loc[x, "label"],
                 key=f"ui_formations_adult_{i}",
-                wrap=True
+                help="Recherchez par nom de formation (Référentiel NSF). L'outil recherche sur tous les organismes de formations (publics comme privés).",
+                wrap=True,
             )
+
+    st.space("small")
+    if "ui_recherche_siae" not in st.session_state:
+        st.session_state["ui_recherche_siae"] = True
+
+    st.checkbox(
+        "Rechercher également dans les SIAE",
+        key="ui_recherche_siae",
+        help=(
+            "Structures d'Insertion par l'Activité Économique : "
+            "Ateliers et Chantiers d'Insertion (ACI), Entreprises d'Insertion (EI), "
+            "Associations Intermédiaires (AI) ou Entreprises de Travail Temporaire d'Insertion (ETTI)."
+        ),
+    )
 
 
 def render_housing_form() -> None:
     """Renders the UI for the 'Logement' form section."""
     col1, col2 = st.columns(2)
     form_state = FormState(st.session_state)
+    org = st.session_state.get("org")
+    is_jaccueille = org is not None and getattr(org, "id", None) == "jaccueille"
+
     with col1:
-        st.subheader("Hébergement cible à court terme")
+        st.markdown("#### Hébergement d'insertion")
         current_heb = form_state.selected_housing()
 
         for opt in cfg.HEBERGEMENT_OPTIONS:
             cb_key = housing_key(opt)
+            if is_jaccueille and opt == "Chez l'habitant":
+                st.session_state[cb_key] = True
+                continue
             if cb_key not in st.session_state:
                 st.session_state[cb_key] = opt in current_heb
-            st.checkbox(opt, key=cb_key)
+            label = getattr(cfg, "HEBERGEMENT_LABELS", {}).get(opt, opt)
+            st.checkbox(label, key=cb_key)
 
     with col2:
-        st.subheader("Logement cible à long terme")
+        st.markdown("#### Logement cible")
         current_logement = form_state.selected_long_term_housing()
 
         for opt in cfg.LOGEMENT_OPTIONS:
             cb_key = long_term_housing_key(opt)
             if cb_key not in st.session_state:
                 st.session_state[cb_key] = opt in current_logement
-            st.checkbox(opt, key=cb_key)
+            label = getattr(cfg, "LOGEMENT_LABELS", {}).get(opt, opt)
+            st.checkbox(label, key=cb_key)
 
     heb_sel = form_state.selected_housing()
     logement_sel = form_state.selected_long_term_housing()
-    if (
-        "Location avec Intermédiation" in heb_sel
-        or "Location" in logement_sel
-    ):
+    if "Location avec Intermédiation" in heb_sel or "Location" in logement_sel:
         housing_type_options = list(cfg.HOUSING_TYPE_OPTIONS.keys())
         if (
             "ui_type_logement" not in st.session_state
@@ -226,7 +246,7 @@ def render_housing_form() -> None:
 
 def render_health_form() -> None:
     """Renders the UI for the 'Santé' form section."""
-    st.subheader("Support médical à proximité")
+    st.markdown("#### Support médical à proximité")
     form_state = FormState(st.session_state)
     current_sante = form_state.selected_health()
 
@@ -234,7 +254,8 @@ def render_health_form() -> None:
         cb_key = health_key(opt)
         if cb_key not in st.session_state:
             st.session_state[cb_key] = opt in current_sante
-        st.checkbox(opt, key=cb_key)
+        label = getattr(cfg, "SANTE_LABELS", {}).get(opt, opt)
+        st.checkbox(label, key=cb_key)
 
 
 def render_other_needs_form(app_data: dict[str, Any]) -> None:
@@ -243,9 +264,9 @@ def render_other_needs_form(app_data: dict[str, Any]) -> None:
 
     col1, col2 = st.columns(2)
     with col2:
-        st.subheader("Associations Locales")
+        st.markdown("#### Associations Locales")
         st.text(
-            "Sélectionnez vos centres d'intérêt pour identifier les territoires avec un tissu associatif correspondant (Solidarité, Loisirs, Culture...)."
+            "Sélectionnez vos centres d'intérêt pour identifier les territoires avec un tissu associatif correspondant (Solidarité, Loisirs, Culture...). Les associations référencées sont issues du Répertoire National des Associations."
         )
 
         if "waldec_index" in app_data:
@@ -263,9 +284,7 @@ def render_other_needs_form(app_data: dict[str, Any]) -> None:
                 item_map[item.code] = f"{item.label.title()} [{count_str} assos]"
 
             if "ui_inc_asso_add_selection_raw" not in st.session_state:
-                legacy_values = st.session_state.get(
-                    "ui_inc_asso_add_selection", []
-                )
+                legacy_values = st.session_state.get("ui_inc_asso_add_selection", [])
                 st.session_state["ui_inc_asso_add_selection_raw"] = [
                     item.code if hasattr(item, "code") else str(item)
                     for item in legacy_values
@@ -277,13 +296,13 @@ def render_other_needs_form(app_data: dict[str, Any]) -> None:
                 format_func=lambda x: item_map.get(x, x),
                 key="ui_inc_asso_add_selection_raw",
                 label_visibility="collapsed",
-                wrap=True
+                wrap=True,
             )
         else:
             st.warning("Référentiel WALDEC non chargé.")
 
     with col1:
-        st.subheader("Services d'Inclusion")
+        st.markdown("#### Services d'Inclusion (i.e. Soliguide)")
         st.text(
             "Sélectionnez les services d'accompagnement social requis pour la personne ou la famille."
         )
@@ -330,7 +349,7 @@ def render_other_needs_form(app_data: dict[str, Any]) -> None:
             key="ui_inc_services_selection_raw",
             help="Sélectionnez un ou plusieurs services d'inclusion. Les services recommandés/courants sont placés en tête de liste.",
             label_visibility="collapsed",
-            wrap=True
+            wrap=True,
         )
 
 
@@ -340,7 +359,10 @@ def render_other_notes_form() -> None:
         st.session_state.ui_notes_qualitatives = ""
 
     st.text(
-        "Précisez ici tout élément supplémentaire potentiellement utile pour la recherche (origine culturelle, contexte familial, passions, contraintes spécifiques, etc.)."
+        "Précisez ici tout élément supplémentaire potentiellement utile pour la recherche (origine culturelle, pratiques religieuses, contexte familial, passions, contraintes spécifiques, etc.)."
+    )
+    st.warning(
+        "Les éléments ajoutés ci-dessous n'impacteront pas le calcul du score. Ils seront utilisés pour affiner les Analyses Avancées des territoires les mieux notés."
     )
 
     st.text_area(
@@ -376,13 +398,14 @@ def render_mobility_form(app_data: dict[str, Any]) -> None:
     if "ui_mobility_dept" not in st.session_state:
         st.session_state["ui_mobility_dept"] = []
 
-    selected_area = st.segmented_control(
-        "Maille géographique de recherche",
-        options=area_options,
-        format_func=lambda x: area_labels.get(x, str(x)),
-        key="ui_loc_search_area",
-        label_visibility="collapsed",
-    )
+    with st.container(width="stretch", horizontal_alignment="center"):
+        selected_area = st.segmented_control(
+            "Maille géographique de recherche",
+            options=area_options,
+            format_func=lambda x: area_labels.get(x, str(x)),
+            key="ui_loc_search_area",
+            label_visibility="collapsed",
+        )
     active_area = selected_area or SearchAreaLevel.DEPARTEMENT
 
     # st.space("small")
@@ -412,22 +435,58 @@ def render_mobility_form(app_data: dict[str, Any]) -> None:
             wrap=True,
         )
 
+    # Organizational strategic zones explanation
+    org = st.session_state.get("org")
+    if org:
+        explanation = getattr(org, "zones_user_description", None) or org.defaults.get(
+            "zones_user_description"
+        )
+        filter_active = st.session_state.get("ui_org_strategic_locations_filter", True)
+        if explanation and filter_active:
+            st.warning(explanation)
+
     st.divider()
 
-    target_options = getattr(cfg, "TARGET_CITY_SIZE_OPTIONS", list(cfg.CITY_SIZE_MAPPING.keys())[:4])
-    if "ui_target_city_size_label" not in st.session_state:
-        st.session_state["ui_target_city_size_label"] = cfg.DEFAULT_CITY_SIZE
+    target_options = getattr(
+        cfg, "TARGET_CITY_SIZE_OPTIONS", list(cfg.CITY_SIZE_MAPPING.keys())[:4]
+    )
+    if "ui_target_city_size_range" not in st.session_state:
+        legacy_label = st.session_state.get("ui_target_city_size_label")
+        if legacy_label and legacy_label in cfg.CITY_SIZE_MAPPING:
+            st.session_state["ui_target_city_size_range"] = (legacy_label, legacy_label)
+        else:
+            st.session_state["ui_target_city_size_range"] = cfg.DEFAULT_CITY_SIZE_RANGE
 
-    st.markdown("##### Taille de la ville recherchée")
-    with st.container(horizontal=True, width="stretch", horizontal_alignment="center"):
-        st.radio(
-            "Taille de la ville recherchée",
-            options=target_options,
-            key="ui_target_city_size_label",
-            horizontal=True,
-            help="Définit la taille idéale du cadre de vie (calculé sur la population du Bassin de Vie pour prendre en compte le bassin de vie réel et les services du quotidien).",
-            label_visibility="collapsed",
-        )
+    st.markdown(
+        "##### Taille de la ville recherchée (bassin de vie)",
+        help="Le bassin de vie intègre la ville et ses banlieues",
+    )
+
+    start_city, end_city = st.select_slider(
+        "Taille de la ville recherchée (bassin de vie)",
+        options=target_options,
+        value=st.session_state.get(
+            "ui_target_city_size_range", cfg.DEFAULT_CITY_SIZE_RANGE
+        ),
+        key="ui_target_city_size_range",
+        label_visibility="collapsed",
+    )
+
+    trapezoid = cfg.get_trapezoid_for_range(start_city, end_city)
+    b_val = trapezoid["b"]
+    c_val = trapezoid["c"]
+    
+    st.caption(
+        f"Bassin de vie ciblé idéalement entre **{b_val:,}** et **{c_val:,}** habitants".replace(
+            ",", " "
+        ),
+        width="stretch",
+        text_alignment="center"
+    )
+    # Maintain legacy label in session state for backward compatibility
+    st.session_state["ui_target_city_size_label"] = (
+        start_city if start_city == end_city else f"{start_city} à {end_city}"
+    )
 
     st.divider()
 
@@ -523,7 +582,7 @@ def render_org_profile_form(app_data: dict[str, Any]) -> None:
         label_visibility="collapsed",
         key="ui_org_strategic_locations",
         help="Les communes situées dans ces zones recevront un bonus dans le score final.",
-        wrap=True
+        wrap=True,
     )
 
     # Special filter checkbox for J'Accueille (only if org == "jaccueille")
@@ -581,6 +640,7 @@ def render_org_profile_form(app_data: dict[str, Any]) -> None:
                     label_visibility="collapsed",
                 )
 
+
 def render_weight_profile_form() -> None:
     """Renders the UI for selecting the weighting profile and expert weights adjustment."""
 
@@ -636,11 +696,11 @@ def render_weight_profile_form() -> None:
     )
 
     labels_map = {
-        "ui_poids_education": "Education",
         "ui_poids_emploi": "Projet Pro",
         "ui_poids_logement": "Logement",
         "ui_poids_inclusion": "Inclusion",
         "ui_poids_sante": "Santé",
+        "ui_poids_education": "Scolaire",
         "ui_poids_mobilite": "Mobilité",
         "ui_poids_territoire": "Territoire",
     }
@@ -678,7 +738,7 @@ def display_input_tabs(app_data: dict[str, Any]) -> None:
         "Santé",
         "Inclusion",
         "Autres",
-        "Profil",
+        "Priorités",
     ]
 
     # Note: Org settings step/tab is hidden by default from forms, but preserved.

@@ -28,12 +28,12 @@ async def test_job_hunter_search_intent(test_deps):
 
         with (
             patch(
-                "agents.job_hunter.search_referentiels_batch", new_callable=AsyncMock
+                "agents.tools.search_referentiels_batch", new_callable=AsyncMock
             ) as mock_ref,
             patch(
-                "agents.job_hunter.search_job_offers_batch", new_callable=AsyncMock
+                "agents.tools.search_job_offers_batch", new_callable=AsyncMock
             ) as mock_jobs,
-            patch("agents.job_hunter.get_job_details", return_value={}),
+            patch("agents.tools.get_job_details", return_value={}),
         ):
             mock_ref.return_value = {
                 "communes:Paris": [{"code": "75056", "label": "Paris"}]
@@ -60,13 +60,13 @@ async def test_job_hunter_tool_calls(test_deps):
 
         with (
             patch(
-                "agents.job_hunter.search_referentiels_batch", new_callable=AsyncMock
+                "agents.tools.search_referentiels_batch", new_callable=AsyncMock
             ) as mock_ref,
             patch(
-                "agents.job_hunter.search_job_offers_batch", new_callable=AsyncMock
+                "agents.tools.search_job_offers_batch", new_callable=AsyncMock
             ) as mock_jobs,
             patch(
-                "agents.job_hunter.get_job_details",
+                "agents.tools.get_job_details",
                 return_value={"id": "1234567A", "intitule": "Boulanger"},
             ),
         ):

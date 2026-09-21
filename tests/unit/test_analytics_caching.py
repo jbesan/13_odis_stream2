@@ -36,6 +36,11 @@ def test_fetch_analytics_data_caching():
 
     searches_query_arg = mock_client.query.call_args_list[0][0][0]
     assert "INTERVAL 30 DAY" in searches_query_arg
+    assert "AND env = 'production'" in searches_query_arg
+
+    usage_query_arg = mock_client.query.call_args_list[1][0][0]
+    assert "INTERVAL 30 DAY" in usage_query_arg
+    assert "AND env = 'production'" in usage_query_arg
 
 
 def test_fetch_analytics_data_none_client():
@@ -94,6 +99,8 @@ def test_fetch_gcp_billing_data():
                 "cost_gross": 2.50,
                 "credits": 0.0,
                 "cost_net": 2.50,
+                "usage_amount": 1000.0,
+                "usage_unit": "count",
             }
         ]
     )
@@ -109,11 +116,29 @@ def test_fetch_gcp_billing_data():
     assert outcome.value is not None
     assert len(outcome.value) == 1
     assert outcome.value.iloc[0]["service_name"] == "Vertex AI"
+    assert outcome.value.iloc[0]["usage_amount"] == 1000.0
+    assert outcome.value.iloc[0]["usage_unit"] == "count"
 
     # Verify query contains INTERVAL 30 DAY and projects filter
     query_arg = mock_client.query.call_args[0][0]
     assert "INTERVAL 30 DAY" in query_arg
     assert "'odis-stream2-app'" in query_arg
+    assert "usage_amount" in query_arg
+    assert "usage_unit" in query_arg
+
+
+def test_format_billing_usage():
+    """Verify format_billing_usage formats quantities and units properly."""
+    from services.analytics_data import format_billing_usage
+
+    assert format_billing_usage(None, "second") == "-"
+    assert format_billing_usage(0.0, "second") == "-"
+    assert format_billing_usage(125742.9, "second") == "125 742.9 s"
+    assert format_billing_usage(1046884.0, "count") == "1 046 884 tokens/req"
+    assert format_billing_usage(15.18, "month") == "15.18 mois"
+    assert format_billing_usage(1.34, "gibibyte month") == "1.34 GiB·mois"
+    assert format_billing_usage(0.03, "gibibyte") == "0.0300 GiB"
+
 
 
 def test_fetch_gcp_billing_data_none_client():
@@ -128,7 +153,7 @@ def test_fetch_gcp_billing_data_none_client():
 
 
 def test_fetch_agent_costs_data():
-    """Verify that fetch_agent_costs_data queries agent_state_logs correctly."""
+    """Verify that fetch_agent_costs_data queries agent_state_logs correctly with cost_details."""
     from services.analytics_data import fetch_agent_costs_data
 
     mock_client = MagicMock()
@@ -140,6 +165,14 @@ def test_fetch_agent_costs_data():
                 "usage_date": "2026-08-30",
                 "run_count": 5,
                 "total_estimated_cost_eur": 0.12,
+                "input_tokens_new": 50000,
+                "input_tokens_cached": 15000,
+                "output_tokens": 6000,
+                "grounding_queries": 5,
+                "places_requests": 8,
+                "token_cost_eur": 0.10,
+                "grounding_cost_eur": 0.01,
+                "places_cost_eur": 0.01,
             }
         ]
     )
@@ -154,5 +187,26 @@ def test_fetch_agent_costs_data():
     assert outcome.status == OutcomeStatus.SUCCESS
     assert outcome.value is not None
     assert outcome.value.iloc[0]["run_count"] == 5
+    assert outcome.value.iloc[0]["input_tokens_new"] == 50000
     query_executed = mock_client.query.call_args[0][0]
     assert "env = 'production'" in query_executed
+    assert "cost_details" in query_executed
+    assert "input_tokens_new" in query_executed
+
+
+def test_resolve_analytics_project_and_env_filter():
+    """Verify project resolution and SQL filter construction for different environments."""
+    from services.analytics_data import resolve_analytics_project, build_env_filter
+
+    mock_client = MagicMock()
+    mock_client.project = "odis-stream2"
+
+    assert resolve_analytics_project(mock_client, "production") == "odis-stream2-app"
+    assert resolve_analytics_project(mock_client, "staging") == "odis-stream2-app"
+    assert resolve_analytics_project(mock_client, "local") == "odis-stream2"
+
+    assert build_env_filter("production") == "AND env = 'production'"
+    assert build_env_filter("staging") == "AND env = 'staging'"
+    assert build_env_filter("local") == "AND (env = 'local' OR env IS NULL)"
+    assert build_env_filter(None) == ""
+    assert build_env_filter("all") == ""

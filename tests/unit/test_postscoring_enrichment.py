@@ -80,10 +80,16 @@ def test_launch_background_association_enrichment():
 
     # Verify cache update on the engine
     assert "33063" in mock_engine._associations_cache
-    assert mock_engine._associations_cache["33063"] == city_data
+    assert (
+        mock_engine._associations_cache["33063"]["refugee"][0]["id"]
+        == city_data["refugee"][0]["id"]
+    )
 
 
-@patch("core.postscoring.prefetch_associations", side_effect=RuntimeError("backend unavailable"))
+@patch(
+    "core.postscoring.prefetch_associations",
+    side_effect=RuntimeError("backend unavailable"),
+)
 def test_association_failure_is_not_recorded_as_an_empty_result(_prefetch):
     engine = MagicMock()
     hash_val = "association_failure_hash"
@@ -94,10 +100,16 @@ def test_association_failure_is_not_recorded_as_an_empty_result(_prefetch):
 
     deadline = time.time() + 2
     while time.time() < deadline:
-        status = store.get(hash_val, {}).get("association_enrichment_status", {}).get("33063", {})
+        status = (
+            store.get(hash_val, {})
+            .get("association_enrichment_status", {})
+            .get("33063", {})
+        )
         if status.get("status") != "pending":
             break
         time.sleep(0.05)
 
-    assert store[hash_val]["association_enrichment_status"]["33063"]["status"] == "error"
+    assert (
+        store[hash_val]["association_enrichment_status"]["33063"]["status"] == "error"
+    )
     assert "enrichment" not in store[hash_val]

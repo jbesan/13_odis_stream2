@@ -5,9 +5,7 @@ from datetime import datetime
 
 import zoneinfo
 from google.cloud import bigquery
-import streamlit as st
 from typing import Any, Optional
-from services.telemetry import get_interaction_id
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +30,22 @@ def _async_bq_insert(row: dict) -> None:
         table_ref = f"{client.project}.{DATASET_ID}.{TABLE_STATE_LOGS}"
         errors = client.insert_rows_json(table_ref, [row])
         if errors:
-            logger.error(f"BQ Agent State Insert Errors: {errors}")
+            if any("cost_details" in str(err) for err in errors):
+                logger.warning(
+                    "BigQuery table %s lacks cost_details column; retrying without it: %s",
+                    table_ref,
+                    errors,
+                )
+                fallback_row = {k: v for k, v in row.items() if k != "cost_details"}
+                retry_errors = client.insert_rows_json(table_ref, [fallback_row])
+                if retry_errors:
+                    logger.error(f"BQ Agent State Insert Errors (fallback): {retry_errors}")
+                else:
+                    logger.debug(
+                        "Successfully logged Agent State to BigQuery without cost_details."
+                    )
+            else:
+                logger.error(f"BQ Agent State Insert Errors: {errors}")
         else:
             logger.debug(
                 "Successfully logged Agent State to BigQuery with granular fields."
@@ -70,29 +83,12 @@ def log_agent_state_to_bq(
         return
 
     try:
-        # Tier 1: Use explicit caller-supplied values (thread-safe)
-        # Tier 2: Fall back to values baked into the agent_state dict (thread-safe)
-        # Tier 3: Try Streamlit session_state (only safe on the main thread)
-        if not interaction_id:
-            interaction_id = (
-                agent_state.get("interaction_id", "")
-                if isinstance(agent_state, dict)
-                else ""
-            )
-        if not username or username == "unknown":
-            username = (
-                agent_state.get("username", "") if isinstance(agent_state, dict) else ""
-            )
-
-        try:
-            if not interaction_id:
-                interaction_id = get_interaction_id()
-            if not username:
-                username = st.session_state.get("username", "unknown")
-        except (AttributeError, RuntimeError) as exc:
-            logger.debug("Session state unavailable in background thread: %s", exc)
-        except Exception as exc:
-            logger.warning("Error resolving session metadata in bq_logger: %s", exc)
+        # Tier 1: Use explicit caller-supplied values
+        # Tier 2: Fall back to values baked into the agent_state dict
+        if not interaction_id and isinstance(agent_state, dict):
+            interaction_id = agent_state.get("interaction_id", "")
+        if (not username or username == "unknown") and isinstance(agent_state, dict):
+            username = agent_state.get("username", "")
 
         interaction_id = interaction_id or "unknown"
         username = username or "unknown"
@@ -146,10 +142,8 @@ def log_agent_state_to_bq(
                     )
                     artifacts_data[r.get("codgeo", "")] = r.get("expert_analysis", {})
 
-        # ``cost_eur`` is the first-class billing field in the migrated
-        # ``agent_state_logs`` schema.  The detailed rate-card and grounding
-        # breakdown remains in the existing JSON ``artifacts`` column.
-        usage_summary = {
+        # Granular execution telemetry stored in dedicated ``cost_details`` column
+        cost_details = {
             "cost_eur": float(cost_eur or 0.0),
             "cost_eur_available": bool(usage_value("eur_priced", True)),
             "token_cost_eur": float(usage_value("token_cost_eur", 0.0) or 0.0),
@@ -157,10 +151,7 @@ def log_agent_state_to_bq(
             "input_tokens_new": int(usage_value("input_tokens_new", 0) or 0),
             "input_tokens_cached": int(usage_value("cache_read_tokens", 0) or 0),
             "output_tokens": int(usage_value("output_tokens", 0) or 0),
-            "cache_write_tokens": int(usage_value("cache_write_tokens", 0) or 0),
             "cache_hit_ratio": float(usage_value("cache_hit_ratio", 0.0) or 0.0),
-            "requests": int(usage_value("requests", 0) or 0),
-            "tool_calls": int(usage_value("tool_calls", 0) or 0),
             "grounding_queries": int(usage_value("grounding_queries", 0) or 0),
             "grounding_cost_eur": float(usage_value("grounding_cost_eur", 0.0) or 0.0),
             "places_requests": int(usage_value("places_requests", 0) or 0),
@@ -168,54 +159,8 @@ def log_agent_state_to_bq(
             "unpriced_model_requests": int(
                 usage_value("unpriced_model_requests", 0) or 0
             ),
+            "cost_basis": "EUR rate-card estimate; free-tier/account aggregation may differ from invoice",
         }
-        breakdown = usage_value("breakdown", {})
-        if isinstance(breakdown, dict):
-            grounding_queries: list[str] = []
-            grounding_sources: list[dict[str, Any]] = []
-            grounding_supports: list[dict[str, Any]] = []
-            google_usage_metadata: list[dict[str, Any]] = []
-            pricing_cards: list[dict[str, Any]] = []
-            seen_urls: set[str] = set()
-            for entry in breakdown.values():
-                if not isinstance(entry, dict):
-                    continue
-                for query in entry.get("grounding_queries", []) or []:
-                    if isinstance(query, str) and query not in grounding_queries:
-                        grounding_queries.append(query)
-                for source in entry.get("grounding_sources", []) or []:
-                    if not isinstance(source, dict):
-                        continue
-                    url = source.get("url")
-                    if isinstance(url, str) and url not in seen_urls:
-                        seen_urls.add(url)
-                        grounding_sources.append(source)
-                for support in entry.get("grounding_supports", []) or []:
-                    if isinstance(support, dict):
-                        grounding_supports.append(support)
-                for usage_metadata in entry.get("google_usage_metadata", []) or []:
-                    if isinstance(usage_metadata, dict):
-                        google_usage_metadata.append(usage_metadata)
-                pricing_card = {
-                    key: entry.get(key)
-                    for key in (
-                        "model_id",
-                        "model_family",
-                        "pricing_status",
-                        "pricing_source",
-                        "rates_per_million",
-                        "skus",
-                    )
-                    if entry.get(key) is not None
-                }
-                if pricing_card:
-                    pricing_cards.append(pricing_card)
-            usage_summary["grounding_query_values"] = grounding_queries
-            usage_summary["grounding_sources"] = grounding_sources
-            usage_summary["grounding_supports"] = grounding_supports
-            usage_summary["google_usage_metadata"] = google_usage_metadata
-            usage_summary["pricing_cards"] = pricing_cards
-        artifacts_data["__usage__"] = usage_summary
 
         row = {
             "interaction_id": interaction_id,
@@ -238,6 +183,7 @@ def log_agent_state_to_bq(
             ),
             "execution_mode": str(agent_state.get("execution_mode", "full_analysis")),
             "cost_eur": float(cost_eur or 0.0),
+            "cost_details": json.dumps(cost_details, ensure_ascii=False),
         }
 
         # Fire to BigQuery asynchronously

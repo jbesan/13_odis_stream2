@@ -66,11 +66,6 @@ class ReleaseContext:
         )
 
 
-def preload_scoring_datasets_async() -> None:
-    """No-op retained for backwards compatibility: datasets are baked into the container."""
-    pass
-
-
 def load_scores_config_as_df(config_path: str) -> pd.DataFrame:
     """Loads the scores configuration YAML as a DataFrame."""
     with open(config_path, "r") as f:
@@ -162,13 +157,6 @@ def apply_logged_in_org_defaults(defaults: Dict[str, Any]) -> None:
             st.session_state["org_defaults_applied"] = org.id
 
 
-def session_states_init(defaults: Dict[str, Any]) -> None:
-    """Initialize missing Streamlit widget values through the form adapter."""
-    from ui.form_state import FormState
-
-    FormState(st.session_state).initialize(defaults)
-
-
 def apply_search_criteria_to_ui(
     criteria: Any, app_data: Optional[Dict[str, Any]] = None
 ) -> None:
@@ -198,9 +186,7 @@ def initialize_session_state() -> None:
     st.session_state["_form_source_id"] = source_id
 
 
-def ensure_data_initialized(
-    *, force_reload: bool = False
-) -> Dict[str, Any]:
+def ensure_data_initialized(*, force_reload: bool = False) -> Dict[str, Any]:
     """Initialize state and return the complete active data bundle."""
     initialize_session_state()
 
@@ -209,6 +195,10 @@ def ensure_data_initialized(
     else:
         app_data = get_app_data()
         st.session_state["app_data"] = app_data
+
+    from services.mcp_server import set_data_context
+
+    set_data_context(app_data)
 
     if "heavy_data_toast_shown" not in st.session_state:
         load_errors = app_data.get("_load_errors", [])

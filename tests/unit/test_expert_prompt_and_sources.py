@@ -33,23 +33,28 @@ def _state() -> GraphState:
 
 def test_expert_context_has_stable_common_prefix_and_no_duplicate_question():
     state = _state()
-    common_social, specific_social = ODISContextBuilder.expert_prompt_contexts(
+    ctx_social = ODISContextBuilder.expert_prompt_contexts(
         state, "social_integration_expert"
     )
-    common_housing, specific_housing = ODISContextBuilder.expert_prompt_contexts(
+    ctx_housing = ODISContextBuilder.expert_prompt_contexts(
         state, "housing_expert"
     )
 
-    assert common_social == common_housing
-    assert json.loads(common_social)["Résumé du dossier (Briefing)"] == (
-        "Une famille cherche un accueil local."
-    )
-    assert "Dernière question" not in common_social
-    assert "Mission dynamique" not in common_social
-    assert "Données inclusion" in specific_social
-    assert "Données logement" in specific_housing
+    # Prefix stability: briefing, criteria, and commune are 100% identical between experts
+    assert ctx_social.briefing == ctx_housing.briefing
+    assert ctx_social.criteria == ctx_housing.criteria
+    assert ctx_social.commune == ctx_housing.commune
+    assert ctx_social.briefing == "Une famille cherche un accueil local."
+    assert json.loads(ctx_social.commune)["Code INSEE"] == "33063"
+
+    assert "Dernière question" not in ctx_social.briefing
+    assert "Mission dynamique" not in ctx_social.briefing
+    assert "Données inclusion" in ctx_social.specific
+    assert "Données logement" in ctx_housing.specific
     assert "{MISSION}" not in SOCIAL_INTEGRATION_EXPERT_SYSTEM_PROMPT
-    assert "{COMMON_CONTEXT}" in SOCIAL_INTEGRATION_EXPERT_SYSTEM_PROMPT
+    assert "{DOSSIER_BRIEFING}" in SOCIAL_INTEGRATION_EXPERT_SYSTEM_PROMPT
+    assert "{CRITERIA_CONTEXT}" in SOCIAL_INTEGRATION_EXPERT_SYSTEM_PROMPT
+    assert "{COMMUNE_CONTEXT}" in SOCIAL_INTEGRATION_EXPERT_SYSTEM_PROMPT
     assert "{SPECIFIC_CONTEXT}" in SOCIAL_INTEGRATION_EXPERT_SYSTEM_PROMPT
     expert_boilerplate = get_swarm_boilerplate("expert")
     assert "regroupe toutes les recherches indépendantes dans un seul appel batch" in (

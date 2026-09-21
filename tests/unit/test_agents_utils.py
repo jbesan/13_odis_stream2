@@ -74,12 +74,10 @@ def test_map_ui_config_to_search_criterias():
 
 
 @patch("app.agents.utils.run_logic")
-@patch("streamlit.session_state")
-def test_run_async_safe(mock_ss, mock_run_logic):
-    mock_ss.get.side_effect = lambda k, d=None: "user1" if k == "username" else d
+def test_run_async_safe(mock_run_logic):
     mock_run_logic.return_value = {"search_results": "ok"}
 
-    input_data = {}
+    input_data = {"username": "user1"}
     res = run_async_safe(input_data)
 
     assert res == {"search_results": "ok"}

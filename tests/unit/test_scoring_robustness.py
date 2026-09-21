@@ -245,7 +245,12 @@ def test_tier1_demo_scenarios_integration(real_engine, app_data, scenario_id):
         total_score += val * w
         total_weight += w
 
-    expected_weighted_score = total_score / total_weight if total_weight > 0 else 0.0
+    expected_score_besoins = total_score / total_weight if total_weight > 0 else 0.0
+    if "score_besoins" in row and not pd.isna(row["score_besoins"]):
+        assert pytest.approx(row["score_besoins"], abs=1e-5) == expected_score_besoins
+
+    coeff_pop = float(row.get("coeff_population_gauss", 1.0))
+    expected_weighted_score = expected_score_besoins * coeff_pop
     actual_weighted_score = row["weighted_score"]
 
     assert pytest.approx(actual_weighted_score, abs=1e-5) == expected_weighted_score, (

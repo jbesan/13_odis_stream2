@@ -8,7 +8,7 @@ from core.models import User, SearchCriterias
 
 @pytest.mark.e2e
 @patch("ui.page_shell.inject_idle_disconnect")
-@patch("core.postscoring.launch_post_scoring_tasks")
+@patch("services.search_controller.launch_post_scoring_tasks")
 @patch("utils.data_loader.fetch_salesforce_jaccueille_bdv")
 @patch("services.rna_rag.RNARagService")
 def test_happy_path_end_to_end(
@@ -32,7 +32,7 @@ def test_happy_path_end_to_end(
         columns=["bassin_de_vie", "contact_count", "lead_count"]
     )
 
-    def fake_launch(engine, config, search_results, h):
+    def fake_launch(engine, config, search_results, h, **kwargs):
         from agents.utils import get_odis_bg_store
 
         store = get_odis_bg_store()
@@ -96,7 +96,9 @@ def test_happy_path_end_to_end(
     at.selectbox(key="ui_commune").select("33063").run()
     at.selectbox(key="ui_freq_retour").select("1 fois/mois").run()
     at.multiselect(key="ui_mobility_dept").select("33").run()
-    at.radio(key="ui_target_city_size_label").set_value("🏘️ Petite Ville").run()
+    at.select_slider(key="ui_target_city_size_range").set_value(
+        ("🏡 Bourg", "🏘️ Petite Ville")
+    ).run()
 
     # Shortlisted city (Ville pressentie): Libourne (33243)
     at.checkbox(key="ui_has_commune_pressentie").check().run()
@@ -230,15 +232,21 @@ def test_happy_path_end_to_end(
     # =========================================================================
     assert "processed_gdf" in at.session_state, "Results dataframe was not generated"
     results_gdf = at.session_state["processed_gdf"]
-    assert results_gdf is not None and not results_gdf.empty, "Results dataframe is empty"
+    assert results_gdf is not None and not results_gdf.empty, (
+        "Results dataframe is empty"
+    )
     assert "weighted_score" in results_gdf.columns
 
     # All active criteria must exist as columns in processed_gdf and be bounded [0, 1]
     for crit in active_criteria:
-        assert crit in results_gdf.columns, f"Active criterion column '{crit}' missing from processed_gdf"
+        assert crit in results_gdf.columns, (
+            f"Active criterion column '{crit}' missing from processed_gdf"
+        )
         col = results_gdf[crit].dropna()
         if not col.empty:
-            assert (col >= 0.0).all() and (col <= 1.0).all(), f"Criterion '{crit}' has out-of-bounds scores"
+            assert (col >= 0.0).all() and (col <= 1.0).all(), (
+                f"Criterion '{crit}' has out-of-bounds scores"
+            )
 
     # Data Inclusion FLE service must have positive calculated scores on real territorial data
     assert (results_gdf["inc_services_incl_scaled"] > 0.0).any(), (
@@ -253,7 +261,9 @@ def test_happy_path_end_to_end(
     # =========================================================================
     # EXHAUSTIVE VERIFICATION 4: SearchResultsData Breakdown & Libourne Check
     # =========================================================================
-    assert "search_results" in at.session_state, "SearchResultsData not found in session state"
+    assert "search_results" in at.session_state, (
+        "SearchResultsData not found in session state"
+    )
     sr = at.session_state["search_results"]
 
     # Current location check

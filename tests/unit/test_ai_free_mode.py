@@ -23,9 +23,7 @@ def test_is_ai_free_mode_env():
         assert not is_ai_free_mode()
 
 
-@patch("streamlit.session_state")
-def test_is_ai_free_mode_org(mock_session_state):
-    # Mock session state returns the Org Pydantic object
+def test_is_ai_free_mode_org():
     test_org = Org(
         id="test_org",
         name="Test Org",
@@ -35,12 +33,9 @@ def test_is_ai_free_mode_org(mock_session_state):
         defaults={},
         ai_free_mode=True,
     )
-    mock_session_state.get.side_effect = lambda key, default=None: (
-        test_org if key == "org" else default
-    )
-
     with patch.dict(os.environ, {}, clear=True):
-        assert is_ai_free_mode()
+        assert is_ai_free_mode(test_org)
+        assert not is_ai_free_mode(None)
 
 
 def test_generate_static_pitch():

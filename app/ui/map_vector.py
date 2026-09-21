@@ -60,12 +60,23 @@ def prepare_map_payload(
     if selected_ids is None:
         selected_ids = set()
 
-    gdf_ctx = current_map_context if current_map_context is not None else gdf_scores
+    top_contexts = [
+        ctx
+        for ctx in (gdf_scores, current_map_context)
+        if ctx is not None and not ctx.empty
+    ]
+    curr_contexts = [
+        ctx
+        for ctx in (current_map_context, gdf_scores)
+        if ctx is not None and not ctx.empty
+    ]
 
     # 1. Extract minimal scores dictionary: {codgeo: score_float}
     scores_dict: Dict[str, float] = {}
     if gdf_scores is not None and not gdf_scores.empty:
-        score_col = "weighted_score" if "weighted_score" in gdf_scores.columns else "score"
+        score_col = (
+            "weighted_score" if "weighted_score" in gdf_scores.columns else "score"
+        )
         if score_col in gdf_scores.columns:
             if "codgeo" in gdf_scores.columns:
                 ids = gdf_scores["codgeo"].astype(str).values
@@ -84,48 +95,51 @@ def prepare_map_payload(
     top_markers: List[Dict[str, Any]] = []
     if search_results and show_top_5 and getattr(search_results, "results", None):
         for i, c in enumerate(search_results.results[:5]):
-            centroid = _get_geom(c, "centroid", gdf_context=gdf_ctx)
+            centroid = _get_geom(c, "centroid", gdf_context=top_contexts)
             if centroid is not None:
-                top_markers.append({
-                    "rank": i + 1,
-                    "name": getattr(c, "name", f"Top {i+1}"),
-                    "codgeo": str(getattr(c, "codgeo", "")),
-                    "score_pct": f"{getattr(c, 'global_score', 0.0) * 100:.0f}%",
-                    "lat": float(centroid.y),
-                    "lon": float(centroid.x),
-                    "is_highlighted": (highlighted_rank == i),
-                    "type": "top5",
-                })
+                top_markers.append(
+                    {
+                        "rank": i + 1,
+                        "name": getattr(c, "name", f"Top {i + 1}"),
+                        "codgeo": str(getattr(c, "codgeo", "")),
+                        "score_pct": f"{getattr(c, 'global_score', 0.0) * 100:.0f}%",
+                        "lat": float(centroid.y),
+                        "lon": float(centroid.x),
+                        "is_highlighted": (highlighted_rank == i),
+                        "type": "top5",
+                    }
+                )
 
         # Shortlisted city (Ville pressentie)
         p_city = getattr(search_results, "commune_pressentie", None)
         if p_city is not None:
-            p_centroid = _get_geom(p_city, "centroid", gdf_context=gdf_ctx)
+            p_centroid = _get_geom(p_city, "centroid", gdf_context=top_contexts)
             if p_centroid is not None:
-                top_markers.append({
-                    "rank": 0,
-                    "name": getattr(p_city, "name", "Ville Souhaitée"),
-                    "codgeo": str(getattr(p_city, "codgeo", "")),
-                    "score_pct": f"{getattr(p_city, 'global_score', 0.0) * 100:.0f}%",
-                    "lat": float(p_centroid.y),
-                    "lon": float(p_centroid.x),
-                    "is_highlighted": (highlighted_rank == -1),
-                    "type": "pressentie",
-                })
+                top_markers.append(
+                    {
+                        "rank": 0,
+                        "name": getattr(p_city, "name", "Ville Souhaitée"),
+                        "codgeo": str(getattr(p_city, "codgeo", "")),
+                        "score_pct": f"{getattr(p_city, 'global_score', 0.0) * 100:.0f}%",
+                        "lat": float(p_centroid.y),
+                        "lon": float(p_centroid.x),
+                        "is_highlighted": (highlighted_rank == -1),
+                        "type": "pressentie",
+                    }
+                )
 
     # 4. Current reference location
     current_marker = None
     if search_results and getattr(search_results, "current_geo", None):
         c_geo = search_results.current_geo
-        c_centroid = _get_geom(c_geo, "centroid", gdf_context=gdf_ctx)
-        if c_centroid is not None:
-            current_marker = {
-                "name": getattr(c_geo, "name", "Commune Actuelle"),
-                "codgeo": str(getattr(c_geo, "codgeo", "")),
-                "lat": float(c_centroid.y),
-                "lon": float(c_centroid.x),
-                "type": "current",
-            }
+        c_centroid = _get_geom(c_geo, "centroid", gdf_context=curr_contexts)
+        current_marker = {
+            "name": getattr(c_geo, "name", "Commune Actuelle"),
+            "codgeo": str(getattr(c_geo, "codgeo", "")),
+            "lat": float(c_centroid.y) if c_centroid is not None else None,
+            "lon": float(c_centroid.x) if c_centroid is not None else None,
+            "type": "current",
+        }
 
     # 5. POI Markers (Mairies, Écoles, Santé, Inclusion)
     poi_markers: List[Dict[str, Any]] = []
@@ -136,59 +150,91 @@ def prepare_map_payload(
 
         pois_work = pois_df.copy()
         if "codgeo" in pois_work.columns:
-            pois_work["codgeo_norm"] = pois_work["codgeo"].astype(str).str.strip().str.zfill(5)
+            pois_work["codgeo_norm"] = (
+                pois_work["codgeo"].astype(str).str.strip().str.zfill(5)
+            )
             pois_filtered = pois_work[pois_work["codgeo_norm"].isin(target_codgeos)]
 
             # A. Mairies
             if "mairie" in selected_ids:
                 mairies = pois_filtered[pois_filtered["category"] == "mairie"]
                 for _, r in mairies.iterrows():
-                    lat_val = r["geometry"].y if hasattr(r.get("geometry"), "y") else r.get("lat")
-                    lon_val = r["geometry"].x if hasattr(r.get("geometry"), "x") else r.get("lon")
+                    lat_val = (
+                        r["geometry"].y
+                        if hasattr(r.get("geometry"), "y")
+                        else r.get("lat")
+                    )
+                    lon_val = (
+                        r["geometry"].x
+                        if hasattr(r.get("geometry"), "x")
+                        else r.get("lon")
+                    )
                     if pd.notna(lat_val) and pd.notna(lon_val):
-                        poi_markers.append({
-                            "name": str(r.get("name", "Mairie")),
-                            "type": "Mairie",
-                            "category": "mairie",
-                            "color": "#F5D819",
-                            "icon": "🏛️",
-                            "lat": float(lat_val),
-                            "lon": float(lon_val),
-                        })
+                        poi_markers.append(
+                            {
+                                "name": str(r.get("name", "Mairie")),
+                                "type": "Mairie",
+                                "category": "mairie",
+                                "color": "#F5D819",
+                                "icon": "🏛️",
+                                "lat": float(lat_val),
+                                "lon": float(lon_val),
+                            }
+                        )
 
             # B. Écoles
             if "edu" in selected_ids:
                 ecoles = pois_filtered[pois_filtered["category"] == "education"]
                 for _, r in ecoles.iterrows():
-                    lat_val = r["geometry"].y if hasattr(r.get("geometry"), "y") else r.get("lat")
-                    lon_val = r["geometry"].x if hasattr(r.get("geometry"), "x") else r.get("lon")
+                    lat_val = (
+                        r["geometry"].y
+                        if hasattr(r.get("geometry"), "y")
+                        else r.get("lat")
+                    )
+                    lon_val = (
+                        r["geometry"].x
+                        if hasattr(r.get("geometry"), "x")
+                        else r.get("lon")
+                    )
                     if pd.notna(lat_val) and pd.notna(lon_val):
-                        poi_markers.append({
-                            "name": str(r.get("name", "Établissement")),
-                            "type": str(r.get("type", "École")),
-                            "category": "education",
-                            "color": "#22C55E",
-                            "icon": "🎓",
-                            "lat": float(lat_val),
-                            "lon": float(lon_val),
-                        })
+                        poi_markers.append(
+                            {
+                                "name": str(r.get("name", "Établissement")),
+                                "type": str(r.get("type", "École")),
+                                "category": "education",
+                                "color": "#22C55E",
+                                "icon": "🎓",
+                                "lat": float(lat_val),
+                                "lon": float(lon_val),
+                            }
+                        )
 
             # C. Santé
             if "sante" in selected_ids:
                 sante = pois_filtered[pois_filtered["category"] == "sante"]
                 for _, r in sante.iterrows():
-                    lat_val = r["geometry"].y if hasattr(r.get("geometry"), "y") else r.get("lat")
-                    lon_val = r["geometry"].x if hasattr(r.get("geometry"), "x") else r.get("lon")
+                    lat_val = (
+                        r["geometry"].y
+                        if hasattr(r.get("geometry"), "y")
+                        else r.get("lat")
+                    )
+                    lon_val = (
+                        r["geometry"].x
+                        if hasattr(r.get("geometry"), "x")
+                        else r.get("lon")
+                    )
                     if pd.notna(lat_val) and pd.notna(lon_val):
-                        poi_markers.append({
-                            "name": str(r.get("name", "Établissement")),
-                            "type": str(r.get("type", "Santé")),
-                            "category": "sante",
-                            "color": "#3B82F6",
-                            "icon": "🏥",
-                            "lat": float(lat_val),
-                            "lon": float(lon_val),
-                        })
+                        poi_markers.append(
+                            {
+                                "name": str(r.get("name", "Établissement")),
+                                "type": str(r.get("type", "Santé")),
+                                "category": "sante",
+                                "color": "#3B82F6",
+                                "icon": "🏥",
+                                "lat": float(lat_val),
+                                "lon": float(lon_val),
+                            }
+                        )
 
             # D. Inclusion
             if "inc" in selected_ids:
@@ -233,18 +279,22 @@ def prepare_map_payload(
                             and raw_type in inclusion_services_index.index
                         ):
                             val = inclusion_services_index.loc[raw_type, "label"]
-                            display_type = str(val if isinstance(val, str) else val.iloc[0])
+                            display_type = str(
+                                val if isinstance(val, str) else val.iloc[0]
+                            )
 
                         if pd.notna(lat_val) and pd.notna(lon_val):
-                            poi_markers.append({
-                                "name": str(r.get("name", "Structure")),
-                                "type": display_type,
-                                "category": "incl_services",
-                                "color": "#A855F7",
-                                "icon": "🤝",
-                                "lat": float(lat_val),
-                                "lon": float(lon_val),
-                            })
+                            poi_markers.append(
+                                {
+                                    "name": str(r.get("name", "Structure")),
+                                    "type": display_type,
+                                    "category": "incl_services",
+                                    "color": "#A855F7",
+                                    "icon": "🤝",
+                                    "lat": float(lat_val),
+                                    "lon": float(lon_val),
+                                }
+                            )
 
     return {
         "scores": scores_dict,
@@ -614,7 +664,65 @@ def render_vector_map(
               }}
             }}
 
-            // 3. POI Markers Layer (Level 2: Mairies, Écoles, Santé, Inclusion)
+            // 3. Top 5 & Shortlisted Communes Outlines Layer (Level 2: Outlines)
+            if (payload.top_markers && payload.top_markers.length > 0) {{
+              const topCodgeoMap = new Map();
+              payload.top_markers.forEach(m => {{
+                topCodgeoMap.set(String(m.codgeo), m);
+              }});
+
+              const topFeatures = [];
+              for (let i = 0; i < baseData.features.length; i++) {{
+                const f = baseData.features[i];
+                const code = String(f.properties.codgeo);
+                if (topCodgeoMap.has(code)) {{
+                  topFeatures.push({{
+                    ...f,
+                    properties: {{
+                      ...f.properties,
+                      markerMeta: topCodgeoMap.get(code)
+                    }}
+                  }});
+                }}
+              }}
+
+              if (topFeatures.length > 0) {{
+                deckLayers.push(
+                  new deck.GeoJsonLayer({{
+                    id: 'top-communes-polygon-layer',
+                    data: topFeatures,
+                    filled: false,
+                    stroked: true,
+                    getLineColor: f => {{
+                      const meta = f.properties && f.properties.markerMeta;
+                      if (!meta) return [214, 62, 42, 255];
+                      if (meta.type === 'pressentie') return [245, 216, 25, 255];
+                      return meta.is_highlighted ? [239, 68, 68, 255] : [214, 62, 42, 255];
+                    }},
+                    getLineWidth: f => {{
+                      const meta = f.properties && f.properties.markerMeta;
+                      return (meta && meta.is_highlighted) ? 4.5 : 3;
+                    }},
+                    lineWidthMinPixels: 2.5,
+                    pickable: true,
+                    onHover: info => {{
+                      if (info.object && info.object.properties && info.object.properties.markerMeta) {{
+                        const m = info.object.properties.markerMeta;
+                        const title = m.type === 'pressentie' ? '★ Ville Souhaitée' : `Top ${{m.rank}}`;
+                        tooltipEl.innerHTML = `<strong>${{title}} : ${{m.name}}</strong><br/><span style="color: #A3E635;">Score : <strong>${{m.score_pct}}</strong></span>`;
+                        tooltipEl.style.display = 'block';
+                        tooltipEl.style.left = `${{info.x}}px`;
+                        tooltipEl.style.top = `${{info.y}}px`;
+                      }} else {{
+                        tooltipEl.style.display = 'none';
+                      }}
+                    }}
+                  }})
+                );
+              }}
+            }}
+
+            // 4. POI Markers Layer (Level 3: Mairies, Écoles, Santé, Inclusion)
             if (payload.poi_markers && payload.poi_markers.length > 0) {{
               deckLayers.push(
                 new deck.ScatterplotLayer({{
@@ -641,7 +749,7 @@ def render_vector_map(
               );
             }}
 
-            // 4. Top 5 & Shortlisted Markers (Level 3: Red/Yellow badges with Rank numbers)
+            // 5. Top 5 & Shortlisted Markers (Level 4: Red/Yellow badges with Rank numbers or Star)
             if (payload.top_markers && payload.top_markers.length > 0) {{
               deckLayers.push(
                 new deck.ScatterplotLayer({{
@@ -650,18 +758,22 @@ def render_vector_map(
                   getPosition: d => [d.lon, d.lat],
                   getFillColor: d => d.type === 'pressentie' ? [245, 216, 25, 255] : (d.is_highlighted ? [239, 68, 68, 255] : [214, 62, 42, 255]),
                   getLineColor: d => d.type === 'pressentie' ? [27, 68, 41, 255] : [255, 255, 255, 255],
-                  lineWidthMinPixels: 2.5,
+                  getLineWidth: d => d.type === 'pressentie' ? 2 : 1.5,
+                  lineWidthMinPixels: 2,
+                  stroked: true,
                   getRadius: d => d.is_highlighted ? 18 : 15,
                   radiusUnits: 'pixels',
                   pickable: true,
                   onHover: info => {{
                     if (info.object) {{
                       const m = info.object;
-                      const title = m.type === 'pressentie' ? '📌 Ville Souhaitée' : `Top ${{m.rank}}`;
+                      const title = m.type === 'pressentie' ? '★ Ville Souhaitée' : `Top ${{m.rank}}`;
                       tooltipEl.innerHTML = `<strong>${{title}} : ${{m.name}}</strong><br/><span style="color: #A3E635;">Score : <strong>${{m.score_pct}}</strong></span>`;
                       tooltipEl.style.display = 'block';
                       tooltipEl.style.left = `${{info.x}}px`;
                       tooltipEl.style.top = `${{info.y}}px`;
+                    }} else {{
+                      tooltipEl.style.display = 'none';
                     }}
                   }}
                 }}),
@@ -669,7 +781,8 @@ def render_vector_map(
                   id: 'top5-texts-layer',
                   data: payload.top_markers,
                   getPosition: d => [d.lon, d.lat],
-                  getText: d => d.rank === 0 ? '📌' : String(d.rank),
+                  getText: d => d.type === 'pressentie' ? '★' : String(d.rank),
+                  characterSet: 'auto',
                   getSize: 15,
                   getColor: d => d.type === 'pressentie' ? [27, 68, 41, 255] : [255, 255, 255, 255],
                   getTextAnchor: 'middle',

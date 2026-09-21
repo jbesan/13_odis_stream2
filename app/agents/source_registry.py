@@ -15,7 +15,7 @@ from collections.abc import Mapping
 from typing import Any
 from urllib.parse import urlparse
 
-from agents.grounding import extract_web_grounding
+from agents.grounding import GroundingPayload, extract_web_grounding
 
 
 SOURCE_CATALOG: dict[str, dict[str, Any]] = {
@@ -190,7 +190,9 @@ def _source_key_for_tool(tool_name: str) -> str | None:
     return None
 
 
-def _references_for_keys(keys: Iterable[str], *, tool_called: set[str]) -> list[dict[str, Any]]:
+def _references_for_keys(
+    keys: Iterable[str], *, tool_called: set[str]
+) -> list[dict[str, Any]]:
     """Materialize stable, serializable source references for the UI."""
 
     references: list[dict[str, Any]] = []
@@ -215,6 +217,8 @@ def _references_for_keys(keys: Iterable[str], *, tool_called: set[str]) -> list[
 def source_references_for_result(
     domain: str,
     result: Any | None,
+    *,
+    web_result: Any | None = None,
 ) -> list[dict[str, Any]]:
     """Build the source ledger for one expert result.
 
@@ -234,8 +238,32 @@ def source_references_for_result(
     # Provider metadata is an independent evidence of a Google search.  It can
     # survive even when the native web-search part is absent from the recorded
     # PydanticAI history, so do not require a tool part before extracting it.
-    grounding = extract_web_grounding(result)
+    grounding: GroundingPayload
+    if web_result is not None:
+        tool_called.add("web")
+        if hasattr(web_result, "sources"):
+            grounding = {
+                "queries": list(getattr(web_result, "queries", [])),
+                "sources": [
+                    s.model_dump() if hasattr(s, "model_dump") else s
+                    for s in getattr(web_result, "sources", [])
+                ],
+                "supports": [
+                    s.model_dump() if hasattr(s, "model_dump") else s
+                    for s in getattr(web_result, "grounding_supports", [])
+                ],
+                "query_count": len(getattr(web_result, "queries", [])),
+            }
+        elif isinstance(web_result, dict):
+            grounding = web_result  # type: ignore[assignment]
+        else:
+            grounding = extract_web_grounding(result)
+    else:
+        grounding = extract_web_grounding(result)
+
     submitted_search_terms = _web_search_terms_from_result(result)
+    if not submitted_search_terms and grounding.get("queries"):
+        submitted_search_terms = list(grounding["queries"])
     grounding_confirmed = bool(
         grounding.get("queries")
         or grounding.get("sources")
@@ -280,7 +308,11 @@ def source_references_for_result(
                     url = source.get("url")
                     if not isinstance(url, str) or not url:
                         continue
-                    title = source.get("title") or source.get("domain") or "Source Web Google"
+                    title = (
+                        source.get("title")
+                        or source.get("domain")
+                        or "Source Web Google"
+                    )
                     web_reference_number += 1
                     expanded.append(
                         {

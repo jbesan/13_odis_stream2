@@ -39,7 +39,7 @@ def test_search_lifecycle_replaces_previous_run_atomically():
     assert state["active_search_hash"] == "hash-2"
 
 
-def test_restore_snapshot_clears_only_workers_for_restored_hash():
+def test_restore_snapshot_does_not_clear_other_sessions_workers():
     state = {
         "engine": object(),
         "odis_bg_store": {
@@ -70,8 +70,9 @@ def test_restore_snapshot_clears_only_workers_for_restored_hash():
     )
 
     assert "engine" not in state
-    assert "shared-hash" not in state["odis_bg_store"]
-    assert "analysis_shared-hash_33063" not in state["odis_bg_store"]
+    assert "shared-hash" in state["odis_bg_store"]
+    assert "analysis_shared-hash_33063" in state["odis_bg_store"]
+    assert state["active_search_hash"] is None
     assert "other-hash" in state["odis_bg_store"]
     assert state["immutable_shared_snapshot"] is True
 

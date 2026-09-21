@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Iterable, Mapping
-from typing import Any
+from typing import Any, TypedDict
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -467,7 +467,16 @@ def _web_batch_content(
     )
 
 
-def extract_web_grounding(value: Any) -> dict[str, Any]:
+class GroundingPayload(TypedDict, total=False):
+    queries: list[str]
+    query_count: int
+    sources: list[dict[str, Any]]
+    supports: list[dict[str, Any]]
+    metadata_responses: int
+    has_sources: bool
+
+
+def extract_web_grounding(value: Any) -> GroundingPayload:
     """Extract queries, URLs, titles and supports from a run or message list.
 
     Query arguments are a fallback for provider versions that expose the

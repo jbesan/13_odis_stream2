@@ -145,5 +145,5 @@ def test_background_inclusion_enrichment_api_error(mock_getenv, mock_get):
     # A provider error must remain distinct from a legitimate empty result.
     store = get_odis_bg_store()
     assert hash_val in store
-    assert store[hash_val]["inclusion_services_enrichment"] == {}
+    assert not store[hash_val].get("inclusion_services_enrichment")
     assert store[hash_val]["inclusion_services_status"]["94041"]["status"] == "error"

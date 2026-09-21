@@ -13,15 +13,17 @@ from core.models import (
 )
 from core.scoring import _format_kpi_value
 from core.enrichment_status import EnrichmentStatus
+from core.postscoring import sync_commune_data
 from utils.data_loader import fetch_salesforce_jaccueille_bdv
 from agents.utils import odis_get_bg_result
-from services import telemetry
+from ui.dialog_state import clear_dialog
+from ui import ui_telemetry
 
 logger = logging.getLogger("ui.details_dialog")
 
 
 def _on_details_dialog_dismiss():
-    st.session_state.active_details_index = None
+    clear_dialog(st.session_state, "active_details_index")
 
 
 def _enrichment_status_for_city(
@@ -42,119 +44,6 @@ def _should_poll_enrichment(h: Optional[str], status_key: str, codgeo: str) -> b
         return False
     status = _enrichment_status_for_city(h, status_key, codgeo)
     return status is None or status == EnrichmentStatus.PENDING.value
-
-
-def sync_background_data(commune: CommuneResult, h: Optional[str]):
-    """
-    Syncs both enrichment (associations) and pitches from the background store
-    back into the CommuneResult model for persistence.
-    """
-    if not h:
-        return
-
-    bg_res = odis_get_bg_result(h)
-    if not isinstance(bg_res, dict):
-        return
-
-    # 1. Sync Enrichment (Associations)
-    if "enrichment" in bg_res:
-        enrich_data = bg_res["enrichment"].get(str(commune.codgeo))
-        if enrich_data and not commune.inclusion.asso_inclusion_list_by_cat:
-            logging.debug(f"✨ [SYNC] Associations sync for {commune.codgeo}")
-            inc_data = commune.inclusion
-            inc_data.asso_refugee_list = [
-                AssociationDetail.model_validate(a)
-                for a in enrich_data.get("refugee", [])
-            ]
-            inc_data.asso_refugee_count = len(inc_data.asso_refugee_list)
-
-            raw_inclusion = enrich_data.get("inclusion", {})
-            inc_data.asso_inclusion_list_by_cat = {
-                cat: [AssociationDetail.model_validate(a) for a in asso_list]
-                for cat, asso_list in raw_inclusion.items()
-            }
-            inc_data.asso_inclusion_count = sum(
-                len(l) for l in inc_data.asso_inclusion_list_by_cat.values()
-            )
-
-    # 1b. Sync Enrichment (Job Offers)
-    if "jobs_enrichment" in bg_res:
-        jobs_city_data = bg_res["jobs_enrichment"].get(str(commune.codgeo))
-        if (
-            jobs_city_data
-            and jobs_city_data.get("status")
-            in {
-                EnrichmentStatus.SUCCESS_NONEMPTY.value,
-                EnrichmentStatus.SUCCESS_EMPTY.value,
-                EnrichmentStatus.PARTIAL.value,
-            }
-            and not commune.employment.matching_job_offers
-        ):
-            logging.debug(f"✨ [SYNC] Jobs sync for {commune.codgeo}")
-            emp_data = commune.employment
-
-            raw_jobs = jobs_city_data.get("jobs", [])
-            emp_data.matching_job_offers = [
-                [JobOfferDetail.model_validate(o) for o in adult_list]
-                for adult_list in raw_jobs
-            ]
-            if "total" in jobs_city_data:
-                emp_data.standard_jobs_matching_total = jobs_city_data["total"]
-
-    # 1c. Sync Enrichment (Inclusion Services)
-    if "inclusion_services_enrichment" in bg_res:
-        incl_services_data = bg_res["inclusion_services_enrichment"].get(
-            str(commune.codgeo)
-        )
-        if incl_services_data and not commune.inclusion.services_detailed:
-            logging.debug(f"✨ [SYNC] Inclusion services sync for {commune.codgeo}")
-            inc_data = commune.inclusion
-            inc_data.services_detailed = {
-                cat: [InclusionServiceDetail.model_validate(s) for s in svc_list]
-                for cat, svc_list in incl_services_data.items()
-            }
-
-    # 2. Sync Pitches (AI analysis)
-    if "pitches" in bg_res:
-        pitches_data = bg_res["pitches"]
-        if isinstance(pitches_data, dict):
-            # A. City-specific pitch
-            if "pitches" in pitches_data:
-                city_pitches = pitches_data["pitches"]
-                if isinstance(city_pitches, dict):
-                    cg = str(commune.codgeo).strip()
-                    cname = commune.name.lower().strip() if commune.name else ""
-                    pitch_for_city = (
-                        city_pitches.get(cg)
-                        or city_pitches.get(cg.zfill(5))
-                        or city_pitches.get(cg.lstrip("0"))
-                        or city_pitches.get(cname)
-                        or next(
-                            (
-                                v
-                                for k, v in city_pitches.items()
-                                if k.lower().strip() == cname
-                            ),
-                            None,
-                        )
-                    )
-                    if pitch_for_city and not commune.refiner_pitch:
-                        logging.debug(f"✨ [SYNC] Pitch sync for {commune.codgeo}")
-                        commune.refiner_pitch = pitch_for_city
-
-            # B. Global introduction (Global Pitch)
-            if "global" in pitches_data and "search_results" in st.session_state:
-                if not st.session_state.search_results.global_pitch:
-                    st.session_state.search_results.global_pitch = pitches_data[
-                        "global"
-                    ]
-
-    # 3. Sync Unified Briefing (Profile Summary)
-    if "odis_brief" in bg_res and st.session_state.get("config"):
-        brief_val = bg_res["odis_brief"]
-        if brief_val and st.session_state.config.odis_brief != brief_val:
-            logging.debug("✨ [SYNC] Unified Briefing sync")
-            st.session_state.config.odis_brief = brief_val
 
 
 def _get_jaccueille_salesforce_urls(
@@ -201,16 +90,17 @@ def _get_jaccueille_salesforce_urls(
                         json.loads(cp_json) if isinstance(cp_json, str) else cp_json
                     )
                 except Exception as e:
-                    logger.warning("Error parsing codes_postaux JSON for J'Accueille SF link: %s", e)
+                    logger.warning(
+                        "Error parsing codes_postaux JSON for J'Accueille SF link: %s",
+                        e,
+                    )
 
     cp_param = ",".join(str(cp) for cp in codes_postaux) if codes_postaux else ""
     acc_report_base = cfg.SF_REPORT_ACCUEILLANTS_URL
     prosp_report_base = cfg.SF_REPORT_PROSPECTS_URL
 
     acc_url = f"{acc_report_base}?fv0={cp_param}" if cp_param else acc_report_base
-    prosp_url = (
-        f"{prosp_report_base}?fv0={cp_param}" if cp_param else prosp_report_base
-    )
+    prosp_url = f"{prosp_report_base}?fv0={cp_param}" if cp_param else prosp_report_base
     return acc_url, prosp_url
 
 
@@ -459,7 +349,9 @@ def render_inclusion_services_enrichment(commune: CommuneResult, h: Optional[str
             st.info("Aucun service spécifique référencé.")
 
         if is_loading:
-            st.caption("⌛ _Chargement des détails des services depuis Data Inclusion..._")
+            st.caption(
+                "⌛ _Chargement des détails des services depuis Data Inclusion..._"
+            )
 
     if not h:
         return
@@ -499,7 +391,8 @@ def render_jobs_enrichment(commune: CommuneResult, h: Optional[str]):
                     ]
                     if "total" in jobs_city_data:
                         emp_data.standard_jobs_matching_total = jobs_city_data["total"]
-                    st.rerun()  # Trigger dialog rerun to reveal content
+                    if emp_data.matching_job_offers:
+                        st.rerun()  # Only rerun when copying changed visible content.
 
     bg_res = odis_get_bg_result(h) if h else None
     jobs_city_data = (
@@ -646,9 +539,7 @@ def render_scores_for_category(
     """Renders normalized indicator scores and discrete badges for a specific category."""
     # category_key: emploi, logement, education, sante, inclusion, mobilite, territoire
     scores: List[CommuneScoreDetail] = (
-        scores_list
-        if scores_list is not None
-        else commune.scores.get(category_key, [])
+        scores_list if scores_list is not None else commune.scores.get(category_key, [])
     )
     if metric_filter == "discrete":
         scores = [s for s in scores if s.metric_type == "discrete"]
@@ -702,9 +593,13 @@ def render_scores_for_category(
                 with c_label:
                     st.markdown(f"**{s.label}**")
                     if s.score_id == "heb_jaccueille_accueillants_score" and acc_url:
-                        st.caption(f"[:material/open_in_new: Voir la liste sur Salesforce]({acc_url})")
+                        st.caption(
+                            f"[:material/open_in_new: Voir la liste sur Salesforce]({acc_url})"
+                        )
                     elif s.score_id == "heb_jaccueille_prospects_score" and prosp_url:
-                        st.caption(f"[:material/open_in_new: Voir la liste sur Salesforce]({prosp_url})")
+                        st.caption(
+                            f"[:material/open_in_new: Voir la liste sur Salesforce]({prosp_url})"
+                        )
                 with c_val:
                     st.badge(status_c, icon=badge_icon, color=badge_color)
 
@@ -798,7 +693,7 @@ def show_details_dialog(index: Any):
         st.error("Détails non disponibles.")
         return
 
-    telemetry.log_usage_event(
+    ui_telemetry.track_ui_event(
         "view_commune_details", {"codgeo": commune.codgeo, "name": commune.name}
     )
 
@@ -809,7 +704,8 @@ def show_details_dialog(index: Any):
     h = st.session_state.get("active_search_hash")
 
     # Sync background results into model if available
-    sync_background_data(commune, h)
+    if h and not st.session_state.get("immutable_shared_snapshot"):
+        sync_commune_data(commune, odis_get_bg_result(h))
 
     # Salesforce J'Accueille report links (org == jaccueille)
     acc_url, prosp_url = _get_jaccueille_salesforce_urls(commune)
@@ -847,7 +743,11 @@ def show_details_dialog(index: Any):
                 help="Score = Adéquation besoins × Adéquation démographique.",
             )
 
-    def _render_cat_scores(cat_key: str, metric_filter: Optional[str] = None, scores_list: Optional[List[CommuneScoreDetail]] = None):
+    def _render_cat_scores(
+        cat_key: str,
+        metric_filter: Optional[str] = None,
+        scores_list: Optional[List[CommuneScoreDetail]] = None,
+    ):
         render_scores_for_category(
             commune=commune,
             category_key=cat_key,
@@ -901,29 +801,39 @@ def show_details_dialog(index: Any):
                 else:
                     render_jobs_enrichment(commune, h)
 
-                # 2. SIAE matching or local listings second
-                matching_siae = employment_data.inclusive_jobs_matching_summary
-                if matching_siae:
-                    with st.expander(
-                        f"Offres par les SIAE correspondant au projet ({employment_data.inclusive_jobs_matching_total})",
-                        expanded=True,
-                    ):
-                        for label, count in matching_siae.items():
-                            st.write(
-                                f"• **{label}** : {count} offre{'s' if count > 1 else ''}"
-                            )
-                elif employment_data.inclusive_jobs_total > 0:
-                    with st.expander(
-                        f"Toutes les offres par les SIAE locales ({employment_data.inclusive_jobs_total})",
-                        expanded=False,
-                    ):
-                        for (
-                            label,
-                            count,
-                        ) in employment_data.inclusive_jobs_summary.items():
-                            st.write(
-                                f"• **{label}** : {count} offre{'s' if count > 1 else ''}"
-                            )
+                # 2. SIAE matching or local listings second (only if recherche_siae is True)
+                cfg_obj = st.session_state.get("config")
+                recherche_siae = (
+                    getattr(cfg_obj, "recherche_siae", True) if cfg_obj else True
+                )
+                if hasattr(commune, "search_criteria") and commune.search_criteria:
+                    recherche_siae = getattr(
+                        commune.search_criteria, "recherche_siae", recherche_siae
+                    )
+
+                if recherche_siae:
+                    matching_siae = employment_data.inclusive_jobs_matching_summary
+                    if matching_siae:
+                        with st.expander(
+                            f"Offres par les SIAE correspondant au projet ({employment_data.inclusive_jobs_matching_total})",
+                            expanded=True,
+                        ):
+                            for label, count in matching_siae.items():
+                                st.write(
+                                    f"• **{label}** : {count} offre{'s' if count > 1 else ''}"
+                                )
+                    elif employment_data.inclusive_jobs_total > 0:
+                        with st.expander(
+                            f"Toutes les offres par les SIAE locales ({employment_data.inclusive_jobs_total})",
+                            expanded=False,
+                        ):
+                            for (
+                                label,
+                                count,
+                            ) in employment_data.inclusive_jobs_summary.items():
+                                st.write(
+                                    f"• **{label}** : {count} offre{'s' if count > 1 else ''}"
+                                )
 
                 # 3. Métiers recherchés at the bottom
                 with st.expander("Métiers les plus recherchés", expanded=False):
@@ -964,8 +874,16 @@ def show_details_dialog(index: Any):
             with c_h_title:
                 st.markdown("#### :material/monitoring: Indicateurs Emploi")
             with c_h_score:
-                with st.container(border=False, width="stretch", horizontal=True, horizontal_alignment="right"):
-                    st.text("Score", help="Score relatif aux scores des autres territoires de la recherche")
+                with st.container(
+                    border=False,
+                    width="stretch",
+                    horizontal=True,
+                    horizontal_alignment="right",
+                ):
+                    st.text(
+                        "Score",
+                        help="Score relatif aux scores des autres territoires de la recherche",
+                    )
             _render_cat_scores("emploi", metric_filter="continuous")
 
     with tab_logement:
@@ -980,8 +898,16 @@ def show_details_dialog(index: Any):
             with c_h_title:
                 st.markdown("#### :material/home: Indicateurs Logement")
             with c_h_score:
-                with st.container(border=False, width="stretch", horizontal=True, horizontal_alignment="right"):
-                    st.text("Score", help="Score relatif aux scores des autres territoires de la recherche")
+                with st.container(
+                    border=False,
+                    width="stretch",
+                    horizontal=True,
+                    horizontal_alignment="right",
+                ):
+                    st.text(
+                        "Score",
+                        help="Score relatif aux scores des autres territoires de la recherche",
+                    )
             _render_cat_scores("logement", metric_filter="continuous")
 
     with tab_edu:
@@ -1007,8 +933,16 @@ def show_details_dialog(index: Any):
             with c_h_title:
                 st.markdown("#### :material/analytics: Indicateurs Éducation")
             with c_h_score:
-                with st.container(border=False, width="stretch", horizontal=True, horizontal_alignment="right"):
-                    st.text("Score", help="Score relatif aux scores des autres territoires de la recherche")
+                with st.container(
+                    border=False,
+                    width="stretch",
+                    horizontal=True,
+                    horizontal_alignment="right",
+                ):
+                    st.text(
+                        "Score",
+                        help="Score relatif aux scores des autres territoires de la recherche",
+                    )
             _render_cat_scores("education", metric_filter="continuous")
 
     with tab_sante:
@@ -1016,7 +950,9 @@ def show_details_dialog(index: Any):
         c1, c2 = st.columns([1, 1], gap="medium")
         with c1:
             with st.container(border=False):
-                st.markdown("#### :material/medical_services: Structures & Professionnels")
+                st.markdown(
+                    "#### :material/medical_services: Structures & Professionnels"
+                )
                 facility_details = health_data.facility_details
                 if facility_details:
                     for cat, names in sorted(facility_details.items()):
@@ -1034,15 +970,25 @@ def show_details_dialog(index: Any):
             with c_h_title:
                 st.markdown("#### :material/medical_services: Indicateurs Santé")
             with c_h_score:
-                with st.container(border=False, width="stretch", horizontal=True, horizontal_alignment="right"):
-                    st.text("Score", help="Score relatif aux scores des autres territoires de la recherche")
+                with st.container(
+                    border=False,
+                    width="stretch",
+                    horizontal=True,
+                    horizontal_alignment="right",
+                ):
+                    st.text(
+                        "Score",
+                        help="Score relatif aux scores des autres territoires de la recherche",
+                    )
             _render_cat_scores("sante", metric_filter="continuous")
 
     with tab_vie:
         c1, c2 = st.columns([1, 1], gap="medium")
         with c1:
             with st.container(border=False):
-                st.markdown("#### :material/volunteer_activism: Services d'Inclusion à moins de 10km")
+                st.markdown(
+                    "#### :material/volunteer_activism: Services d'Inclusion à moins de 10km"
+                )
                 if _should_poll_enrichment(
                     h, "inclusion_services_status", commune.codgeo
                 ):
@@ -1066,8 +1012,16 @@ def show_details_dialog(index: Any):
             with c_h_title:
                 st.markdown("#### :material/diversity_3: Indicateurs Inclusion")
             with c_h_score:
-                with st.container(border=False, width="stretch", horizontal=True, horizontal_alignment="right"):
-                    st.text("Score", help="Score relatif aux scores des autres territoires de la recherche")
+                with st.container(
+                    border=False,
+                    width="stretch",
+                    horizontal=True,
+                    horizontal_alignment="right",
+                ):
+                    st.text(
+                        "Score",
+                        help="Score relatif aux scores des autres territoires de la recherche",
+                    )
             _render_cat_scores("inclusion", metric_filter="continuous")
 
     with tab_mob:
@@ -1080,8 +1034,16 @@ def show_details_dialog(index: Any):
             with c_h_title:
                 st.markdown("#### :material/commute: Indicateurs Mobilité")
             with c_h_score:
-                with st.container(border=False, width="stretch", horizontal=True, horizontal_alignment="right"):
-                    st.text("Score", help="Score relatif aux scores des autres territoires de la recherche")
+                with st.container(
+                    border=False,
+                    width="stretch",
+                    horizontal=True,
+                    horizontal_alignment="right",
+                ):
+                    st.text(
+                        "Score",
+                        help="Score relatif aux scores des autres territoires de la recherche",
+                    )
             _render_cat_scores("mobilite", metric_filter="continuous")
 
     with tab_ter:
@@ -1154,17 +1116,26 @@ def show_details_dialog(index: Any):
                                 for item in history
                             ]
                             st.dataframe(
-                                pd.DataFrame(table_rows), hide_index=True, width="stretch"
+                                pd.DataFrame(table_rows),
+                                hide_index=True,
+                                width="stretch",
                             )
                 except Exception as e:
                     st.caption("Erreur lors du chargement de l'historique électoral.")
 
-            
         with c2:
             c_h_title, c_h_score = st.columns([2.8, 1.2], vertical_alignment="bottom")
             with c_h_title:
                 st.markdown("#### :material/security: Indicateurs Territoriaux")
             with c_h_score:
-                with st.container(border=False, width="stretch", horizontal=True, horizontal_alignment="right"):
-                    st.text("Score", help="Score relatif aux scores des autres territoires de la recherche")
+                with st.container(
+                    border=False,
+                    width="stretch",
+                    horizontal=True,
+                    horizontal_alignment="right",
+                ):
+                    st.text(
+                        "Score",
+                        help="Score relatif aux scores des autres territoires de la recherche",
+                    )
             _render_cat_scores("territoire", metric_filter="continuous")

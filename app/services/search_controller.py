@@ -6,17 +6,19 @@ import gc
 import logging
 from collections.abc import Mapping
 from typing import Any
+from uuid import uuid4
 
 import pandas as pd
 
 import config as cfg
-from agents.utils import odis_get_bg_result
 from core import maps_deck, scoring
 from core.models import SearchCriterias, SearchResultsData
 from core.postscoring import launch_post_scoring_tasks
 from services import telemetry
 from services.app_session import AppSession
+from ui import ui_telemetry
 from utils import common, data_loader
+
 
 
 logger = logging.getLogger(__name__)
@@ -56,19 +58,39 @@ class SearchController:
             config, log_prefix="classic"
         )
         processed_gdf = self._attach_geometries(processed_gdf, app_data)
+        search_results.execution_id = uuid4().hex
         self.session.complete_search(
             engine=engine,
             search_results=search_results,
             processed_gdf=processed_gdf,
         )
 
-        search_hash = search_results.search_hash
-        if odis_get_bg_result(search_hash) is None:
-            launch_post_scoring_tasks(
-                engine, config, search_results, search_hash
-            )
+        search_hash = search_results.background_key
+        org = self.session.state.get("org")
+        username = self.session.state.get("username", "unknown")
+        org_id = getattr(org, "id", "unknown") if org else "unknown"
+        is_ai_free = cfg.is_ai_free_mode(org)
+        launch_post_scoring_tasks(
+            engine,
+            config,
+            search_results,
+            search_hash,
+            interaction_id=telemetry.get_interaction_id(),
+            username=username,
+            org_id=org_id,
+            is_ai_free=is_ai_free,
+        )
+
+        ui_telemetry.track_ui_event(
+            "run_search",
+            payload={
+                "search_hash": search_hash,
+                "total_matches": len(search_results.results),
+            },
+        )
 
         self._center_map(config, search_results, app_data)
+
         self.session.state["fgs_to_show"] = set()
         self.session.state["highlighted_result"] = [False, None]
         return search_results
@@ -142,6 +164,9 @@ class SearchController:
         state["zoom"] = maps_deck.get_map_zoom(config.loc_search_area)
         state["last_centered_hash"] = search_hash
         if config.commune_actuelle is not None:
-            state["selected_geo"] = app_data["odis"].loc[
-                [config.commune_actuelle.code]
-            ].copy()
+            c_code = config.commune_actuelle.code
+            if c_code in app_data["odis"].index:
+                selected_geo = app_data["odis"].loc[[c_code]].copy()
+                if "odis_geo" in app_data and c_code in app_data["odis_geo"].index:
+                    selected_geo["polygon"] = app_data["odis_geo"].loc[[c_code]].values
+                state["selected_geo"] = selected_geo

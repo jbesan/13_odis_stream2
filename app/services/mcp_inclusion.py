@@ -5,11 +5,105 @@ from typing import Dict, Any, Optional
 import pandas as pd
 import config as cfg
 from utils.data_loader import load_parquet_dataset
+from utils.common import normalize_text
 
 logger = logging.getLogger("mcp_inclusion")
 
 # Configuration
 API_URL = "https://emplois.inclusion.beta.gouv.fr/api/v1/siaes/"
+
+# French stopwords to filter common syntactic noise while preserving domain terms
+FRENCH_STOPWORDS = {
+    "de",
+    "la",
+    "le",
+    "et",
+    "les",
+    "des",
+    "en",
+    "un",
+    "une",
+    "du",
+    "pour",
+    "dans",
+    "qui",
+    "que",
+    "sur",
+    "au",
+    "aux",
+    "par",
+    "ce",
+    "cette",
+    "ces",
+    "sa",
+    "son",
+    "ses",
+    "leur",
+    "leurs",
+    "ou",
+    "mais",
+    "donc",
+    "or",
+    "ni",
+    "car",
+    "avec",
+    "sans",
+    "sous",
+    "d",
+    "l",
+    "d'",
+    "l'",
+    "a",
+    "à",
+}
+
+
+def _matches_inclusion_query(poste: Dict[str, Any], query: str) -> bool:
+    """Checks if an individual SIAE job posting matches the given query text.
+
+    Matching is accent- and case-insensitive. It checks title fields
+    (rome label, appellation_modifiee) and body fields (description, profil_recherche).
+    A match occurs if the normalized query substring is found, or if all significant
+    query tokens are found within the title or full text of the posting.
+
+    Args:
+        poste: SIAE job posting dictionary.
+        query: Query text string.
+
+    Returns:
+        bool: True if the posting matches the query, False otherwise.
+    """
+    if not query or not str(query).strip():
+        return True
+
+    clean = re.sub(r"[^a-z0-9]", " ", normalize_text(str(query)))
+    q_tokens = [t for t in clean.split() if len(t) >= 2 and t not in FRENCH_STOPWORDS]
+    if not q_tokens:
+        # If query consisted only of stopwords or short tokens, use all non-empty tokens
+        q_tokens = [t for t in clean.split() if t]
+        if not q_tokens:
+            return True
+
+    title_text = normalize_text(
+        f"{poste.get('rome') or ''} {poste.get('appellation_modifiee') or ''}"
+    )
+    desc_text = normalize_text(
+        f"{poste.get('description') or ''} {poste.get('profil_recherche') or ''}"
+    )
+    full_text = f"{title_text} {desc_text}"
+    q_norm = normalize_text(str(query).strip())
+
+    # 1. Exact phrase substring match in title or full text
+    if q_norm in title_text or q_norm in full_text:
+        return True
+
+    # 2. All significant query tokens present in title or in full text
+    if all(tok in title_text for tok in q_tokens):
+        return True
+    if all(tok in full_text for tok in q_tokens):
+        return True
+
+    return False
 
 
 def _prune_inclusion_job(job: Dict[str, Any]) -> Dict[str, Any]:
@@ -101,18 +195,18 @@ def _search_inclusion_jobs_logic(
     params: Dict[str, Any] = {"page_size": 20}
 
     if location:
-        # Robust search for INSEE (5 digits) or Dept (2-3 digits)
+        # Robust search for INSEE (5 digits or Corsica 2A/2B + 3 digits) or Dept (2-3 digits or 2A/2B)
         # LLMs sometimes pass "communes:87085" or "87085,rome:"
-        loc_str = str(location)
-        insee_match = re.search(r"\b(\d{5})\b", loc_str)
-        dept_match = re.search(r"\b(\d{2,3})\b", loc_str)
+        loc_str = str(location).strip()
+        insee_match = re.search(r"\b(\d{5}|2[ABab]\d{3})\b", loc_str)
+        dept_match = re.search(r"\b(\d{2,3}|2[ABab])\b", loc_str)
 
         if insee_match:
-            params["code_insee"] = insee_match.group(1)
+            params["code_insee"] = insee_match.group(1).upper()
             params["distance_max_km"] = 20  # 20km radius
             logger.debug(f"🔍 [Inclusion] Searching near INSEE {params['code_insee']}")
         elif dept_match:
-            params["postes_dans_le_departement"] = dept_match.group(1)
+            params["postes_dans_le_departement"] = dept_match.group(1).upper()
             logger.debug(
                 f"🔍 [Inclusion] Searching in Dept {params['postes_dans_le_departement']}"
             )
@@ -124,12 +218,24 @@ def _search_inclusion_jobs_logic(
 
     try:
         response = requests.get(API_URL, headers=headers, params=params, timeout=15)
+        if response.status_code == 404:
+            insee_target = params.get("code_insee") or params.get(
+                "postes_dans_le_departement", location
+            )
+            logger.warning(
+                f"⚠️ [Inclusion] Localisation/Code INSEE '{insee_target}' introuvable sur l'API Emplois Inclusion (404). Retourne 0 offre."
+            )
+            return {"offres": [], "total": 0}
+
         response.raise_for_status()
         data = response.json()
         results = data.get("results", [])
 
-        # Filter by ROME if provided (Offline filtering since main list is small per dept)
+        # Filter by ROME and/or Query (Offline filtering since main list is small per dept)
         filtered = []
+        has_rome = bool(rome and str(rome).strip())
+        has_query = bool(query and str(query).strip())
+
         for siae in results:
             postes = siae.get("postes", [])
             if not postes:
@@ -137,18 +243,37 @@ def _search_inclusion_jobs_logic(
 
             match_postes = []
             for p in postes:
-                p_rome = p.get("rome")  # Format "Label (CODE)"
-                # Extract code
-                m = re.search(r"\(([A-Z]\d{4})\)", p_rome or "")
-                code = m.group(1) if m else p_rome
+                match_rome = None
+                if has_rome:
+                    p_rome = p.get("rome")  # Format "Label (CODE)"
+                    m = re.search(r"\(([A-Z]\d{4})\)", p_rome or "")
+                    code = m.group(1) if m else p_rome
 
-                if rome:
-                    # Loosen matching: if rome is 3 digits, match prefix
                     if len(rome) == 3 and code and code.startswith(rome):
-                        match_postes.append(p)
+                        match_rome = True
                     elif code == rome:
-                        match_postes.append(p)
+                        match_rome = True
+                    else:
+                        match_rome = False
+
+                match_q = None
+                if has_query:
+                    match_q = _matches_inclusion_query(p, str(query))
+
+                # Combined evaluation:
+                # - If both criteria are specified, apply soft OR fallback (maximize recall)
+                # - If only one criterion is specified, enforce it
+                # - If neither is specified, accept all
+                if match_rome is not None and match_q is not None:
+                    is_match = match_rome or match_q
+                elif match_rome is not None:
+                    is_match = match_rome
+                elif match_q is not None:
+                    is_match = match_q
                 else:
+                    is_match = True
+
+                if is_match:
                     match_postes.append(p)
 
             if match_postes:

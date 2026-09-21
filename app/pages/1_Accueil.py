@@ -11,8 +11,7 @@ st.set_page_config(page_title="OD&IS", page_icon="👋", layout="wide")
 
 # --- Authentication ---
 
-from services import telemetry
-from ui import page_shell
+from ui import page_shell, ui_telemetry
 
 page_shell.enter_page(
     "Accueil", handle_shared_search=True, redirect_shared_to_results=True
@@ -36,8 +35,6 @@ with st.sidebar:
     if st.session_state.get("org"):
         page_shell.render_sidebar_logo()
     page_shell.render_account_sidebar_actions()
-
-
 
 
 # --- CSS / Styling (V3 Global Green) ---
@@ -184,8 +181,51 @@ header_html = f"""
 st.markdown(header_html, unsafe_allow_html=True)
 
 
+# --- "How it works" Steps ---
+st.subheader("Comment ça marche ?", divider="yellow", width="stretch")
+
+step_cols = st.columns(3, gap="medium")
+
+steps = [
+    {
+        "num": "1",
+        "title": "Identifier les besoins",
+        "icon": "👤",
+        "text": "Renseignez le profil et les besoins spécifiques de la personne.",
+    },
+    {
+        "num": "2",
+        "title": "Calcul des scores",
+        "icon": "⚙️",
+        "text": "Identifiez les territoires les plus pertinents au regard du projet de vie.",
+    },
+    {
+        "num": "3",
+        "title": "Exploration & Synthèse",
+        "icon": "🗺️",
+        "text": "Découvrez les territoires les plus accueillants correspondant au profil.",
+    },
+]
+
+for col, step in zip(step_cols, steps):
+    with col:
+        st.markdown(
+            f"""
+        <div class="step-card">
+            <div class="step-number">{step["num"]}</div>
+            <div style="font-size: 2.5rem; margin-bottom: 10px;">{step["icon"]}</div>
+            <div class="step-title">{step["title"]}</div>
+            <p class="step-text">{step["text"]}</p>
+        </div>
+        """,
+            unsafe_allow_html=True,
+        )
+
+st.divider()
+
+
 # --- Input & Navigation Section ---
-if cfg.is_ai_free_mode():
+if cfg.is_ai_free_mode(st.session_state.get("org")):
     st.subheader("Entrée de données", divider="yellow", width="stretch")
 
     st.markdown(
@@ -210,8 +250,10 @@ if cfg.is_ai_free_mode():
             st.switch_page("pages/2_Formulaire.py")
 else:
     st.subheader(
-        "Un outil, deux ambiances (votre choix)", divider="yellow", width="stretch"
+        "C'est parti ?", divider="yellow", width="stretch"
     )
+
+    st.write("Deux façons de commencer (à vous de choisir) :")
 
     col_form, col_ia = st.columns(2, gap="large")
 
@@ -247,6 +289,7 @@ else:
         st.text(
             "Collez ici un texte décrivant la situation (email, notes d'entretien, export CRM...) :"
         )
+        st.warning("Attention de retirer les informations personnelles sensibles (noms, prénoms, adresses mail, etc.) du texte avant de le coller.")
 
         text_input = st.text_area(
             "Texte source",
@@ -277,7 +320,7 @@ else:
                                 "response": result_data.response,
                                 "criteria": result_data.search_criteria,
                             }
-                            telemetry.log_usage_event(
+                            ui_telemetry.track_ui_event(
                                 "auto_detect_criteria",
                                 {"text_length": len(text_input)},
                             )
@@ -328,56 +371,7 @@ else:
                 show_unstructured_input_dialog()
 
 
-# st.markdown("<br><br>", unsafe_allow_html=True)
-# col_skip1, col_skip2, col_skip3 = st.columns([1,2,1])
-# with col_skip2:
-#     if st.button("Passer directement aux résultats ➞", type="secondary", width="stretch"):
-#         st.switch_page("pages/3_Resultats.py")
 
-
-st.markdown("---")
-
-# --- "How it works" Steps ---
-st.subheader("Comment ça marche ?", divider="yellow", width="stretch")
-
-step_cols = st.columns(3, gap="medium")
-
-steps = [
-    {
-        "num": "1",
-        "title": "Identifier les besoins",
-        "icon": "👤",
-        "text": "Renseignez le profil et les besoins spécifiques de la personne.",
-    },
-    {
-        "num": "2",
-        "title": "Calcul des scores",
-        "icon": "⚙️",
-        "text": "Identifiez les territoires les plus pertinents au regard du projet de vie.",
-    },
-    {
-        "num": "3",
-        "title": "Exploration & Synthèse",
-        "icon": "🗺️",
-        "text": "Découvrez les territoires les plus accueillants correspondant au profil.",
-    },
-]
-
-for col, step in zip(step_cols, steps):
-    with col:
-        st.markdown(
-            f"""
-        <div class="step-card">
-            <div class="step-number">{step["num"]}</div>
-            <div style="font-size: 2.5rem; margin-bottom: 10px;">{step["icon"]}</div>
-            <div class="step-title">{step["title"]}</div>
-            <p class="step-text">{step["text"]}</p>
-        </div>
-        """,
-            unsafe_allow_html=True,
-        )
-
-st.divider()
 
 # --- Footer ---
 st.markdown(

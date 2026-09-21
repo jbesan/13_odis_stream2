@@ -6,7 +6,7 @@ import warnings
 import logfire
 import zoneinfo
 from datetime import datetime
-from typing import Optional, Any, List
+from typing import Optional, Any
 from core.models import SearchCriterias, SearchResultsData
 
 logger = logging.getLogger(__name__)
@@ -49,16 +49,77 @@ class JsonFormatter(logging.Formatter):
         return json_out
 
 
+class HumanFormatter(logging.Formatter):
+    """
+    Human-friendly console formatter for local development.
+
+    Outputs concise one-line logs for normal levels, while automatically
+    including caller module/line, function names, extra metadata, and full
+    exception tracebacks for warnings and errors.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            fmt="%(asctime)s - [%(levelname)s] - %(message)s",
+            datefmt="%H:%M:%S",
+        )
+
+    def format(self, record: logging.LogRecord) -> str:
+        """
+        Format a LogRecord into a human-friendly string.
+
+        Args:
+            record: The logging.LogRecord instance to format.
+
+        Returns:
+            The formatted log message string.
+        """
+        if record.levelno >= logging.WARNING:
+            prefix = (
+                f"{self.formatTime(record, self.datefmt)} - [{record.levelname}] "
+                f"({record.module}:{record.lineno} in {record.funcName})"
+            )
+        else:
+            prefix = f"{self.formatTime(record, self.datefmt)} - [{record.levelname}]"
+
+        message = record.getMessage()
+        formatted = f"{prefix} - {message}"
+
+        if hasattr(record, "extra_data") and record.extra_data:
+            formatted += f"\n    Extra: {record.extra_data}"
+
+        if record.exc_info:
+            if not record.exc_text:
+                record.exc_text = self.formatException(record.exc_info)
+            if record.exc_text:
+                if not formatted.endswith("\n"):
+                    formatted += "\n"
+                formatted += record.exc_text
+
+        if record.stack_info:
+            if not formatted.endswith("\n"):
+                formatted += "\n"
+            formatted += self.formatStack(record.stack_info)
+
+        return formatted
+
+
 def setup_logging() -> None:
     """
-    Configures the root logger to output JSON to stderr.
+    Configures the root logger to output structured JSON on Cloud Run,
+    or human-friendly logs in local development.
     """
     handler = logging.StreamHandler(sys.stderr)
 
-    if os.environ.get("MCP_SIMPLE_LOGS") == "true":
+    log_format = os.environ.get("ODIS_LOG_FORMAT", "").lower()
+    is_cloud_run = os.environ.get("K_SERVICE") is not None
+
+    if log_format == "json" or (is_cloud_run and log_format != "human"):
+        formatter: logging.Formatter = JsonFormatter()
+    elif os.environ.get("MCP_SIMPLE_LOGS") == "true":
         formatter = logging.Formatter("[%(levelname)s] %(message)s")
     else:
-        formatter = JsonFormatter()
+        formatter = HumanFormatter()
 
     handler.setFormatter(formatter)
 
@@ -424,115 +485,6 @@ def log_agent_trace(agent_name: str, model_id: str, result: Any) -> None:
     # Disabled: Agent traces are monitored via Logfire
     return
 
-
-def format_agent_result_to_md(agent_name: str, model_id: str, result: Any) -> str:
-    """
-    Formats a Pydantic-AI run result into a clean, readable Markdown audit trail.
-
-    Args:
-        agent_name: Name of the agent (e.g. 'refiner', 'scout').
-        model_id: The model identifier string.
-        result: The pydantic-ai RunResult object.
-
-    Returns:
-        A Markdown-formatted string.
-    """
-    from pydantic_ai.messages import (
-        ModelRequest,
-        ModelResponse,
-        SystemPromptPart,
-        TextPart,
-        ToolCallPart,
-        ToolReturnPart,
-        NativeToolCallPart,
-        NativeToolReturnPart,
-    )
-
-    md_lines: List[str] = []
-    md_lines.append(
-        f"# Agent Trace: {agent_name} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-    )
-    md_lines.append(f"* **Model**: `{model_id}`")
-
-    try:
-        usage = getattr(result, "usage", None)
-        if usage:
-            md_lines.append(
-                f"* **Usage**: {usage.total_tokens} tokens (In: {usage.input_tokens}, Out: {usage.output_tokens})"
-            )
-    except Exception as exc:
-        logger.debug("Could not format usage tokens for agent trace: %s", exc)
-    md_lines.append("")
-
-    # --- Conversation History ---
-    md_lines.append("## Conversation History")
-
-    for i, msg in enumerate(result.all_messages()):
-        if isinstance(msg, ModelRequest):
-            for part in msg.parts:
-                if isinstance(part, SystemPromptPart):
-                    md_lines.append("### 💻 System Prompt")
-                    md_lines.append("```markdown")
-                    md_lines.append(part.content)
-                    md_lines.append("```\n")
-                elif isinstance(part, TextPart):
-                    md_lines.append(f"### 👤 User Message [{i}]")
-                    md_lines.append(part.content)
-                    md_lines.append("\n")
-
-        elif isinstance(msg, ModelResponse):
-            md_lines.append(f"### 🤖 Assistant Response [{i}]")
-            for part in msg.parts:
-                if isinstance(part, TextPart):
-                    md_lines.append(part.content)
-                elif isinstance(part, (ToolCallPart, NativeToolCallPart)):
-                    md_lines.append(f"\n> 🛠️ **Tool Call**: `{part.tool_name}`")
-                    try:
-                        args = (
-                            part.args.model_dump()
-                            if part.args is not None
-                            and hasattr(part.args, "model_dump")
-                            else part.args
-                        )
-                        md_lines.append(
-                            f"```json\n{json.dumps(args, indent=2, ensure_ascii=False)}\n```"
-                        )
-                    except Exception:
-                        md_lines.append(f"```\n{part.args}\n```")
-            md_lines.append("")
-
-        # Handle tool returns (usually grouped in ModelRequest in the next turn)
-        if hasattr(msg, "parts"):
-            for part in msg.parts:
-                if isinstance(part, (ToolReturnPart, NativeToolReturnPart)):
-                    md_lines.append(f"### 📥 Tool Return: `{part.tool_name}`")
-                    try:
-                        content = part.content
-                        if hasattr(content, "model_dump"):
-                            content = content.model_dump()
-                        md_lines.append(
-                            f"```json\n{json.dumps(content, indent=2, ensure_ascii=False)}\n```"
-                        )
-                    except Exception:
-                        md_lines.append(f"```\n{part.content}\n```")
-                    md_lines.append("")
-
-    # --- Final Output ---
-    md_lines.append("## Final Structured Output")
-    try:
-        if hasattr(result.output, "model_dump"):
-            md_lines.append(
-                f"```json\n{json.dumps(result.output.model_dump(), indent=2, ensure_ascii=False)}\n```"
-            )
-        else:
-            md_lines.append("```")
-            md_lines.append(str(result.output))
-            md_lines.append("```")
-    except Exception as e:
-        md_lines.append(f"*(Serialization failed: {e})*")
-        md_lines.append(str(result.output))
-
-    return "\n".join(md_lines)
 
 
 def sanitize_for_json(obj: Any) -> Any:

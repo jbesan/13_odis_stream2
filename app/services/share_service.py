@@ -8,7 +8,7 @@ import ast
 import re
 import copy
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Tuple, Optional, Any, Dict, List
 
 import zoneinfo
@@ -22,7 +22,7 @@ from core.models import SearchCriterias, SearchResultsData
 from services.app_session import AppSession
 from services.search_controller import SearchController
 from services.service_outcomes import OutcomeStatus, ServiceOutcome
-from google.cloud import storage, bigquery
+from google.cloud import storage
 from google.api_core import exceptions as google_exceptions
 from pydantic import ValidationError
 
@@ -83,20 +83,6 @@ def _get_gcs_client():
         logger.error(
             "Shared-search GCS client initialization failed",
             extra={"extra_data": {"error_code": "SHARE-GCS-UNAVAILABLE"}},
-            exc_info=True,
-        )
-        return None
-
-
-def _get_bq_client():
-    """Attempts to initialize BQ client if GCP project is set."""
-    if not os.getenv("GOOGLE_CLOUD_PROJECT") and not os.getenv("GCP_PROJECT"):
-        return None
-    try:
-        return bigquery.Client()
-    except Exception:
-        logger.warning(
-            "Shared-search telemetry BigQuery client initialization failed",
             exc_info=True,
         )
         return None
@@ -408,6 +394,7 @@ def save_shared_search(
         bucket = gcs_client.bucket(bucket_name)
         blob = bucket.blob(f"searches/{share_id}.json")
         blob.content_encoding = "gzip"
+        blob.custom_time = datetime.now(timezone.utc)
         blob.upload_from_string(
             compressed_bytes,
             content_type="application/json",
@@ -654,6 +641,18 @@ def load_shared_search_snapshot_outcome(
             share_id,
             exc_info=True,
         )
+
+    # Refresh sliding retention TTL (1 year) in GCS via Custom-Time
+    if hasattr(blob, "patch"):
+        try:
+            blob.custom_time = datetime.now(timezone.utc)
+            blob.patch()
+        except Exception as exc:
+            logger.warning(
+                "Failed to refresh custom_time for shared search %s: %s",
+                share_id,
+                exc,
+            )
 
     logger.info("Loaded shared search snapshot from GCS: share_id=%s", share_id)
     return ServiceOutcome(status=OutcomeStatus.SUCCESS, value=snapshot)

@@ -23,8 +23,21 @@ def reset_token_cache():
         yield
 
 
+def test_get_session_retry_configuration():
+    from services.mcp_france_travail import _get_session
+
+    session = _get_session()
+    assert session is not None
+    adapter = session.adapters.get("https://")
+    assert adapter is not None
+    assert adapter.max_retries.total == 3
+    assert adapter.max_retries.backoff_factor == 0.5
+    assert set(adapter.max_retries.status_forcelist) == {429, 500, 502, 503, 504}
+    assert "POST" in adapter.max_retries.allowed_methods
+
+
 def test_get_access_token_success():
-    with patch("requests.post") as mock_post:
+    with patch("requests.Session.post") as mock_post:
         mock_response = MagicMock()
         mock_response.json.return_value = {
             "access_token": "fake_token",
@@ -55,7 +68,7 @@ def test_search_job_offers_success():
     TOKEN_CACHE["access_token"] = "valid_token"
     TOKEN_CACHE["expires_at"] = time.time() + 1000
 
-    with patch("requests.get") as mock_get:
+    with patch("requests.Session.get") as mock_get:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
@@ -74,7 +87,7 @@ def test_search_job_offers_no_results():
     TOKEN_CACHE["access_token"] = "valid_token"
     TOKEN_CACHE["expires_at"] = time.time() + 1000
 
-    with patch("requests.get") as mock_get:
+    with patch("requests.Session.get") as mock_get:
         mock_response = MagicMock()
         mock_response.status_code = 204
         mock_get.return_value = mock_response
@@ -89,7 +102,7 @@ def test_search_job_offers_http_failure_is_not_empty_success():
     TOKEN_CACHE["access_token"] = "valid_token"
     TOKEN_CACHE["expires_at"] = time.time() + 1000
 
-    with patch("requests.get") as mock_get:
+    with patch("requests.Session.get") as mock_get:
         mock_response = MagicMock()
         mock_response.status_code = 503
         mock_response.text = "temporarily unavailable"
@@ -106,7 +119,7 @@ def test_get_job_details_success():
     TOKEN_CACHE["access_token"] = "valid_token"
     TOKEN_CACHE["expires_at"] = time.time() + 1000
 
-    with patch("requests.get") as mock_get:
+    with patch("requests.Session.get") as mock_get:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"id": "123", "intitule": "Expert"}

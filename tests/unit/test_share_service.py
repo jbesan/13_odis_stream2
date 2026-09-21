@@ -365,8 +365,9 @@ def test_restore_snapshot_hydrates_ui_without_rescoring():
     assert state["shared_snapshot_data_release"] == "release-2026-08-04"
     assert state["processed_gdf"].loc["69123", "weighted_score"] == 0.855
     assert "engine" not in state
-    assert "snapshot-hash" not in state["odis_bg_store"]
-    assert "analysis_snapshot-hash_69123" not in state["odis_bg_store"]
+    assert "snapshot-hash" in state["odis_bg_store"]
+    assert "analysis_snapshot-hash_69123" in state["odis_bg_store"]
+    assert state["active_search_hash"] is None
 
 
 def test_load_shared_search_invalid_id(monkeypatch):
@@ -721,4 +722,145 @@ def test_restore_shared_search_from_query_params_logs_view_telemetry(monkeypatch
         assert view_event["org_id"] == "jaccueille"
         assert "env" in view_event
 
+
+def test_snapshot_custom_time_set_on_save_and_refreshed_on_authorized_load(monkeypatch):
+    """Verify that custom_time is set at creation and updated on authorized fetch to extend the 1-year sliding TTL."""
+    stored_blobs = {}
+
+    class TrackingBlob:
+        def __init__(self, name):
+            self.name = name
+            self.content_encoding = None
+            self.custom_time = None
+            self.patch_calls = 0
+            self.data = None
+
+        def upload_from_string(self, data, content_type=None, if_generation_match=None):
+            self.data = data
+            stored_blobs[self.name] = self
+
+        def exists(self):
+            return self.name in stored_blobs
+
+        def download_as_bytes(self):
+            return stored_blobs[self.name].data
+
+        def patch(self):
+            self.patch_calls += 1
+
+    class TrackingBucket:
+        def blob(self, name):
+            if name in stored_blobs:
+                return stored_blobs[name]
+            return TrackingBlob(name)
+
+    class TrackingGcsClient:
+        def bucket(self, name):
+            return TrackingBucket()
+
+    monkeypatch.setattr(
+        "services.share_service._get_gcs_client", lambda: TrackingGcsClient()
+    )
+    monkeypatch.setattr(
+        "services.telemetry.log_saved_search_event", lambda *args, **kwargs: None
+    )
+
+    config = SearchCriterias(
+        commune_actuelle=CriteriaItem(code="75056", label="Paris"),
+    )
+    results = SearchResultsData(
+        search_hash="hash_ttl_test",
+        results=[],
+    )
+
+    # 1. Save shared search
+    share_id = save_shared_search(
+        config=config,
+        search_results=results,
+        org_id="test_org_123",
+        username="test_user",
+    )
+    blob_key = f"searches/{share_id}.json"
+    assert blob_key in stored_blobs
+    created_blob = stored_blobs[blob_key]
+    assert created_blob.custom_time is not None
+    assert created_blob.patch_calls == 0
+
+    # 2. Unauthorized load (org mismatch) -> custom_time must NOT be patched
+    outcome_unauth = load_shared_search_snapshot_outcome(
+        share_id, caller_org_id="different_org"
+    )
+    assert outcome_unauth.status == OutcomeStatus.UNAUTHORIZED
+    assert created_blob.patch_calls == 0
+
+    # 3. Authorized load -> custom_time MUST be refreshed via patch()
+    outcome_auth = load_shared_search_snapshot_outcome(
+        share_id, caller_org_id="test_org_123"
+    )
+    assert outcome_auth.status == OutcomeStatus.SUCCESS
+    assert created_blob.patch_calls == 1
+    assert created_blob.custom_time is not None
+
+
+def test_snapshot_load_resilient_to_patch_failure(monkeypatch):
+    """Verify that load_shared_search_snapshot_outcome succeeds even if GCS patch fails."""
+    stored_blobs = {}
+
+    class FailingPatchBlob:
+        def __init__(self, name):
+            self.name = name
+            self.content_encoding = None
+            self.custom_time = None
+            self.data = None
+
+        def upload_from_string(self, data, content_type=None, if_generation_match=None):
+            self.data = data
+            stored_blobs[self.name] = self
+
+        def exists(self):
+            return self.name in stored_blobs
+
+        def download_as_bytes(self):
+            return stored_blobs[self.name].data
+
+        def patch(self):
+            raise google_exceptions.Forbidden("GCS patch metadata permission denied")
+
+    class FailingBucket:
+        def blob(self, name):
+            if name in stored_blobs:
+                return stored_blobs[name]
+            return FailingPatchBlob(name)
+
+    class FailingGcsClient:
+        def bucket(self, name):
+            return FailingBucket()
+
+    monkeypatch.setattr(
+        "services.share_service._get_gcs_client", lambda: FailingGcsClient()
+    )
+    monkeypatch.setattr(
+        "services.telemetry.log_saved_search_event", lambda *args, **kwargs: None
+    )
+
+    config = SearchCriterias(
+        commune_actuelle=CriteriaItem(code="75056", label="Paris"),
+    )
+    results = SearchResultsData(
+        search_hash="hash_patch_fail",
+        results=[],
+    )
+
+    share_id = save_shared_search(
+        config=config,
+        search_results=results,
+        org_id="test_org_resilient",
+    )
+
+    # Should still succeed despite patch raising Forbidden
+    outcome = load_shared_search_snapshot_outcome(
+        share_id, caller_org_id="test_org_resilient"
+    )
+    assert outcome.status == OutcomeStatus.SUCCESS
+    assert outcome.value is not None
 

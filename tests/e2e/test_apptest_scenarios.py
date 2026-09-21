@@ -29,7 +29,7 @@ def base_app_test():
 
 
 @patch("ui.page_shell.inject_idle_disconnect")
-@patch("core.postscoring.launch_post_scoring_tasks")
+@patch("services.search_controller.launch_post_scoring_tasks")
 @patch("utils.data_loader.fetch_salesforce_jaccueille_bdv")
 @patch("services.rna_rag.RNARagService")
 def test_location_validation_blocks_progression(
@@ -78,7 +78,7 @@ def test_location_validation_blocks_progression(
 
 
 @patch("ui.page_shell.inject_idle_disconnect")
-@patch("core.postscoring.launch_post_scoring_tasks")
+@patch("services.search_controller.launch_post_scoring_tasks")
 @patch("utils.data_loader.fetch_salesforce_jaccueille_bdv")
 @patch("services.rna_rag.RNARagService")
 def test_search_modification_replaces_prior_results(
@@ -94,11 +94,13 @@ def test_search_modification_replaces_prior_results(
         columns=["bassin_de_vie", "contact_count", "lead_count"]
     )
 
-    def fake_launch(engine, config, search_results, h):
+    def fake_launch(engine, config, search_results, h, **kwargs):
         store = get_odis_bg_store()
         store[h] = {
             "status_refiner": "done",
-            "pitches": {c.codgeo: f"Pitch for {c.name}" for c in search_results.results},
+            "pitches": {
+                c.codgeo: f"Pitch for {c.name}" for c in search_results.results
+            },
             "enrichment": {c.codgeo: {} for c in search_results.results},
             "jobs": {c.codgeo: [] for c in search_results.results},
         }
@@ -148,6 +150,7 @@ def test_search_modification_replaces_prior_results(
     assert config_b.nb_adultes == 2
     assert hash_b != hash_a
     assert at.session_state.search_results.search_hash == hash_b
+    assert mock_launch_post_scoring_tasks.call_count == 2
 
 
 def test_enrichment_timeout_and_error_graceful_unlock():
@@ -180,7 +183,7 @@ def test_enrichment_timeout_and_error_graceful_unlock():
             "33063": {"status": EnrichmentStatus.TIMEOUT.value},
             "64445": {"status": EnrichmentStatus.ERROR.value},
         },
-        "inclusion_enrichment_status": {
+        "inclusion_services_status": {
             "33063": {"status": EnrichmentStatus.NOT_CONFIGURED.value},
             "64445": {"status": EnrichmentStatus.TIMEOUT.value},
         },
@@ -188,4 +191,6 @@ def test_enrichment_timeout_and_error_graceful_unlock():
 
     # Verify that terminal failure states are recognized as ready (unblocking export & share)
     ready = _is_postscoring_ready_for_search("test_hash_timeout_123")
-    assert ready is True, "Terminal error/timeout status did not unlock post-scoring readiness"
+    assert ready is True, (
+        "Terminal error/timeout status did not unlock post-scoring readiness"
+    )

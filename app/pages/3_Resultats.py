@@ -5,6 +5,7 @@ import streamlit as st
 import config as cfg
 from core import maps_deck
 from core.models import SearchResultsData
+from core.postscoring import sync_search_results_data
 from services.app_session import AppSession
 from services.search_controller import SearchController
 from ui import forms as ui_forms
@@ -284,6 +285,14 @@ if not is_immutable_snapshot or is_editing_snapshot:
     FormState(st.session_state).preserve_widgets_across_steps()
 
 search_results: SearchResultsData = st.session_state.get("search_results")
+if search_results and search_results.results and not is_immutable_snapshot:
+    h_init = search_results.background_key
+    if h_init:
+        sync_search_results_data(
+            search_results,
+            ui_results.odis_get_bg_result(h_init),
+            config=st.session_state.get("config"),
+        )
 
 
 def run_search() -> None:
@@ -388,7 +397,7 @@ with st.sidebar:
 
     # --- Export to PDF & Partager ---
     if st.session_state.get("search_results") is not None:
-        h = st.session_state.search_results.search_hash
+        h = st.session_state.search_results.background_key
         # Export and share actions become active once background post-scoring
         # enrichments reach a terminal state (or timeout).
         action_buttons_container_static(h)
@@ -399,23 +408,18 @@ with st.sidebar:
     page_shell.render_account_sidebar_actions()
 
 
-# The custom results layout does not call display_results_list(), so dispatch
-# active result dialogs explicitly on the full rerun triggered by each action.
+# Dispatch active result dialogs explicitly on the full rerun triggered by each action.
 ui_results.render_active_dialogs()
-
-# Global Pitch (Strategic intro + Loading state)
-# if st.session_state.get('search_results'):
-#     h = st.session_state.search_results.search_hash
-# @st.fragment(run_every=3.0)
-# def global_pitch_container(h: str):
-#     ui_results.render_global_pitch(h)
-# global_pitch_container(h)
 
 # Main results & full-screen map layout
 if st.session_state.get("processed_gdf") is not None:
     config = st.session_state.get("config")
     search_results = st.session_state.get("search_results")
-    h = search_results.search_hash if search_results else None
+    h = (
+        search_results.background_key
+        if search_results and not is_immutable_snapshot
+        else None
+    )
     snapshot_mode = bool(st.session_state.get("immutable_shared_snapshot"))
     current_map_context = st.session_state.get("snapshot_current_map_context")
     if not isinstance(current_map_context, pd.DataFrame):
@@ -477,7 +481,7 @@ if st.session_state.get("processed_gdf") is not None:
     if show_top_5:
         legend_markers.append(("#D63E2A", "Top 5"))
         if search_results and search_results.commune_pressentie:
-            legend_markers.append(("#F5D819", "Ville souhaitée"))
+            legend_markers.append(("#F5D819", "Ville pressentie"))
     if not snapshot_mode:
         if "mairie" in selected_ids:
             legend_markers.append(("#F5D819", "Mairies"))
@@ -499,39 +503,42 @@ if st.session_state.get("processed_gdf") is not None:
     # 3. Floating Box 3: Volet de résultats (Top 5 + Accordéon à gauche)
     with st.container(key="results_floating_panel", border=False):
         if search_results and search_results.results:
-            bg_res = ui_results.odis_get_bg_result(h) if h else None
-            if bg_res:
-                for c in search_results.results:
-                    ui_results.sync_background_data(c, h)
-                if search_results.commune_pressentie:
-                    ui_results.sync_background_data(search_results.commune_pressentie, h)
-                if "odis_brief" in bg_res and st.session_state.get("config"):
-                    brief_val = bg_res["odis_brief"]
-                    if brief_val and st.session_state.config.odis_brief != brief_val:
-                        st.session_state.config.odis_brief = brief_val
+            if h:
+                sync_search_results_data(
+                    search_results,
+                    ui_results.odis_get_bg_result(h),
+                    config=st.session_state.get("config"),
+                )
 
             st.subheader("Meilleures Propositions")
             if not is_highlighted:
                 st.caption("👇 Cliquez sur une ville pour afficher les détails.", text_alignment="center", width="stretch")
             # A. Ville Souhaitée (if present)
             if search_results.commune_pressentie:
+                st.markdown(
+                    '<style> [class*="st-key-btn_top_pressentie"] .stButton button { background-color: #F5D819 !important; color: #1B4429 !important; } </style>',
+                    unsafe_allow_html=True,
+                )
                 p_commune = search_results.commune_pressentie
                 is_active = is_highlighted and highlighted_index == -1
                 btn_type = "primary" if is_active else "secondary"
                 score_pct = f"{p_commune.global_score * 100:.0f}/100"
 
                 st.button(
-                    f"**{score_pct}** - {p_commune.name}",
+                    f"**{score_pct}** - {p_commune.name} (ville pressentie)",
                     help=f"Ville Souhaitée : {p_commune.name}",
                     key="btn_top_pressentie",
-                    type="secondary",
+                    type="primary",
                     width="stretch",
                     on_click=ui_results._result_highlight_callback,
                     args=(-1,),
+                    icon=":material/stars:"
                 )
                 if is_active:
                     ui_results._display_result_details(p_commune)
                     st.write("")
+                
+                st.space("xsmall")
 
             # B. Top 5 Results (Vertical list)
             for i, c in enumerate(search_results.results[:5]):
@@ -540,9 +547,7 @@ if st.session_state.get("processed_gdf") is not None:
                 score_pct = f"{c.global_score * 100:.0f}/100"
                 st.button(
                     f"**{score_pct}** - {c.name}",
-                    # help=f"Top {i+1} : {c.name}",
                     key=f"btn_top_{i+1}",
-                    # type=btn_type,
                     icon=f":material/counter_{i+1}:",
                     type="primary",
                     width="stretch",
