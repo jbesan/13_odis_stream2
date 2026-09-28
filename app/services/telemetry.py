@@ -80,11 +80,17 @@ def _ensure_table_exists(
 def _execute_bq_insert(table_name_or_ref: str, row: dict) -> None:
     """Execute BigQuery streaming insertion in the background."""
     try:
-        client = bigquery.Client()
+        project_id = (
+            os.getenv("ODIS_DATA_PROJECT")
+            or os.getenv("GOOGLE_CLOUD_PROJECT")
+            or os.getenv("GCP_PROJECT")
+            or "odis-stream2-app"
+        )
+        client = bigquery.Client(project=project_id)
         if "." in table_name_or_ref:
             table_ref = table_name_or_ref
         else:
-            table_ref = f"{client.project}.odis_logs.{table_name_or_ref}"
+            table_ref = f"{project_id}.odis_logs.{table_name_or_ref}"
 
         if "saved_searches" in table_ref:
             _ensure_table_exists(client, table_ref, SAVED_SEARCHES_SCHEMA)

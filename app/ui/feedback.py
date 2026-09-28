@@ -17,8 +17,14 @@ def _submit_to_bq(feedback_type, comment, context=None):
         # Return True so the UI doesn't block local dev
         return True
     try:
-        client = bigquery.Client()
-        table_ref = f"{client.project}.{DATASET_ID}.{TABLE_ID}"
+        project_id = (
+            os.getenv("ODIS_DATA_PROJECT")
+            or os.getenv("GOOGLE_CLOUD_PROJECT")
+            or os.getenv("GCP_PROJECT")
+            or "odis-stream2-app"
+        )
+        client = bigquery.Client(project=project_id)
+        table_ref = f"{project_id}.{DATASET_ID}.{TABLE_ID}"
         interaction_id = get_interaction_id()
         username = st.session_state.get("username", "unknown")
 

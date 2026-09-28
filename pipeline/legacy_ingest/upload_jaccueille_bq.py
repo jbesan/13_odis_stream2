@@ -13,7 +13,7 @@ from google.cloud import bigquery
 
 logger = logging.getLogger(__name__)
 
-PROJECT_ID = "odis-stream2"
+PROJECT_ID = "odis-stream2-app"
 DATASET_ID = "jaccueille"
 HOSTS_TABLE_ID = "jaccueille_accueillants_bdv"
 PROSPECTS_TABLE_ID = "jaccueille_prospects_bdv"

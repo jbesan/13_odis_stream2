@@ -26,8 +26,14 @@ def _safe_json_format(obj: Any) -> Any:
 
 def _async_bq_insert(row: dict) -> None:
     try:
-        client = bigquery.Client()
-        table_ref = f"{client.project}.{DATASET_ID}.{TABLE_STATE_LOGS}"
+        project_id = (
+            os.getenv("ODIS_DATA_PROJECT")
+            or os.getenv("GOOGLE_CLOUD_PROJECT")
+            or os.getenv("GCP_PROJECT")
+            or "odis-stream2-app"
+        )
+        client = bigquery.Client(project=project_id)
+        table_ref = f"{project_id}.{DATASET_ID}.{TABLE_STATE_LOGS}"
         errors = client.insert_rows_json(table_ref, [row])
         if errors:
             if any("cost_details" in str(err) for err in errors):

@@ -8,7 +8,7 @@ os.environ.setdefault("GOOGLE_CLOUD_PROJECT", "test-project")
 # Runtime code must receive this explicitly in Cloud Run; tests keep a stable
 # bucket name because their storage clients are mocked or their fixtures rely
 # on the published development release.
-os.environ.setdefault("GCS_DATASETS_BUCKET", "odis-stream2-eu")
+os.environ.setdefault("GCS_DATASETS_BUCKET", "odis-stream2-app-data-euw1")
 os.environ.setdefault("GCS_SHARED_SEARCHES_BUCKET", "odis-stream2-app-shares-euw1")
 import opentelemetry.trace as otel_trace
 import pandas as pd

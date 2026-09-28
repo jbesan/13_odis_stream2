@@ -57,7 +57,7 @@ def test_load_referentiels_raw_builds_lightweight_form_indices(monkeypatch):
 def test_get_app_data_uses_the_active_release_complete_bundle(monkeypatch):
     """All app data, including referentials, comes from one release key."""
     release_context = data_loader.ReleaseContext(
-        bucket_name="odis-stream2-eu",
+        bucket_name="odis-stream2-app-data-euw1",
         datasets_prefix="datasets",
         version="run-123",
         artifacts=(),
@@ -83,7 +83,7 @@ def test_get_app_data_uses_the_active_release_complete_bundle(monkeypatch):
 def test_release_context_is_a_stable_streamlit_cache_key(monkeypatch):
     """The complete bundle cache is keyed by immutable release metadata."""
     context = data_loader.ReleaseContext(
-        bucket_name="odis-stream2-eu",
+        bucket_name="odis-stream2-app-data-euw1",
         datasets_prefix="datasets",
         version="run-cache-key",
         artifacts=(),

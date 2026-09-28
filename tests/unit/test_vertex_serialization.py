@@ -15,7 +15,7 @@ async def test_vertex_ai_tool_config_serialization():
     'include_server_side_tool_invocations' parameter.
     """
     # 1. Initialize client but mock generate_content to capture the config dict
-    client = Client(vertexai=True, project="odis-stream2", location="eu")
+    client = Client(vertexai=True, project="odis-stream2-app", location="eu")
 
     captured_config = []
 
@@ -78,7 +78,7 @@ async def _capture_native_tool_config(provider):
 async def test_google_model_uses_vertex_transport_even_with_google_provider_name():
     """Pin PydanticAI #7280: the pre-built client transport is authoritative."""
 
-    client = Client(vertexai=True, project="odis-stream2", location="eu")
+    client = Client(vertexai=True, project="odis-stream2-app", location="eu")
     model, config = await _capture_native_tool_config(GoogleProvider(client=client))
 
     tool_config = config.get("tool_config") if config else None

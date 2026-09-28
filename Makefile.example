@@ -8,35 +8,28 @@
 -include .env
 -include .env.deploy
 
-PROJECT_ID ?= $(ODIS_GCP_PROJECT_ID)
-REGION ?= $(if $(ODIS_GCP_REGION),$(ODIS_GCP_REGION),europe-west1)
-STAGING_SOURCE_BUCKET ?= $(ODIS_GCP_CLOUDBUILD_BUCKET)
-DATASETS_BUCKET ?= $(if $(GCS_DATASETS_BUCKET),$(GCS_DATASETS_BUCKET),odis-stream2-app-data-euw1)
-SHARES_BUCKET ?= $(if $(GCS_SHARED_SEARCHES_BUCKET),$(GCS_SHARED_SEARCHES_BUCKET),odis-stream2-app-shares-euw1)
+PROJECT_ID := odis-stream2-app
+REGION := europe-west1
+STAGING_SOURCE_BUCKET := gs://odis-stream2-app-cloudbuild-euw1
+DATASETS_BUCKET := odis-stream2-app-data-euw1
+REPOSITORY := odis-stream2-repo
+SHARES_BUCKET := odis-stream2-app-shares-euw1
 GIT_SHA ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 TAG ?= $(GIT_SHA)
 
-.PHONY: help deploy-staging promote-prod deploy-datasets harden-buckets check-us-buckets clean-us-staging test lint check-config
+.PHONY: help deploy-staging promote-prod deploy-datasets harden-buckets test lint setup-monitoring
 
 help:
 	@echo "OD&IS Stream 2 - Operations Commands:"
 	@echo "  make deploy-staging [TAG=<sha>]   Build and deploy candidate to staging Cloud Run (default TAG: current git short SHA)"
 	@echo "  make promote-prod TAG=<sha>       Promote verified image digest from staging to production Cloud Run"
 	@echo "  make deploy-datasets RUN_ID=<id>  Publish validated pipeline candidate datasets to GCS release bucket"
-	@echo "  make harden-buckets               Apply UBLA, PAP, and 7-day lifecycle to regional Cloud Build source bucket"
-	@echo "  make check-us-buckets             List any accidental or legacy US Cloud Build buckets"
-	@echo "  make clean-us-staging             Empty objects from unintended US staging buckets"
+	@echo "  make harden-buckets               Apply UBLA, PAP, and retention lifecycles to GCS buckets and Artifact Registry"
+	@echo "  make setup-monitoring             Deploy Cloud Monitoring Uptime Check and Alerting Policies to GCP"
 	@echo "  make test                         Run local unit tests via uv pytest"
 	@echo "  make lint                         Run local ruff and ty quality checks"
 
-check-config:
-	@if [ -z "$(PROJECT_ID)" ] || [ -z "$(STAGING_SOURCE_BUCKET)" ]; then \
-		echo "ERROR: PROJECT_ID or STAGING_SOURCE_BUCKET is not set." >&2; \
-		echo "Please set ODIS_GCP_PROJECT_ID and ODIS_GCP_CLOUDBUILD_BUCKET in .env/.env.deploy or in Makefile." >&2; \
-		exit 1; \
-	fi
-
-deploy-staging: check-config
+deploy-staging:
 	@if [ "$(TAG)" = "unknown" ] || [ -z "$(TAG)" ]; then \
 		echo "ERROR: Valid Git SHA or TAG required for deploy-staging." >&2; exit 1; \
 	fi
@@ -48,7 +41,7 @@ deploy-staging: check-config
 		--gcs-source-staging-dir=$(STAGING_SOURCE_BUCKET)/source \
 		--substitutions=_IMAGE_TAG=$(TAG)
 
-promote-prod: check-config
+promote-prod:
 	@if [ -z "$(TAG)" ] || [ "$(TAG)" = "REQUIRED" ] || [ "$(TAG)" = "unknown" ]; then \
 		echo "ERROR: Must specify approved immutable TAG=<short-sha> to promote to production." >&2; \
 		echo "Example: make promote-prod TAG=428cc48" >&2; \
@@ -71,7 +64,7 @@ deploy-datasets:
 	@echo "Deploying candidate datasets $(RUN_ID) to gs://$(DATASETS_BUCKET)..."
 	GCS_DATASETS_BUCKET=$(DATASETS_BUCKET) uv run python -m pipeline.etl --step deploy --run-id $(RUN_ID)
 
-harden-buckets: check-config
+harden-buckets:
 	@echo "Configuring Uniform Bucket-Level Access on $(STAGING_SOURCE_BUCKET)..."
 	gcloud storage buckets update $(STAGING_SOURCE_BUCKET) --uniform-bucket-level-access
 	@echo "Configuring Public Access Prevention on $(STAGING_SOURCE_BUCKET)..."
@@ -80,21 +73,9 @@ harden-buckets: check-config
 	gcloud storage buckets update $(STAGING_SOURCE_BUCKET) --lifecycle-file=.agents/infra/retention/lifecycle_cloudbuild_7d.json
 	@echo "Applying 1-year sliding lifecycle rule on gs://$(SHARES_BUCKET)..."
 	gcloud storage buckets update gs://$(SHARES_BUCKET) --lifecycle-file=.agents/infra/retention/lifecycle_shares_1y.json
-	@echo "Bucket hardening complete."
-
-check-us-buckets: check-config
-	@echo "Inspecting default / non-regional US Cloud Build buckets in $(PROJECT_ID)..."
-	gcloud storage buckets list --project=$(PROJECT_ID) --filter="name~cloudbuild AND NOT name~euw1"
-
-clean-us-staging: check-config
-	@echo "Checking for accidental US staging buckets..."
-	@US_BUCKET=$$(gcloud storage buckets list --project=$(PROJECT_ID) --filter="name~cloudbuild AND NOT name~euw1" --format="value(name)" | head -n 1); \
-	if [ -n "$$US_BUCKET" ]; then \
-		echo "Found US staging bucket: gs://$$US_BUCKET. Purging source archives..."; \
-		gcloud storage rm -r gs://$$US_BUCKET/source/ || true; \
-	else \
-		echo "No US staging bucket detected."; \
-	fi
+	@echo "Configuring Artifact Registry cleanup policies on $(REPOSITORY)..."
+	gcloud artifacts repositories set-cleanup-policies $(REPOSITORY) --project=$(PROJECT_ID) --location=$(REGION) --policy=.agents/infra/retention/artifact_registry_cleanup.json --no-dry-run
+	@echo "Retention policies and bucket hardening complete."
 
 test:
 	uv run pytest tests/unit -v
@@ -102,3 +83,7 @@ test:
 lint:
 	uv run ruff check app tests
 	uv run ty check app
+
+setup-monitoring:
+	@chmod +x scripts/setup_monitoring.sh
+	PROJECT_ID=$(PROJECT_ID) CHAT_CHANNEL_ID="$(CHAT_CHANNEL_ID)" EMAIL_CHANNEL_ID="$(EMAIL_CHANNEL_ID)" ./scripts/setup_monitoring.sh

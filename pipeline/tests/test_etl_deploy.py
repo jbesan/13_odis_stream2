@@ -40,7 +40,7 @@ def test_publish_datasets_uploads_files_before_pointer(mock_client_class, tmp_pa
     bucket.blob.side_effect = get_blob
     mock_client_class.return_value.bucket.return_value = bucket
 
-    version = etl._publish_datasets_to_gcs(output_dir, "odis-stream2-eu")
+    version = etl._publish_datasets_to_gcs(output_dir, "odis-stream2-app-data-euw1")
 
     assert version == "v-test-1"
     assert "odis_referentiels.parquet" in etl.DATASET_FILES
@@ -65,7 +65,7 @@ def test_publish_datasets_rejects_incomplete_output(mock_client_class, tmp_path)
     (output_dir / etl.DATASET_FILES[-1]).unlink()
 
     with pytest.raises(FileNotFoundError, match="incomplete dataset release"):
-        etl._publish_datasets_to_gcs(output_dir, "odis-stream2-eu")
+        etl._publish_datasets_to_gcs(output_dir, "odis-stream2-app-data-euw1")
 
     mock_client_class.assert_not_called()
 

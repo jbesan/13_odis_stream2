@@ -19,7 +19,7 @@ def mock_clients():
     ):
         # Mock BQ client project
         mock_bq_instance = mock_bq.return_value
-        mock_bq_instance.project = "odis-stream2"
+        mock_bq_instance.project = "odis-stream2-app"
 
         # Mock Gemini client embed_content
         mock_gemini_instance = mock_gemini.return_value

@@ -1158,7 +1158,7 @@ def clean_refugee_associations(config: Dict[str, Any], logger: PipelineLogger):
             titre_court as name,
             description,
             primary_category as waldec_code -- Using primary_category as it contains more useful semantic grouping
-        FROM `odis-stream2.rna_rag.rna_rag`
+        FROM `odis-stream2-app.rna_rag.rna_rag`
         WHERE is_refugee_focused = True
         """
         logging.info(
@@ -2507,7 +2507,7 @@ def compute_rna_rag_counts(query_text: str, threshold: float = 0.70) -> pd.DataF
     """Computes semantic counts for a query using BigQuery Vector Search (ML.DISTANCE)."""
     import os
 
-    project = os.getenv("GOOGLE_CLOUD_PROJECT", "odis-stream2")
+    project = os.getenv("GOOGLE_CLOUD_PROJECT", "odis-stream2-app")
     location = os.getenv("GOOGLE_CLOUD_LOCATION", "europe-west1")
     client = bigquery.Client(project=project)
     genai_client = genai.Client(vertexai=True, project=project, location=location)
@@ -2528,7 +2528,7 @@ def compute_rna_rag_counts(query_text: str, threshold: float = 0.70) -> pd.DataF
     SELECT 
         codgeo,
         COUNT(*) as count
-    FROM `odis-stream2.rna_rag.rna_rag`
+    FROM `odis-stream2-app.rna_rag.rna_rag`
     WHERE is_inclusion_relevant = True
     AND ML.DISTANCE(ARRAY(SELECT element FROM UNNEST(embedding_128.list)), @query_vec, 'COSINE') < @dist_threshold
     GROUP BY 1
@@ -3751,7 +3751,7 @@ def fetch_rna_rag_stats(
             codgeo,
             primary_category,
             COUNT(*) as count
-        FROM `odis-stream2.rna_rag.rna_rag`
+        FROM `odis-stream2-app.rna_rag.rna_rag`
         WHERE is_inclusion_relevant = True
         GROUP BY 1, 2
         """
@@ -3763,7 +3763,7 @@ def fetch_rna_rag_stats(
         SELECT 
             codgeo,
             COUNT(*) as inc_asso_refug_count
-        FROM `odis-stream2.rna_rag.rna_rag`
+        FROM `odis-stream2-app.rna_rag.rna_rag`
         WHERE is_refugee_focused = True
         GROUP BY 1
         """

@@ -138,7 +138,7 @@ def test_resolve_dataset_path_local(tmp_path, monkeypatch):
     monkeypatch.setenv("ODIS_DATASETS_DIR", str(datasets_dir))
 
     release_context = data_loader.ReleaseContext(
-        bucket_name="odis-stream2-eu",
+        bucket_name="odis-stream2-app-data-euw1",
         datasets_prefix="datasets",
         version="v-test-1",
         artifacts=(

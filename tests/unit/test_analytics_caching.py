@@ -199,11 +199,11 @@ def test_resolve_analytics_project_and_env_filter():
     from services.analytics_data import resolve_analytics_project, build_env_filter
 
     mock_client = MagicMock()
-    mock_client.project = "odis-stream2"
+    mock_client.project = "odis-stream2-app"
 
     assert resolve_analytics_project(mock_client, "production") == "odis-stream2-app"
     assert resolve_analytics_project(mock_client, "staging") == "odis-stream2-app"
-    assert resolve_analytics_project(mock_client, "local") == "odis-stream2"
+    assert resolve_analytics_project(mock_client, "local") == "odis-stream2-app"
 
     assert build_env_filter("production") == "AND env = 'production'"
     assert build_env_filter("staging") == "AND env = 'staging'"

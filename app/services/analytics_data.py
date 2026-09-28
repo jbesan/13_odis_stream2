@@ -64,14 +64,14 @@ class ParseStats:
 @st.cache_resource(ttl=300)
 def get_bq_client():
     """Return a BigQuery client, logging an operational failure at ERROR."""
-    if not os.getenv("GOOGLE_CLOUD_PROJECT") and not os.getenv("GCP_PROJECT"):
-        logger.error(
-            "Analytics BigQuery project is not configured",
-            extra={"extra_data": {"error_code": "ANALYTICS-BQ-NOT-CONFIGURED"}},
-        )
-        return None
+    project = (
+        os.getenv("ODIS_DATA_PROJECT")
+        or os.getenv("GOOGLE_CLOUD_PROJECT")
+        or os.getenv("GCP_PROJECT")
+        or "odis-stream2-app"
+    )
     try:
-        return bigquery.Client()
+        return bigquery.Client(project=project)
     except Exception:
         logger.error(
             "Analytics BigQuery client initialization failed",
@@ -154,8 +154,6 @@ def resolve_analytics_project(client: Any = None, env: str | None = "production"
     configured = os.getenv("ODIS_ANALYTICS_PROJECT")
     if configured:
         return configured
-    if env == "local":
-        return getattr(client, "project", "odis-stream2") if client else "odis-stream2"
     return os.getenv("ODIS_DATA_PROJECT", "odis-stream2-app")
 
 
