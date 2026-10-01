@@ -51,7 +51,7 @@ def test_get_inclusion_job_details_fallback_siret(mock_parquet_data):
     """Verify that details lookup for a SIRET resolves department via parquet and queries public API."""
     with (
         patch(
-            "services.mcp_inclusion.load_parquet_dataset",
+            "services.mcp_inclusion.load_parquet",
             return_value=mock_parquet_data,
         ),
         patch("requests.get") as mock_get,
@@ -91,7 +91,7 @@ def test_get_inclusion_job_details_not_found_returns_cache_stub(mock_parquet_dat
     """Verify that if live public query fails to find the structure, we fall back to a clean cache stub."""
     with (
         patch(
-            "services.mcp_inclusion.load_parquet_dataset",
+            "services.mcp_inclusion.load_parquet",
             return_value=mock_parquet_data,
         ),
         patch("requests.get") as mock_get,

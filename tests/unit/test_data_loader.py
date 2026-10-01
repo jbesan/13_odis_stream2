@@ -1,6 +1,7 @@
 """Unit tests for app data loader and session state cache."""
 
 import pandas as pd
+import config as cfg
 from utils import data_loader
 
 
@@ -50,28 +51,22 @@ def test_load_referentiels_raw_builds_lightweight_form_indices(monkeypatch):
     assert "libgeo" in depcom_df.columns
     assert "dep_code" in depcom_df.columns
 
-    assert data["odis"].empty
-    assert data["pois"].empty
+    assert "commune_names" in data
+    assert "regions_names" in data
 
 
 def test_get_app_data_uses_the_active_release_complete_bundle(monkeypatch):
     """All app data, including referentials, comes from one release key."""
-    release_context = data_loader.ReleaseContext(
-        bucket_name="odis-stream2-app-data-euw1",
-        datasets_prefix="datasets",
-        version="run-123",
-        artifacts=(),
-    )
     complete_data = {
         "odis": pd.DataFrame({"libgeo": ["Bordeaux"]}),
         "pois": pd.DataFrame({"name": ["Mairie"]}),
         "waldec_index": pd.DataFrame({"count": [0]}),
     }
     monkeypatch.setattr(
-        data_loader, "get_active_release_context", lambda: release_context
+        data_loader, "get_active_release_version", lambda: "run-123"
     )
     monkeypatch.setattr(
-        data_loader, "_get_scoring_datasets_for_release", lambda _: complete_data
+        data_loader, "get_scoring_datasets", lambda _: complete_data
     )
 
     app_data = data_loader.get_app_data()
@@ -80,25 +75,19 @@ def test_get_app_data_uses_the_active_release_complete_bundle(monkeypatch):
     assert "count" in app_data["waldec_index"].columns
 
 
-def test_release_context_is_a_stable_streamlit_cache_key(monkeypatch):
-    """The complete bundle cache is keyed by immutable release metadata."""
-    context = data_loader.ReleaseContext(
-        bucket_name="odis-stream2-app-data-euw1",
-        datasets_prefix="datasets",
-        version="run-cache-key",
-        artifacts=(),
-    )
+def test_release_version_is_a_stable_streamlit_cache_key(monkeypatch):
+    """The complete bundle cache is keyed by immutable release version."""
     calls = []
     monkeypatch.setattr(
         data_loader,
-        "load_referentiels_raw",
-        lambda release_context: calls.append(release_context) or {},
+        "load_app_data_raw",
+        lambda version=None: calls.append(version) or {},
     )
-    data_loader.get_referentiels_data.clear()
+    data_loader.get_scoring_datasets.clear()
 
-    assert data_loader.get_referentiels_data(context) == {}
-    assert data_loader.get_referentiels_data(context) == {}
-    assert calls == [context]
+    assert data_loader.get_scoring_datasets("run-cache-key") == {}
+    assert data_loader.get_scoring_datasets("run-cache-key") == {}
+    assert calls == ["run-cache-key"]
 
 
 def test_waldec_enrichment_supplies_zero_counts_without_association_data():
@@ -135,6 +124,56 @@ def test_ensure_data_initialized_reuses_session_state(monkeypatch):
     assert calls == ["get_app_data"]
 
 
-def test_active_release_payload_is_cached():
-    """_active_release_payload is wrapped in a Streamlit cache with clear capability."""
-    assert hasattr(data_loader._active_release_payload, "clear")
+def test_load_app_data_raw_unifies_bundles(monkeypatch):
+    """load_app_data_raw combines referentials and scoring datasets into a single bundle."""
+    monkeypatch.setattr(
+        data_loader, "load_referentiels_raw", lambda **_: {"ref_key": "val1"}
+    )
+    monkeypatch.setattr(
+        data_loader,
+        "load_scoring_datasets_raw",
+        lambda refs, **_: {**refs, "scoring_key": "val2"},
+    )
+
+    data = data_loader.load_app_data_raw()
+    assert data["ref_key"] == "val1"
+    assert data["scoring_key"] == "val2"
+
+
+def test_pois_loads_without_artificial_geometry(monkeypatch):
+    """POIs dataset retains native float lat/lon without creating shapely Point objects."""
+    pois = pd.DataFrame(
+        {
+            "category": ["education"],
+            "name": ["Ecole Test"],
+            "lat": [44.8378],
+            "lon": [-0.5792],
+            "codgeo": ["33063"],
+        }
+    )
+    odis = pd.DataFrame(
+        {
+            "codgeo": ["33063"],
+            "dep_code": ["33"],
+            "population": [1000],
+            "bassin_de_vie": ["33063"],
+        }
+    )
+
+    def mock_load(path, *args, **kwargs):
+        if cfg.POIS_FILE in path:
+            return pois
+        if cfg.ODIS_FILE in path:
+            return odis
+        return pd.DataFrame()
+
+    monkeypatch.setattr(data_loader, "_load_parquet", mock_load)
+    monkeypatch.setattr(
+        data_loader, "get_salesforce_jaccueille_counts", lambda *_: pd.DataFrame()
+    )
+
+    data = data_loader.load_scoring_datasets_raw(refs_data={})
+    pois_result = data["pois"]
+    assert "lat" in pois_result.columns
+    assert "lon" in pois_result.columns
+    assert "geometry" not in pois_result.columns

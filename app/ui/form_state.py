@@ -8,10 +8,12 @@ restoration and form submission all use the same mapping.
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Mapping, MutableMapping
-from typing import Any
+from typing import Any, Optional
 
 import pandas as pd
+import streamlit as st
 
 import config as cfg
 from core.models import CriteriaItem, SearchAreaLevel, SearchCriterias
@@ -596,3 +598,59 @@ class FormState:
             org_boosts=boosts,
             poids_territoire=self.state.get("ui_poids_territoire", 1.0),
         )
+
+
+def apply_demo_data_if_present(defaults: dict[str, Any]) -> None:
+    """Checks query params for 'demo' and updates defaults with demo scenario."""
+    demo_id = st.query_params.get("demo")
+    if demo_id is not None:
+        scenario = cfg.DEMO_SCENARIOS.get(
+            "1" if demo_id in ("", "true") else demo_id, {}
+        )
+        for k, v in scenario.items():
+            if k in defaults:
+                defaults[k] = v
+        if st.session_state.get("_demo_toast_id") != demo_id:
+            label = "Défaut" if demo_id in ("", "true") else demo_id
+            st.toast(f"Mode Démo activé (Scénario {label})", icon="ℹ️")
+            st.session_state["_demo_toast_id"] = demo_id
+
+
+def apply_logged_in_org_defaults(defaults: dict[str, Any]) -> None:
+    """Updates defaults with organization profile from st.session_state['org']."""
+    org = st.session_state.get("org")
+    if not org:
+        return
+    defaults["org_context"] = org.id
+    defaults["org_strategic_locations"] = org.default_zones
+    defaults["org_strategic_locations_type"] = org.zone_type
+    for k, v in org.defaults.items():
+        if k in defaults and isinstance(defaults[k], list) and isinstance(v, list):
+            defaults[k] = list(set(defaults[k]) | set(v))
+        else:
+            defaults[k] = v
+    st.session_state["org_defaults_applied"] = org.id
+
+
+def apply_search_criteria_to_ui(
+    criteria: Any, app_data: Optional[dict[str, Any]] = None
+) -> None:
+    """Hydrate form widgets from AI extraction or a shared-search snapshot."""
+    FormState(st.session_state).hydrate(criteria, app_data=app_data)
+
+
+def initialize_session_state() -> None:
+    """Initialize form state without loading datasets."""
+    defaults = copy.deepcopy(cfg.DEMO_DATA_DEFAULT)
+    apply_demo_data_if_present(defaults)
+    apply_logged_in_org_defaults(defaults)
+
+    demo_val = st.query_params.get("demo")
+    org = st.session_state.get("org")
+    source_id = f"org={getattr(org, 'id', 'none')}|demo={demo_val or 'none'}"
+    form = FormState(st.session_state)
+    if not st.session_state.get(FORM_INITIALIZED_KEY):
+        form.initialize(defaults)
+    elif st.session_state.get("_form_source_id") != source_id and demo_val:
+        form.hydrate(defaults, overwrite=True, exclude_unset=False)
+    st.session_state["_form_source_id"] = source_id

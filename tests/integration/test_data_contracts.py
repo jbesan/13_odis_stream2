@@ -1,5 +1,5 @@
 import os
-from utils.data_loader import load_all_data_raw, load_scores_config_as_df
+from utils.data_loader import load_app_data_raw, load_scores_config_as_df
 import config as cfg
 
 
@@ -15,7 +15,7 @@ def test_data_columns_contract():
     scores_cat = load_scores_config_as_df(scores_path)
 
     # 2. Load the actual loaded data
-    data = load_all_data_raw()
+    data = load_app_data_raw()
     odis = data["odis"]
 
     # 3. Define metrics that are dynamically computed at runtime

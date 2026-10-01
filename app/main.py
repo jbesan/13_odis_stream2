@@ -14,13 +14,11 @@ from ui import page_shell
 st.set_page_config(page_title="OD&IS", page_icon="👋", layout="wide")
 
 # Authentication and shared-link routing always run before data initialization.
-page_shell.enter_page(
-    None, handle_shared_search=True, redirect_shared_to_results=True
-)
+page_shell.enter_page(None, handle_shared_search=True, redirect_shared_to_results=True)
 
-# --- Initialize State / Start Async Preload ---
+# --- Initialize State / Ensure Complete Data Bundle Loaded ---
 with logfire.span("ODIS Session"):
-    data_loader.initialize_session_state()
+    data_loader.ensure_data_initialized()
 
 # --- Silent Redirect ---
 # This makes main.py purely an entry point that leads to the first page

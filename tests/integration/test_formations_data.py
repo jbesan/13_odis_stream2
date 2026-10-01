@@ -17,7 +17,7 @@ def test_formation_codes_intersection():
 
     from utils import data_loader
 
-    formations_df = data_loader.load_parquet_dataset(cfg.AGG_FORMATIONS_FILE)
+    formations_df = data_loader.load_parquet(cfg.AGG_FORMATIONS_FILE)
 
     assert "formation_code" in formations_df.columns
 
@@ -26,7 +26,7 @@ def test_formation_codes_intersection():
     print(f"\nSample Formation Codes (Cleaned): {sample_codes}")
 
     # 2. Load Referentiels
-    ref_df = data_loader.load_parquet_dataset(cfg.REFERENTIELS_FILE)
+    ref_df = data_loader.load_parquet(cfg.REFERENTIELS_FILE)
     form_ref = ref_df[ref_df["key"] == "formation_codes"]
 
     assert not form_ref.empty, "No formation codes found in referentiels"

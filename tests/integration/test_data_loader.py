@@ -85,7 +85,7 @@ def test_init_datasets(
     mock_read_parquet.side_effect = side_effect
 
     # Run init_datasets
-    data = data_loader.load_all_data_raw()
+    data = data_loader.load_app_data_raw()
 
     # Assertions
     assert "odis" in data
@@ -137,21 +137,7 @@ def test_resolve_dataset_path_local(tmp_path, monkeypatch):
     target_file.write_bytes(b"MOCK_PARQUET")
     monkeypatch.setenv("ODIS_DATASETS_DIR", str(datasets_dir))
 
-    release_context = data_loader.ReleaseContext(
-        bucket_name="odis-stream2-app-data-euw1",
-        datasets_prefix="datasets",
-        version="v-test-1",
-        artifacts=(
-            data_loader.ReleaseArtifact(
-                name="salesforce_jaccueille_bdv.parquet",
-                sha256="abc",
-                size_bytes=len(b"MOCK_PARQUET"),
-            ),
-        ),
-    )
-    resolved = data_loader.resolve_dataset_path(
-        "salesforce_jaccueille_bdv.parquet", release_context=release_context
-    )
+    resolved = data_loader.resolve_dataset_path("salesforce_jaccueille_bdv.parquet")
     assert resolved is not None
     assert "salesforce_jaccueille_bdv.parquet" in resolved
     assert os.path.exists(resolved)

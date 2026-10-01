@@ -5,7 +5,7 @@ import asyncio
 import threading
 
 import pandas as pd
-from utils.data_loader import load_all_data_raw
+from utils.data_loader import load_app_data_raw
 from core.scoring import ScoringEngine
 from core.models import SearchCriterias, CriteriaItem
 from services.rna_rag import RNARagService
@@ -51,18 +51,16 @@ def ensure_data_context() -> None:
 
     Uses the injected in-memory DATA_CONTEXT (populated via set_data_context on
     main thread startup), or directly loads the verified release bundle via
-    load_all_data_raw (without any Streamlit dependency) for standalone/CLI/test mode.
+    load_app_data_raw (without any Streamlit dependency) for standalone/CLI/test mode.
     """
     global DATA_CONTEXT
     if not DATA_CONTEXT:
         with DATA_LOCK:
             if not DATA_CONTEXT:
                 logger.info(
-                    "⚙️ [MCP] Loading a verified release bundle (direct load without Streamlit)..."
+                    "⚙️ [MCP] Loading active release bundle (direct load without Streamlit)..."
                 )
-                from utils.data_loader import get_active_release_context
-
-                DATA_CONTEXT = load_all_data_raw(get_active_release_context())
+                DATA_CONTEXT = load_app_data_raw()
 
 
 def get_scoring_engine() -> ScoringEngine:

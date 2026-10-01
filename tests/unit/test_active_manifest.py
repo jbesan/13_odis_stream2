@@ -5,18 +5,17 @@ import pytest
 
 from utils import data_loader
 from utils.data_loader import (
-    get_active_release_context,
+    get_active_release_version,
+    get_data_mtime,
     load_active_data_manifest,
     resolve_dataset_path,
 )
 
 
 @pytest.fixture(autouse=True)
-def clear_active_release_payload_cache():
-    data_loader._active_release_payload.clear()
+def clear_active_manifest_cache():
     data_loader.load_active_data_manifest.clear()
     yield
-    data_loader._active_release_payload.clear()
     data_loader.load_active_data_manifest.clear()
 
 
@@ -42,8 +41,8 @@ def test_load_active_data_manifest_reads_local_manifest(tmp_path, monkeypatch):
     assert manifest["active_release_version"] == "run-test-2026"
 
 
-def test_get_active_release_context_resolves_artifacts(tmp_path, monkeypatch):
-    """get_active_release_context builds ReleaseContext with all runtime artifacts."""
+def test_get_active_release_version_resolves_version(tmp_path, monkeypatch):
+    """get_active_release_version resolves version and get_data_mtime formats release cache key."""
     datasets_dir = tmp_path / "datasets"
     datasets_dir.mkdir()
     manifest_data = {
@@ -60,13 +59,9 @@ def test_get_active_release_context_resolves_artifacts(tmp_path, monkeypatch):
     (datasets_dir / "data_manifest.json").write_text(json.dumps(manifest_data))
     monkeypatch.setenv("ODIS_DATASETS_DIR", str(datasets_dir))
 
-    context = get_active_release_context()
-    assert context.version == "run-context-test"
-    assert context.identity == "gcs:run-context-test"
-    artifact = context.artifact("odis_communes.parquet")
-    assert artifact.name == "odis_communes.parquet"
-    assert artifact.sha256 == "b" * 64
-    assert artifact.size_bytes == 2048
+    version = get_active_release_version()
+    assert version == "run-context-test"
+    assert get_data_mtime() == "gcs:run-context-test"
 
 
 def test_resolve_dataset_path_locates_local_file(tmp_path, monkeypatch):

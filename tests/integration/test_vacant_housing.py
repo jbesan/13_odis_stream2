@@ -12,7 +12,7 @@ def test_vacant_housing_criterion():
     """
     # 1. Load Data
     try:
-        app_data = data_loader.load_all_data_raw()
+        app_data = data_loader.load_app_data_raw()
     except Exception as e:
         pytest.fail(f"Data loading failed: {e}")
 

@@ -4,7 +4,7 @@ import logging
 
 sys.path.append(os.getcwd())
 
-from utils.data_loader import load_all_data_raw
+from utils.data_loader import load_app_data_raw
 from services.mcp_server import set_data_context, _search_referentiels_logic
 
 logging.basicConfig(level=logging.INFO)
@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO)
 
 def test_waldec():
     print("Loading data...")
-    data = load_all_data_raw()
+    data = load_app_data_raw()
     set_data_context(data)
 
     results = _search_referentiels_logic("fêtes", domain="waldec_codes")

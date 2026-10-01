@@ -23,7 +23,7 @@ if "search_results" in st.session_state:
 logging.info(f"--- App re-run at {time.ctime(time.time())} ---")
 
 # --- Main App Execution ---
-data_loader.initialize_session_state()
+data_loader.ensure_data_initialized()
 
 # --- Sidebar / Org Context ---
 with st.sidebar:
@@ -249,9 +249,7 @@ if cfg.is_ai_free_mode(st.session_state.get("org")):
         ):
             st.switch_page("pages/2_Formulaire.py")
 else:
-    st.subheader(
-        "C'est parti ?", divider="yellow", width="stretch"
-    )
+    st.subheader("C'est parti ?", divider="yellow", width="stretch")
 
     st.write("Deux façons de commencer (à vous de choisir) :")
 
@@ -289,7 +287,9 @@ else:
         st.text(
             "Collez ici un texte décrivant la situation (email, notes d'entretien, export CRM...) :"
         )
-        st.warning("Attention de retirer les informations personnelles sensibles (noms, prénoms, adresses mail, etc.) du texte avant de le coller.")
+        st.warning(
+            "Attention de retirer les informations personnelles sensibles (noms, prénoms, adresses mail, etc.) du texte avant de le coller."
+        )
 
         text_input = st.text_area(
             "Texte source",
@@ -369,8 +369,6 @@ else:
                 "Démarrer Auto-Detect", type="primary", width="stretch", key="btn_ia"
             ):
                 show_unstructured_input_dialog()
-
-
 
 
 # --- Footer ---

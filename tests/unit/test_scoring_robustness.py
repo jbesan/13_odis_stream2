@@ -55,7 +55,7 @@ def test_global_score_stays_unavailable_without_observed_category():
 @pytest.fixture(scope="module")
 def app_data():
     """Loads application data once for the test module to avoid redundant loads."""
-    return data_loader.load_all_data_raw()
+    return data_loader.load_app_data_raw()
 
 
 @pytest.fixture(scope="module")

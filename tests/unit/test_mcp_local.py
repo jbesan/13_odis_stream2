@@ -11,7 +11,7 @@ from services.mcp_server import (
     _search_referentiels_logic,
     set_data_context,
 )
-from utils.data_loader import load_all_data_raw
+from utils.data_loader import load_app_data_raw
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 def mcp_data_context():
     """Load data once for the module (simulating Server Startup)."""
     print("Loading ODIS Data Context...")
-    data = load_all_data_raw()
+    data = load_app_data_raw()
     set_data_context(data)
     return data
 

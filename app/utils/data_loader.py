@@ -1,25 +1,27 @@
-import streamlit as st
-import pandas as pd
-import shapely
-import shapely.wkb as wkb
-import json
-import os
-import yaml
-import logging
-from dataclasses import dataclass
-from typing import Dict, Any, List, Optional
-import config as cfg
-import copy
-import tempfile
-from google.cloud import storage  # noqa: F401
+"""Unified dataset loader and session state initializer for ODIS.
 
-# Configure logging
+Loads baked-in local parquet datasets from the container filesystem and provides
+a single process-wide cached bundle via Streamlit's cache_resource.
+"""
+
+import json
+import logging
+import os
+import tempfile
+from typing import Any, Dict, List, Optional, Set
+
+from google.cloud import storage  # noqa: F401 - Kept for test conftest.py mock compatibility
+import pandas as pd
+import pyarrow.parquet as pq
+import streamlit as st
+import yaml
+
+import config as cfg
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# The application always loads this complete scoring bundle. Validation-only
-# artefacts (such as the France Travail and Inclusion coverage files) are not
-# part of this runtime contract.
+# Complete runtime dataset filenames contract
 _RUNTIME_DATASET_FILENAMES = (
     cfg.REFERENTIELS_FILE,
     cfg.ODIS_FILE,
@@ -35,329 +37,175 @@ _RUNTIME_DATASET_FILENAMES = (
 )
 
 
-@dataclass(frozen=True)
-class ReleaseArtifact:
-    """One verified runtime artifact from an immutable release."""
+# =============================================================================
+# 1. Session State & Form Defaults Initialization (re-exported from ui.form_state)
+# =============================================================================
 
-    name: str
-    sha256: str
-    size_bytes: int
-
-
-@dataclass(frozen=True)
-class ReleaseContext:
-    """The immutable dataset release selected once for one complete load."""
-
-    bucket_name: str
-    datasets_prefix: str
-    version: str
-    artifacts: tuple[ReleaseArtifact, ...]
-
-    @property
-    def identity(self) -> str:
-        return f"gcs:{self.version}"
-
-    def artifact(self, filename: str) -> ReleaseArtifact:
-        for artifact in self.artifacts:
-            if artifact.name == filename:
-                return artifact
-        raise KeyError(
-            f"Dataset '{filename}' is not declared by release {self.version}"
-        )
+from ui.form_state import (
+    apply_demo_data_if_present,  # noqa: F401
+    apply_logged_in_org_defaults,  # noqa: F401
+    apply_search_criteria_to_ui,  # noqa: F401
+    initialize_session_state,
+)
 
 
-def load_scores_config_as_df(config_path: str) -> pd.DataFrame:
-    """Loads the scores configuration YAML as a DataFrame."""
-    with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
-
-    data = []
-    scores_list = config.get("scores", [])
-    for item in scores_list:
-        data.append(
-            {
-                "cat": item.get("category"),
-                "score": item.get("id"),
-                "label": item.get("display", {}).get("name", item.get("id")),
-                "description": item.get("display", {}).get("tooltip", ""),
-                "weight": item.get("weight", 1.0),
-                "min_bound": item.get("min_bound"),
-                "max_bound": item.get("max_bound"),
-                "score_affichage": item.get("display", {}).get("strong_point_text", ""),
-                "high_value_adjective": item.get("display", {}).get(
-                    "high_value_adjective", ""
-                ),
-                "bdv_factor": item.get("bdv_factor", 0.0),
-                "metric": item.get("source_metric"),
-                "computation": item.get("computation", "live"),
-                "display_factor": item.get("display", {}).get("display_factor", 1.0),
-                "unit": item.get("display", {}).get("unit", ""),
-                "baseline": item.get("baseline", False),
-                "format": item.get("display", {}).get("format", None),
-                "missing_strategy": item.get("missing_strategy", "exclude"),
-                "show": item.get("display", {}).get("show", True),
-                "metric_type": item.get("display", {}).get("metric_type", "continuous"),
-                "discrete_mapping": item.get("display", {}).get(
-                    "discrete_mapping", None
-                ),
-            }
-        )
-    return pd.DataFrame(data)
-
-
-def apply_demo_data_if_present(defaults: Dict[str, Any]) -> None:
-    """Checks query params for 'demo' and updates defaults with demo scenario."""
-    query_params = st.query_params
-    if "demo" in query_params:
-        demo_id = query_params["demo"]
-        if not demo_id or demo_id == "true":
-            scenario = cfg.DEMO_SCENARIOS.get("1", {})
-        else:
-            scenario = cfg.DEMO_SCENARIOS.get(demo_id, {})
-
-        for key, value in scenario.items():
-            if key in defaults:
-                defaults[key] = value
-
-        if st.session_state.get("_demo_toast_id") != demo_id:
-            st.toast(
-                f"Mode Démo activé (Scénario {demo_id if demo_id != 'true' else 'Défaut'})",
-                icon="ℹ️",
-            )
-            st.session_state["_demo_toast_id"] = demo_id
-
-
-def apply_logged_in_org_defaults(defaults: Dict[str, Any]) -> None:
-    """Updates defaults with organization profile from st.session_state['org'] using a smart merge."""
-    org = st.session_state.get("org")
-    if org:
-        defaults["org_context"] = org.id
-        defaults["org_strategic_locations"] = org.default_zones
-        defaults["org_strategic_locations_type"] = org.zone_type
-
-        # Smart Merge of profile defaults (F-54 Expansion)
-        # - Lists: Union (Add partner-specific options to the global defaults)
-        # - Scalars: Override (Partner specific value takes precedence)
-        org_defaults = org.defaults
-        for key, val in org_defaults.items():
-            if key in defaults:
-                if isinstance(defaults[key], list) and isinstance(val, list):
-                    # Union of lists to avoid duplicates while preserving existing defaults
-                    defaults[key] = list(set(defaults[key]) | set(val))
-                else:
-                    # Direct override for strings, numbers, etc.
-                    defaults[key] = val
-            else:
-                # Add organization-specific defaults not present in global defaults
-                defaults[key] = val
-
-        # Toast gating to avoid showing on every page load/re-run
-        if st.session_state.get("org_defaults_applied") != org.id:
-            # st.toast(f"Profil Organisation activé : **{org.name}**", icon="🏢")
-            st.session_state["org_defaults_applied"] = org.id
-
-
-def apply_search_criteria_to_ui(
-    criteria: Any, app_data: Optional[Dict[str, Any]] = None
-) -> None:
-    """Hydrate form widgets from AI extraction or a shared-search snapshot."""
-    from ui.form_state import FormState
-
-    FormState(st.session_state).hydrate(criteria, app_data=app_data)
-
-
-def initialize_session_state() -> None:
-    """Initialize form state without loading any dataset from GCS."""
-    from ui.form_state import FORM_INITIALIZED_KEY, FormState
-
-    defaults = copy.deepcopy(cfg.DEMO_DATA_DEFAULT)
-    apply_demo_data_if_present(defaults)
-    apply_logged_in_org_defaults(defaults)
-
-    demo_value = st.query_params.get("demo") if "demo" in st.query_params else None
-    org = st.session_state.get("org")
-    source_id = f"org={getattr(org, 'id', 'none')}|demo={demo_value or 'none'}"
-    form_state = FormState(st.session_state)
-    if not st.session_state.get(FORM_INITIALIZED_KEY):
-        form_state.initialize(defaults)
-    elif st.session_state.get("_form_source_id") != source_id and demo_value:
-        # A newly selected demo is an explicit request to replace the draft.
-        form_state.hydrate(defaults, overwrite=True, exclude_unset=False)
-    st.session_state["_form_source_id"] = source_id
-
-
-def ensure_data_initialized(*, force_reload: bool = False) -> Dict[str, Any]:
-    """Initialize state and return the complete active data bundle."""
-    initialize_session_state()
-
-    if not force_reload and st.session_state.get("app_data"):
-        app_data = st.session_state["app_data"]
-    else:
-        app_data = get_app_data()
-        st.session_state["app_data"] = app_data
-
-    from services.mcp_server import set_data_context
-
-    set_data_context(app_data)
-
-    if "heavy_data_toast_shown" not in st.session_state:
-        load_errors = app_data.get("_load_errors", [])
-        if load_errors:
-            st.toast(
-                "Toutes les données n'ont pas pu être chargées, les résultats peuvent en être affectés",
-                icon="⚠️",
-            )
-        st.session_state["heavy_data_toast_shown"] = True
-
-    return app_data
+# =============================================================================
+# 2. Local Dataset Path & Manifest Resolution
+# =============================================================================
 
 
 def _get_dataset_cache_base_dir() -> str:
-    """Determine local dataset directory.
-
-    Priority:
-    1. ODIS_DATASETS_DIR / ODIS_CACHE_DIR if explicitly configured.
-    2. app/data/datasets/active (standard baked-in location).
-    3. tempfile.gettempdir()/odis_data_cache during test isolation.
-    """
-    if custom_dir := (
-        os.getenv("ODIS_DATASETS_DIR")
-        or os.getenv("ODIS_CACHE_DIR")
-        or os.getenv("ODIS_DATA_CACHE_DIR")
-    ):
-        return custom_dir
-
-    active_dir = os.path.join(cfg.APP_DIR, "data", "datasets", "active")
-    if os.path.isdir(active_dir):
-        return active_dir
-
-    return os.path.join(tempfile.gettempdir(), "odis_data_cache")
+    """Determine local dataset directory."""
+    for env_var in ("ODIS_DATASETS_DIR", "ODIS_CACHE_DIR", "ODIS_DATA_CACHE_DIR"):
+        if val := os.getenv(env_var):
+            return val
+    active = os.path.join(cfg.APP_DIR, "data", "datasets", "active")
+    return (
+        active
+        if os.path.isdir(active)
+        else os.path.join(tempfile.gettempdir(), "odis_data_cache")
+    )
 
 
-def resolve_dataset_path(
-    filename_or_path: str, *, release_context: Optional[ReleaseContext] = None
-) -> Optional[str]:
-    """Resolve one release artifact filename from the local datasets directory."""
-    filename = os.path.basename(filename_or_path)
-    if filename != filename_or_path:
-        raise ValueError("Dataset paths must be release artifact filenames")
-
-    base_dir = _get_dataset_cache_base_dir()
-    direct_path = os.path.join(base_dir, filename)
-    if os.path.isfile(direct_path):
-        return direct_path
-
-    active_path = os.path.join(cfg.APP_DIR, "data", "datasets", "active", filename)
-    if os.path.isfile(active_path):
-        return active_path
-
-    return direct_path
+def resolve_dataset_path(filename_or_path: str) -> Optional[str]:
+    """Resolve one dataset filename from the local datasets directory."""
+    fname = os.path.basename(filename_or_path)
+    base = _get_dataset_cache_base_dir()
+    direct = os.path.join(base, fname)
+    if os.path.isfile(direct):
+        return direct
+    active = os.path.join(cfg.APP_DIR, "data", "datasets", "active", fname)
+    return active if os.path.isfile(active) else direct
 
 
 @st.cache_data(show_spinner=False)
 def load_active_data_manifest() -> Dict[str, Any]:
     """Load the provenance manifest of the active local dataset release."""
-    base_dir = _get_dataset_cache_base_dir()
-    manifest_path = os.path.join(base_dir, "data_manifest.json")
-    if not os.path.isfile(manifest_path):
-        manifest_path = os.path.join(
-            cfg.APP_DIR, "data", "datasets", "active", "data_manifest.json"
-        )
-
-    if not os.path.isfile(manifest_path):
-        return {
-            "manifest_version": "local-baked",
-            "pipeline_run_id": "local-baked",
-            "active_release_version": "local-baked",
-            "outputs": [
-                {"name": f, "sha256": "0" * 64, "size_bytes": 0}
-                for f in _RUNTIME_DATASET_FILENAMES
-            ],
-        }
-
-    with open(manifest_path, "r", encoding="utf-8") as handle:
-        manifest = json.load(handle)
-    version = (
-        manifest.get("manifest_version")
-        or manifest.get("pipeline_run_id")
-        or manifest.get("active_release_version")
-        or "local"
-    )
-    manifest["manifest_version"] = version
-    manifest["active_release_version"] = version
-    manifest["pipeline_run_id"] = manifest.get("pipeline_run_id", version)
-    return manifest
+    base = _get_dataset_cache_base_dir()
+    for p in (
+        os.path.join(base, "data_manifest.json"),
+        os.path.join(cfg.APP_DIR, "data", "datasets", "active", "data_manifest.json"),
+    ):
+        if os.path.isfile(p):
+            with open(p, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+            v = (
+                manifest.get("manifest_version")
+                or manifest.get("pipeline_run_id")
+                or manifest.get("active_release_version")
+                or "local"
+            )
+            manifest["manifest_version"] = manifest["active_release_version"] = v
+            manifest["pipeline_run_id"] = manifest.get("pipeline_run_id", v)
+            return manifest
+    return {
+        "manifest_version": "local-baked",
+        "pipeline_run_id": "local-baked",
+        "active_release_version": "local-baked",
+        "outputs": [
+            {"name": f, "sha256": "0" * 64, "size_bytes": 0}
+            for f in _RUNTIME_DATASET_FILENAMES
+        ],
+    }
 
 
-def get_active_release_context() -> ReleaseContext:
-    """Resolve the active release context from the local dataset manifest."""
+def get_active_release_version() -> str:
+    """Return the active dataset release version identifier."""
     manifest = load_active_data_manifest()
-    release_version = (
+    return str(
         manifest.get("pipeline_run_id")
         or manifest.get("active_release_version")
+        or manifest.get("manifest_version")
         or "local"
     )
 
-    output_by_name = {
-        item.get("name"): item
-        for item in manifest.get("outputs", [])
-        if isinstance(item, dict) and isinstance(item.get("name"), str)
-    }
-    artifacts = []
-    for filename in _RUNTIME_DATASET_FILENAMES:
-        metadata = output_by_name.get(filename, {})
-        artifacts.append(
-            ReleaseArtifact(
-                name=filename,
-                sha256=metadata.get("sha256", ""),
-                size_bytes=metadata.get("size_bytes", 0),
-            )
-        )
-    return ReleaseContext(
-        bucket_name=os.getenv("GCS_DATASETS_BUCKET", "baked-in"),
-        datasets_prefix="datasets",
-        version=release_version,
-        artifacts=tuple(artifacts),
-    )
+
+def get_data_mtime() -> str:
+    """Return the active immutable release ID used as the cache key."""
+    return f"gcs:{get_active_release_version()}"
 
 
-@st.cache_data(show_spinner=False)
-def _active_release_payload() -> tuple[str, str, Dict[str, Any], Dict[str, Any]]:
-    """Return release payload from local manifest and pointer."""
-    base_dir = _get_dataset_cache_base_dir()
-    manifest = load_active_data_manifest()
-    pointer_path = os.path.join(base_dir, "current.json")
-    if os.path.isfile(pointer_path):
-        with open(pointer_path, "r", encoding="utf-8") as handle:
-            pointer = json.load(handle)
-    else:
-        pointer = {
-            "version": manifest.get("active_release_version", "local"),
-            "files": list(_RUNTIME_DATASET_FILENAMES),
-            "manifest": {
-                "name": "data_manifest.json",
-                "sha256": "0" * 64,
-            },
-        }
-    return os.getenv("GCS_DATASETS_BUCKET", "baked-in"), "datasets", pointer, manifest
+# =============================================================================
+# 3. Parquet & Config Loaders
+# =============================================================================
 
 
-@st.cache_data(ttl=3600)
-def fetch_salesforce_jaccueille_bdv(
-    release_context: Optional[ReleaseContext] = None,
+def _load_parquet(
+    path: str,
+    columns: Optional[List[str]] = None,
+    error_list: Optional[List[str]] = None,
 ) -> pd.DataFrame:
-    """Loads the pre-aggregated Salesforce J'accueille BDV table using the unified dataset loader."""
-    logger.info("📡 [SALESFORCE] Fetching Salesforce J'accueille BDV dataset...")
-    df = load_parquet_dataset(
-        cfg.SALESFORCE_JACCUEILLE_BDV_FILE, release_context=release_context
-    )
-    if not df.empty:
-        logger.info(
-            "✅ [SALESFORCE] Loaded %s rows from %s",
-            len(df),
-            cfg.SALESFORCE_JACCUEILLE_BDV_FILE,
+    """Internal loader for parquet datasets with error tracking."""
+    resolved = resolve_dataset_path(path)
+    if not resolved or not os.path.exists(resolved):
+        logger.error("File not found: %s", path)
+        if error_list is not None:
+            error_list.append(os.path.basename(path))
+        return pd.DataFrame()
+    return pd.read_parquet(resolved, columns=columns)
+
+
+def load_parquet(
+    path: str,
+    columns: Optional[List[str]] = None,
+    error_list: Optional[List[str]] = None,
+) -> pd.DataFrame:
+    """Public loader for parquet datasets."""
+    return _load_parquet(path, columns=columns, error_list=error_list)
+
+
+def load_scores_config_as_df(config_path: str) -> pd.DataFrame:
+    """Loads the scores configuration YAML as a DataFrame."""
+    with open(config_path, "r", encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+    data = []
+    for item in config.get("scores", []):
+        d = item.get("display", {})
+        data.append(
+            {
+                "cat": item.get("category"),
+                "score": item.get("id"),
+                "label": d.get("name", item.get("id")),
+                "description": d.get("tooltip", ""),
+                "weight": item.get("weight", 1.0),
+                "min_bound": item.get("min_bound"),
+                "max_bound": item.get("max_bound"),
+                "score_affichage": d.get("strong_point_text", ""),
+                "high_value_adjective": d.get("high_value_adjective", ""),
+                "bdv_factor": item.get("bdv_factor", 0.0),
+                "metric": item.get("source_metric"),
+                "computation": item.get("computation", "live"),
+                "display_factor": d.get("display_factor", 1.0),
+                "unit": d.get("unit", ""),
+                "baseline": item.get("baseline", False),
+                "format": d.get("format"),
+                "missing_strategy": item.get("missing_strategy", "exclude"),
+                "show": d.get("show", True),
+                "metric_type": d.get("metric_type", "continuous"),
+                "discrete_mapping": d.get("discrete_mapping"),
+            }
         )
-    else:
+    return pd.DataFrame(data)
+
+
+def get_pois_by_category(pois_df: pd.DataFrame, category: str) -> pd.DataFrame:
+    """Filters POIs by category and returns a copy."""
+    return (
+        pois_df[pois_df["category"] == category].copy()
+        if not pois_df.empty
+        else pd.DataFrame()
+    )
+
+
+# =============================================================================
+# 4. Auxiliary Data & Score Enrichments
+# =============================================================================
+
+
+def fetch_salesforce_jaccueille_bdv() -> pd.DataFrame:
+    """Loads the pre-aggregated Salesforce J'accueille BDV table."""
+    df = _load_parquet(cfg.SALESFORCE_JACCUEILLE_BDV_FILE)
+    if df.empty:
         logger.warning("⚠️ [SALESFORCE] J'accueille BDV dataset is missing or empty")
     return df
 
@@ -365,27 +213,13 @@ def fetch_salesforce_jaccueille_bdv(
 def get_salesforce_jaccueille_counts(
     source_data: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
-    """Return the single Salesforce-derived source of J'Accueille score inputs.
-
-    The published BDV dataset deliberately drives both the score inputs and the
-    result-page details.  Do not add a runtime BigQuery or local-file fallback:
-    it would mix versions and make the data source ambiguous.
-    """
+    """Return the single Salesforce-derived source of J'Accueille score inputs."""
     df = source_data if source_data is not None else fetch_salesforce_jaccueille_bdv()
     required = {"bassin_de_vie", "contact_count", "lead_count"}
     if df.empty or not required.issubset(df.columns):
-        missing = (
-            sorted(required - set(df.columns)) if not df.empty else sorted(required)
-        )
-        logger.error(
-            "[J'ACCUEILLE] Salesforce BDV dataset is unavailable or incomplete; "
-            "missing columns: %s",
-            ", ".join(missing),
-        )
         return pd.DataFrame(
             columns=["bassin_de_vie", "heb_accueillants_count", "prospects_count"]
         )
-
     counts = df[["bassin_de_vie", "contact_count", "lead_count"]].copy()
     counts["bassin_de_vie"] = counts["bassin_de_vie"].astype(str)
     counts["heb_accueillants_count"] = pd.to_numeric(
@@ -399,203 +233,362 @@ def get_salesforce_jaccueille_counts(
     ].sum()
 
 
-def _load_parquet(
-    path: str,
-    columns: Optional[list] = None,
-    error_list: Optional[list] = None,
-    *,
-    release_context: Optional[ReleaseContext] = None,
+def _enrich_with_salesforce_bdv(
+    target_df: pd.DataFrame,
+    df_jaccueille: pd.DataFrame,
+    on_col: str,
+    index_col: str,
 ) -> pd.DataFrame:
-    """Internal non-cached loader with error tracking and GCS dataset resolution."""
-    if release_context is None:
-        resolved_path = resolve_dataset_path(path)
-    else:
-        resolved_path = resolve_dataset_path(path, release_context=release_context)
-    if not resolved_path or not os.path.exists(resolved_path):
-        fname = os.path.basename(path)
-        logger.error(f"File not found: {path} (Critical for this feature)")
-        if error_list is not None:
-            error_list.append(fname)
-        return pd.DataFrame()
-    return pd.read_parquet(resolved_path, columns=columns)
-
-
-@st.cache_resource
-def load_parquet_dataset(
-    path: str,
-    columns: Optional[list] = None,
-    release_context: Optional[ReleaseContext] = None,
-) -> pd.DataFrame:
-    """Generic loader for parquet datasets with caching."""
-    return _load_parquet(path, columns, release_context=release_context)
-
-
-def get_pois_by_category(pois_df: pd.DataFrame, category: str) -> pd.DataFrame:
-    """Filters POIs by category and returns a copy."""
-    if pois_df.empty:
-        return pd.DataFrame()
-    return pois_df[pois_df["category"] == category].copy()
+    """Enrich a dataframe with pre-aggregated Salesforce J'Accueille indicator counts."""
+    if target_df.empty:
+        return target_df
+    df = target_df.reset_index()
+    if not df_jaccueille.empty:
+        df = df.merge(df_jaccueille, on=on_col, how="left")
+    for col in ("heb_accueillants_count", "prospects_count"):
+        df[col] = df.get(col, pd.Series(0.0, index=df.index)).fillna(0)
+    df["heb_jaccueille_accueillants_score"] = (df["heb_accueillants_count"] > 0).astype(
+        float
+    )
+    df["heb_jaccueille_prospects_score"] = (df["prospects_count"] > 0).astype(float)
+    return df.set_index(index_col)
 
 
 def _enrich_waldec_index(
     waldec_index: pd.DataFrame, associations_data: pd.DataFrame
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Enriches the WALDEC index with association counts and returns both the full
-    sorted index and the top items list.
-    """
+    """Enriches the WALDEC index with association counts."""
     if waldec_index.empty:
         return waldec_index, waldec_index
-
-    enriched_waldec = waldec_index.copy()
+    enriched = waldec_index.copy()
     if not associations_data.empty and {"id_waldec", "count"}.issubset(
         associations_data.columns
     ):
-        topo_assos = associations_data.groupby("id_waldec")["count"].sum()
-        enriched_waldec["count"] = enriched_waldec.index.map(topo_assos)
+        enriched["count"] = enriched.index.map(
+            associations_data.groupby("id_waldec")["count"].sum()
+        )
     else:
-        enriched_waldec["count"] = 0
-    enriched_waldec["count"] = (
-        pd.to_numeric(enriched_waldec["count"], errors="coerce").fillna(0).astype(int)
+        enriched["count"] = 0
+    enriched["count"] = (
+        pd.to_numeric(enriched["count"], errors="coerce").fillna(0).astype(int)
     )
-
-    enriched_waldec = enriched_waldec.sort_values(
-        by=["count", "label"], ascending=[False, True]
-    )
-
-    waldec_top_index = enriched_waldec.head(500)
-
-    return enriched_waldec, waldec_top_index
+    enriched = enriched.sort_values(by=["count", "label"], ascending=[False, True])
+    return enriched, enriched.head(500)
 
 
 def _enrich_rome_index(
     rome_index: pd.DataFrame, live_jobs_data: pd.DataFrame
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Enriches the ROME index with job offer counts and returns both the full
-    sorted index and the top items list.
-    """
+    """Enriches the ROME index with job offer counts."""
     if rome_index.empty or live_jobs_data.empty:
         return rome_index, rome_index
-
     jobs_top = live_jobs_data.groupby("romeCode")["total_postes"].sum().to_frame()
-
-    enriched_rome = rome_index.copy()
-    enriched_rome = enriched_rome.join(jobs_top, how="left")
-    enriched_rome["total_postes"] = enriched_rome["total_postes"].fillna(0)
-
-    enriched_rome = enriched_rome.sort_values(
+    enriched = rome_index.join(jobs_top, how="left")
+    enriched["total_postes"] = enriched["total_postes"].fillna(0)
+    enriched = enriched.sort_values(
         by=["total_postes", "label"], ascending=[False, True]
     )
+    return enriched, enriched
 
-    return enriched_rome, enriched_rome
+
+_ESSENTIAL_ODIS_COLS = {
+    "codgeo",
+    "polygon",
+    "dep_code",
+    "reg_code",
+    "epci_code",
+    "epci_nom",
+    "population",
+    "bassin_de_vie",
+    "centroid_lon",
+    "centroid_lat",
+    "youth_growth_rate",
+    "workclass_growth_rate",
+    "count_hopital",
+    "count_maternite",
+    "count_psy",
+    "edu_maternelle_ct",
+    "edu_elementaire_ct",
+    "edu_college_ct",
+    "edu_lycee_ct",
+    "log_priv_vacant_plus_2ans",
+    "log_total",
+    "nb_stops_bus",
+    "nb_stops_tram",
+    "nb_stops_metro",
+    "nb_stops_train",
+    "nb_stops_total",
+    "maire_extreme_droite",
+    "electoral_history",
+}
 
 
-def load_referentiels_raw(
-    release_context: Optional[ReleaseContext] = None,
+def _select_odis_columns(all_cols: List[str]) -> Set[str]:
+    """Identify columns required from the ODIS commune parquet."""
+    cols = {
+        c
+        for c in all_cols
+        if c in _ESSENTIAL_ODIS_COLS
+        or c.endswith("_scaled")
+        or c.startswith("inc_rna_")
+        or c == "inc_asso_refug_count"
+    }
+    scores_path = os.path.join(cfg.APP_DIR, cfg.SCORES_CAT_FILE)
+    if os.path.exists(scores_path):
+        for m in load_scores_config_as_df(scores_path)["metric"].dropna().unique():
+            if m in all_cols:
+                cols.add(m)
+    return cols
+
+
+# =============================================================================
+# 5. Core Dataset Loading Pipeline & Helpers
+# =============================================================================
+
+
+def _load_and_clean_odis(
+    refs: Dict[str, Any],
+    df_jaccueille: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame, List[str]]:
+    """Loads and normalizes the ODIS communes dataset."""
+    resolved_odis = resolve_dataset_path(cfg.ODIS_FILE)
+    odis_cols = None
+    if resolved_odis and os.path.isfile(resolved_odis):
+        try:
+            odis_cols = list(_select_odis_columns(pq.read_schema(resolved_odis).names))
+        except Exception:
+            odis_cols = None
+    odis = _load_parquet(cfg.ODIS_FILE, columns=odis_cols)
+
+    odis_geo = pd.Series(dtype="object")
+    if "polygon" in odis.columns:
+        odis_geo = odis[["codgeo", "polygon"]].set_index("codgeo")["polygon"]
+        odis.drop(columns=["polygon"], inplace=True)
+    if "centroid" in odis.columns:
+        odis.drop(columns=["centroid"], inplace=True)
+    if "codgeo" in odis.columns:
+        odis.set_index("codgeo", inplace=True)
+    if "population" in odis.columns:
+        odis["population"] = pd.to_numeric(odis["population"], errors="coerce").astype(
+            "Int32"
+        )
+
+    for col in odis.columns:
+        if "scaled" in col or "score" in col:
+            odis[col] = odis[col].astype("float32")
+        elif col in ("dep_code", "reg_code", "epci_code", "bassin_de_vie"):
+            odis[col] = odis[col].astype(str)
+
+    if "dep_code" in odis.columns and hasattr(cfg, "METROPOLITAN_DEPT_CODES_SET"):
+        odis = odis[odis["dep_code"].isin(cfg.METROPOLITAN_DEPT_CODES_SET)]
+        if not odis_geo.empty:
+            odis_geo = odis_geo[odis_geo.index.isin(odis.index)]
+
+    if "libgeo" not in odis.columns:
+        odis["libgeo"] = odis.index.map(refs.get("commune_names", {}))
+        odis["libgeo"] = odis["libgeo"].fillna(odis.index.to_series())
+    if "bassin_de_vie" in odis.columns:
+        odis["libelle_bassin_de_vie"] = (
+            odis["bassin_de_vie"].astype(str).map(refs.get("bv_names", {}))
+        )
+        odis["libelle_bassin_de_vie"] = odis["libelle_bassin_de_vie"].fillna(
+            odis["bassin_de_vie"]
+        )
+
+    depcom_cols = [c for c in ("libgeo", "dep_code") if c in odis.columns]
+    depcom_df = odis[depcom_cols].copy()
+    coddep_set = (
+        sorted(odis["dep_code"].dropna().unique().tolist())
+        if "dep_code" in odis.columns
+        else refs.get("coddep_set", [])
+    )
+    odis = _enrich_with_salesforce_bdv(
+        odis, df_jaccueille, on_col="bassin_de_vie", index_col="codgeo"
+    )
+    return odis, odis_geo, depcom_df, coddep_set
+
+
+def _load_pois_and_indexes() -> tuple[
+    pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame
+]:
+    """Loads POIs and extracts categorized directories."""
+    pois_df = _load_parquet(cfg.POIS_FILE)
+    ecoles = get_pois_by_category(pois_df, "education")
+    sante = get_pois_by_category(pois_df, "sante")
+    incl_df = get_pois_by_category(pois_df, "incl_services")
+
+    if not incl_df.empty:
+        incl_df = incl_df.rename(
+            columns={"type": "categorie", "name": "label", "category": "service"}
+        )
+        incl_df["thematiques"] = incl_df.get("categorie", "")
+        if "service" not in incl_df.columns:
+            incl_df["service"] = "Service d'inclusion"
+        incl_df["slug"] = incl_df["categorie"]
+        incl_idx = (
+            incl_df.groupby("codgeo", observed=False)["slug"]
+            .apply(set)
+            .rename("key")
+            .to_frame()
+        )
+    else:
+        incl_idx = pd.DataFrame()
+    return pois_df, ecoles, sante, incl_df, incl_idx
+
+
+def _load_auxiliary_datasets(
+    refs: Dict[str, Any],
+    load_errors: List[str],
 ) -> Dict[str, Any]:
-    """
-    Build reference indices from the active GCS release.
+    """Loads vertical employment, association, formation and CCAS datasets."""
+    live_jobs = _load_parquet(
+        getattr(cfg, "LIVE_JOPS_FILE", cfg.LIVE_JOBS_FILE),
+        error_list=load_errors,
+    )
+    assos = _load_parquet(
+        cfg.AGG_ASSOCIATIONS_FILE,
+        error_list=load_errors,
+    )
+    formations = _load_parquet(
+        cfg.AGG_FORMATIONS_FILE,
+        error_list=load_errors,
+    )
+    if not formations.empty and "formation_code" in formations.columns:
+        formations["formation_code"] = (
+            formations["formation_code"]
+            .astype(str)
+            .str.replace(r"\.0$", "", regex=True)
+        )
 
-    In the application this is always called as part of the complete scoring
-    bundle. The optional context only keeps test and MCP entry points usable.
-    """
-    refs_df = _load_parquet(cfg.REFERENTIELS_FILE, release_context=release_context)
+    rome_idx, rome_top = _enrich_rome_index(
+        refs.get("rome_index", pd.DataFrame(columns=["label"])), live_jobs
+    )
+    waldec_idx, waldec_top = _enrich_waldec_index(
+        refs.get("waldec_index", pd.DataFrame(columns=["label"])), assos
+    )
+
+    return {
+        "live_jobs_data": live_jobs,
+        "associations_data": assos,
+        "refugee_associations_data": _load_parquet(
+            cfg.REFUGEE_ASSOCIATIONS_FILE,
+            error_list=load_errors,
+        ),
+        "formations_data": formations,
+        "structures_ccas": _load_parquet(
+            cfg.CCAS_FILE,
+            error_list=load_errors,
+        ),
+        "siae_jobs_data": _load_parquet(
+            cfg.SIAE_JOBS_FILE,
+            error_list=load_errors,
+        ),
+        "rome_index": rome_idx,
+        "rome_top_index": rome_top,
+        "waldec_index": waldec_idx,
+        "waldec_top_index": waldec_top,
+    }
+
+
+def _load_and_enrich_bv_geo(
+    df_jaccueille: pd.DataFrame,
+    load_errors: List[str],
+) -> pd.DataFrame:
+    """Loads Bassins de Vie dataset and enriches it with Salesforce counts."""
+    bv_geo = _load_parquet(
+        cfg.BV_FILE,
+        error_list=load_errors,
+    )
+    if not bv_geo.empty:
+        key_col = getattr(cfg, "BV_CODE_COL", "bassin_de_vie")
+        if key_col in bv_geo.columns:
+            bv_geo.set_index(key_col, inplace=True)
+            if key_col != "bassin_de_vie":
+                bv_geo.index.name = key_col
+        bv_geo = bv_geo.drop(
+            columns=[
+                c for c in ("polygon", "centroid", "libgeo") if c in bv_geo.columns
+            ],
+            errors="ignore",
+        )
+    return _enrich_with_salesforce_bdv(
+        bv_geo, df_jaccueille, on_col="bassin_de_vie", index_col="bassin_de_vie"
+    )
+
+
+def load_referentiels_raw() -> Dict[str, Any]:
+    """Build reference indices from referentiels.parquet."""
+    refs_df = _load_parquet(cfg.REFERENTIELS_FILE)
     if refs_df.empty:
-        raise RuntimeError("Active GCS release has no usable referentials dataset")
+        raise RuntimeError("Active release has no usable referentials dataset")
 
-    commune_names = {}
-    bv_names = {}
-    regions_names = {}
-    departements_names = {}
-    dept_details = {}
+    def _dict(key: str) -> Dict[str, str]:
+        sub = refs_df[refs_df["key"] == key]
+        return sub.set_index("code")["label"].to_dict() if not sub.empty else {}
 
-    if not refs_df.empty:
-        c_ref = refs_df[refs_df["key"] == "communes"]
-        if not c_ref.empty:
-            commune_names = c_ref.set_index("code")["label"].to_dict()
+    def _index_df(key: str) -> pd.DataFrame:
+        sub = refs_df[refs_df["key"] == key]
+        return (
+            sub[["code", "label"]].drop_duplicates("code").set_index("code")
+            if not sub.empty
+            else pd.DataFrame(columns=["label"])
+        )
 
-        bv_ref = refs_df[refs_df["key"] == "bassins_de_vie"]
-        if not bv_ref.empty:
-            bv_names = bv_ref.set_index("code")["label"].to_dict()
+    commune_names = _dict("communes")
+    bv_names = _dict("bassins_de_vie")
 
-        reg_ref = refs_df[refs_df["key"] == "regions"]
-        if not reg_ref.empty:
-            if hasattr(cfg, "METROPOLITAN_REGION_CODES_SET"):
-                reg_ref = reg_ref[
-                    reg_ref["code"].astype(str).isin(cfg.METROPOLITAN_REGION_CODES_SET)
-                ]
-            regions_names = reg_ref.set_index("code")["label"].to_dict()
+    reg_sub = refs_df[refs_df["key"] == "regions"]
+    if not reg_sub.empty and hasattr(cfg, "METROPOLITAN_REGION_CODES_SET"):
+        reg_sub = reg_sub[
+            reg_sub["code"].astype(str).isin(cfg.METROPOLITAN_REGION_CODES_SET)
+        ]
+    regions_names = (
+        reg_sub.set_index("code")["label"].to_dict() if not reg_sub.empty else {}
+    )
 
-        dep_ref = refs_df[refs_df["key"] == "departements"]
-        if not dep_ref.empty:
-            if hasattr(cfg, "METROPOLITAN_DEPT_CODES_SET"):
-                dep_ref = dep_ref[
-                    dep_ref["code"].astype(str).isin(cfg.METROPOLITAN_DEPT_CODES_SET)
-                ]
-            departements_names = dep_ref.set_index("code")["label"].to_dict()
-            cols_to_dict = ["label"]
-            if "reg_code" in dep_ref.columns:
-                cols_to_dict.append("reg_code")
-            dept_details = dep_ref.set_index("code")[cols_to_dict].to_dict(
-                orient="index"
-            )
+    dep_sub = refs_df[refs_df["key"] == "departements"]
+    if not dep_sub.empty and hasattr(cfg, "METROPOLITAN_DEPT_CODES_SET"):
+        dep_sub = dep_sub[
+            dep_sub["code"].astype(str).isin(cfg.METROPOLITAN_DEPT_CODES_SET)
+        ]
+    departements_names = (
+        dep_sub.set_index("code")["label"].to_dict() if not dep_sub.empty else {}
+    )
+    dept_cols = ["label"] + (["reg_code"] if "reg_code" in dep_sub.columns else [])
+    dept_details = (
+        dep_sub.set_index("code")[dept_cols].to_dict(orient="index")
+        if not dep_sub.empty
+        else {}
+    )
 
-    # Build lightweight depcom_df and coddep_set from referentiels
+    # depcom_df fallback from communes
+    c_ref = refs_df[refs_df["key"] == "communes"]
     depcom_df = pd.DataFrame(columns=["libgeo", "dep_code"])
-    coddep_set: List[str] = []
-    if not refs_df.empty:
-        c_ref = refs_df[refs_df["key"] == "communes"]
-        if not c_ref.empty:
-            codes = c_ref["code"].astype(str)
-            deps = codes.apply(lambda c: c[:3] if c.startswith("97") else c[:2])
-            mask = (
-                deps.isin(cfg.METROPOLITAN_DEPT_CODES_SET)
-                if hasattr(cfg, "METROPOLITAN_DEPT_CODES_SET")
-                else pd.Series(True, index=c_ref.index)
-            )
-            depcom_df = pd.DataFrame(
-                {"libgeo": c_ref["label"].values[mask], "dep_code": deps.values[mask]},
-                index=pd.Index(codes.values[mask], name="codgeo"),
-            )
-
-        dep_ref = refs_df[refs_df["key"] == "departements"]
-        if not dep_ref.empty:
-            if hasattr(cfg, "METROPOLITAN_DEPT_CODES_SET"):
-                dep_ref = dep_ref[
-                    dep_ref["code"].astype(str).isin(cfg.METROPOLITAN_DEPT_CODES_SET)
-                ]
-            coddep_set = sorted(dep_ref["code"].astype(str).unique().tolist())
-        elif not depcom_df.empty:
+    coddep_set: List[str] = (
+        sorted(dep_sub["code"].astype(str).unique().tolist())
+        if not dep_sub.empty
+        else []
+    )
+    if not c_ref.empty:
+        codes = c_ref["code"].astype(str)
+        deps = codes.apply(lambda c: c[:3] if c.startswith("97") else c[:2])
+        mask = (
+            deps.isin(cfg.METROPOLITAN_DEPT_CODES_SET)
+            if hasattr(cfg, "METROPOLITAN_DEPT_CODES_SET")
+            else pd.Series(True, index=c_ref.index)
+        )
+        depcom_df = pd.DataFrame(
+            {"libgeo": c_ref["label"].values[mask], "dep_code": deps.values[mask]},
+            index=pd.Index(codes.values[mask], name="codgeo"),
+        )
+        if not coddep_set:
             coddep_set = sorted(depcom_df["dep_code"].unique().tolist())
 
-    rome_index = pd.DataFrame(columns=["label"])
-    codformations_index = pd.DataFrame(columns=["label"])
-    inclusion_services_index = pd.DataFrame(columns=["label"])
-    waldec_index = pd.DataFrame(columns=["label"])
-
-    if not refs_df.empty:
-        rome_ref_df = refs_df[refs_df["key"] == "rome_codes"]
-        if not rome_ref_df.empty:
-            rome_index = (
-                rome_ref_df[["code", "label"]]
-                .drop_duplicates(subset=["code"])
-                .set_index("code")
-            )
-            rome_index = rome_index.sort_values(by="label")
-
-        form_ref_df = refs_df[refs_df["key"] == "formation_codes"]
-        if not form_ref_df.empty:
-            codformations_index = form_ref_df[["code", "label"]].set_index("code")
-
-        incl_ref_df = refs_df[refs_df["key"] == "inclusion_services"]
-        if not incl_ref_df.empty:
-            inclusion_services_index = incl_ref_df[["code", "label"]].set_index("code")
-
-        waldec_ref_df = refs_df[refs_df["key"] == "waldec_codes"]
-        if not waldec_ref_df.empty:
-            waldec_index = waldec_ref_df[["code", "label"]].set_index("code")
-
+    rome_index = (
+        _index_df("rome_codes").sort_values(by="label")
+        if not refs_df[refs_df["key"] == "rome_codes"].empty
+        else pd.DataFrame(columns=["label"])
+    )
     scores_cat = load_scores_config_as_df(
         os.path.join(cfg.APP_DIR, cfg.SCORES_CAT_FILE)
     )
@@ -612,410 +605,101 @@ def load_referentiels_raw(
         "scores_cat": scores_cat,
         "rome_index": rome_index,
         "rome_top_index": rome_index,
-        "codformations_index": codformations_index,
-        "inclusion_services_index": inclusion_services_index,
-        "waldec_index": waldec_index,
-        "waldec_top_index": waldec_index.head(500),
-        # Empty Tier 2 placeholders
-        "odis": pd.DataFrame(),
-        "odis_geo": pd.Series(dtype="object"),
-        "annuaire_ecoles": pd.DataFrame(),
-        "annuaire_sante": pd.DataFrame(),
-        "annuaire_inclusion": pd.DataFrame(),
-        "incl_index": pd.DataFrame(),
-        "associations_data": pd.DataFrame(),
-        "formations_data": pd.DataFrame(),
-        "bv_geo": pd.DataFrame(),
-        "bv_data": pd.DataFrame(),
-        "live_jobs_data": pd.DataFrame(),
-        "structures_ccas": pd.DataFrame(),
-        "pois": pd.DataFrame(),
-        "refugee_associations_data": pd.DataFrame(),
-        "siae_jobs_data": pd.DataFrame(),
-        "_load_errors": [],
+        "codformations_index": _index_df("formation_codes"),
+        "inclusion_services_index": _index_df("inclusion_services"),
+        "waldec_index": _index_df("waldec_codes"),
+        "waldec_top_index": _index_df("waldec_codes").head(500),
     }
 
 
 def load_scoring_datasets_raw(
     refs_data: Optional[Dict[str, Any]] = None,
-    release_context: Optional[ReleaseContext] = None,
+    release_version: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
-    Tier 2: Heavy dataset loading (ODIS communes, WKB geometries, POIs, vertical files, BQ).
-    """
-    if refs_data is None:
-        refs_data = load_referentiels_raw(release_context)
-
-    res = copy.copy(refs_data)
-    logger.info("Loading heavy scoring datasets from the active GCS release")
-
-    # 1. Load Main ODIS Communes Data
-    odis_path = cfg.ODIS_FILE
-
-    try:
-        temp_df = _load_parquet(odis_path, release_context=release_context)
-        all_cols = temp_df.columns.tolist()
-        del temp_df
-
-        essential_cols = {
-            "codgeo",
-            "polygon",
-            "dep_code",
-            "reg_code",
-            "epci_code",
-            "epci_nom",
-            "population",
-            "bassin_de_vie",
-            "centroid_lon",
-            "centroid_lat",
-            "youth_growth_rate",
-            "workclass_growth_rate",
-            "count_hopital",
-            "count_maternite",
-            "count_psy",
-            "edu_maternelle_ct",
-            "edu_elementaire_ct",
-            "edu_college_ct",
-            "edu_lycee_ct",
-            "log_priv_vacant_plus_2ans",
-            "log_total",
-            "nb_stops_bus",
-            "nb_stops_tram",
-            "nb_stops_metro",
-            "nb_stops_train",
-            "nb_stops_total",
-            "maire_extreme_droite",
-            "electoral_history",
-        }
-
-        columns_to_load = {
-            c
-            for c in all_cols
-            if c in essential_cols
-            or c.endswith("_scaled")
-            or c.startswith("inc_rna_")
-            or c == "inc_asso_refug_count"
-        }
-
-        try:
-            scores_path = os.path.join(cfg.APP_DIR, cfg.SCORES_CAT_FILE)
-            if os.path.exists(scores_path):
-                sc_df = load_scores_config_as_df(scores_path)
-                raw_metrics = sc_df["metric"].dropna().unique().tolist()
-                for m in raw_metrics:
-                    if m in all_cols:
-                        columns_to_load.add(m)
-        except Exception as e:
-            logger.warning(f"Could not load raw metrics from config: {e}")
-
-        odis = _load_parquet(
-            odis_path,
-            columns=list(columns_to_load),
-            release_context=release_context,
-        )
-
-        # Geometry processing (JIT DEHYDRATION)
-        odis_geo = pd.Series(dtype="object")
-        if "polygon" in odis.columns:
-            logger.info("Dehydrating geometries to odis_geo (Lazy Load pattern)...")
-            odis_geo = odis[["codgeo", "polygon"]].set_index("codgeo")["polygon"]
-
-            odis.drop(columns=["polygon"], inplace=True)
-            if "centroid" in odis.columns:
-                odis.drop(columns=["centroid"], inplace=True)
-
-        odis.set_index("codgeo", inplace=True)
-
-        if "population" in odis.columns:
-            # A partial candidate or historical release can legitimately have
-            # missing population. Keep it nullable instead of failing before
-            # the scoring layer can apply its missing-data policy.
-            odis["population"] = pd.to_numeric(
-                odis["population"], errors="coerce"
-            ).astype("Int32")
-
-        float_cols = [c for c in columns_to_load if "scaled" in c or "score" in c]
-        for col in float_cols:
-            if col in odis.columns:
-                odis[col] = odis[col].astype("float32")
-
-        for col in ["dep_code", "reg_code", "epci_code", "bassin_de_vie"]:
-            if col in odis.columns:
-                odis[col] = odis[col].astype(str)
-
-        # Restrict communes to metropolitan departments to reduce memory footprint
-        if "dep_code" in odis.columns and hasattr(cfg, "METROPOLITAN_DEPT_CODES_SET"):
-            odis = odis[odis["dep_code"].isin(cfg.METROPOLITAN_DEPT_CODES_SET)]
-            if not odis_geo.empty:
-                odis_geo = odis_geo[odis_geo.index.isin(odis.index)]
-
-    except Exception:
-        logger.error(
-            "Failed to load ODIS data",
-            extra={
-                "extra_data": {
-                    "operation": "load_odis_data",
-                    "error_code": "SCORING-DATA-UNAVAILABLE",
-                }
-            },
-            exc_info=True,
-        )
-        raise
-
-    # 2. Load POIs
-    pois_path = cfg.POIS_FILE
-    pois_df = _load_parquet(pois_path, release_context=release_context)
-    if not pois_df.empty and "lat" in pois_df.columns and "lon" in pois_df.columns:
-        pois_df["geometry"] = shapely.points(pois_df.lon, pois_df.lat)
-
-    annuaire_ecoles = get_pois_by_category(pois_df, "education")
-    annuaire_sante = get_pois_by_category(pois_df, "sante")
-    annuaire_inclusion = get_pois_by_category(pois_df, "incl_services")
-
-    if not annuaire_inclusion.empty:
-        annuaire_inclusion = annuaire_inclusion.rename(
-            columns={"type": "categorie", "name": "label", "category": "service"}
-        )
-        annuaire_inclusion["thematiques"] = annuaire_inclusion.get("categorie", "")
-        if "service" not in annuaire_inclusion.columns:
-            annuaire_inclusion["service"] = "Service d'inclusion"
-
-    commune_names = res.get("commune_names", {})
-    bv_names = res.get("bv_names", {})
-
-    if "libgeo" not in odis.columns:
-        odis["libgeo"] = odis.index.map(commune_names)
-        odis["libgeo"] = odis["libgeo"].fillna(odis.index.to_series())
-
-    if "bassin_de_vie" in odis.columns:
-        odis["libelle_bassin_de_vie"] = odis["bassin_de_vie"].astype(str).map(bv_names)
-        odis["libelle_bassin_de_vie"] = odis["libelle_bassin_de_vie"].fillna(
-            odis["bassin_de_vie"]
-        )
-
-    incl_index = pd.DataFrame()
-    if not annuaire_inclusion.empty:
-        annuaire_inclusion["slug"] = annuaire_inclusion["categorie"]
-        incl_index = (
-            annuaire_inclusion.groupby("codgeo", observed=False)["slug"]
-            .apply(set)
-            .rename("key")
-            .to_frame()
-        )
-
-    # Subsetting of odis columns for depcom_df
-    depcom_cols = [c for c in ["libgeo", "dep_code"] if c in odis.columns]
-    depcom_df = odis[depcom_cols].copy()
-    coddep_set = (
-        sorted(odis["dep_code"].dropna().unique().tolist())
-        if "dep_code" in odis.columns
-        else res.get("coddep_set", [])
-    )
-
-    # 4. Vertical Data
+    """Load scoring datasets and merge with referentials indices."""
+    logger.info("Loading complete dataset bundle from local container filesystem")
     load_errors: List[str] = []
+    refs = refs_data if refs_data is not None else load_referentiels_raw()
 
-    live_jobs_data = _load_parquet(
-        cfg.LIVE_JOBS_FILE,
-        error_list=load_errors,
-        release_context=release_context,
-    )
-    associations_data = _load_parquet(
-        cfg.AGG_ASSOCIATIONS_FILE,
-        error_list=load_errors,
-        release_context=release_context,
-    )
-    refugee_associations_data = _load_parquet(
-        cfg.REFUGEE_ASSOCIATIONS_FILE,
-        error_list=load_errors,
-        release_context=release_context,
-    )
-    formations_data = _load_parquet(
-        cfg.AGG_FORMATIONS_FILE,
-        error_list=load_errors,
-        release_context=release_context,
-    )
-
-    if not formations_data.empty and "formation_code" in formations_data.columns:
-        formations_data["formation_code"] = (
-            formations_data["formation_code"]
-            .astype(str)
-            .str.replace(r"\.0$", "", regex=True)
-        )
-
-    structures_ccas = _load_parquet(
-        cfg.CCAS_FILE,
-        error_list=load_errors,
-        release_context=release_context,
-    )
-
-    siae_jobs_data = _load_parquet(
-        cfg.SIAE_JOBS_FILE,
-        error_list=load_errors,
-        release_context=release_context,
-    )
-
-    # --- Enrichment: Index Sorting & Truncation ---
-    rome_index = res.get("rome_index", pd.DataFrame())
-    waldec_index = res.get("waldec_index", pd.DataFrame())
-    rome_index, rome_top_index = _enrich_rome_index(rome_index, live_jobs_data)
-    waldec_index, waldec_top_index = _enrich_waldec_index(
-        waldec_index, associations_data
-    )
-
-    # 5. Bassins de Vie Geo
-    bv_path = cfg.BV_FILE
-    bv_geo = _load_parquet(
-        bv_path,
-        error_list=load_errors,
-        release_context=release_context,
-    )
-    if not bv_geo.empty:
-        if "polygon" in bv_geo.columns:
-            if isinstance(bv_geo["polygon"].iloc[0], bytes):
-                bv_geo["polygon"] = bv_geo["polygon"].apply(wkb.loads)
-            if "centroid" not in bv_geo.columns:
-                bv_geo["centroid"] = shapely.centroid(bv_geo["polygon"])
-
-        key_col = (
-            cfg.BV_CODE_COL if cfg.BV_CODE_COL in bv_geo.columns else "bassin_de_vie"
-        )
-        if key_col in bv_geo.columns:
-            bv_geo.set_index(key_col, inplace=True)
-            if cfg.BV_CODE_COL != "bassin_de_vie":
-                bv_geo.index.name = cfg.BV_CODE_COL
-
-        cols_to_drop = ["polygon", "centroid", "libgeo"]
-        bv_geo = bv_geo.drop(
-            columns=[c for c in cols_to_drop if c in bv_geo.columns], errors="ignore"
-        )
-
-    # --- 5b. Enrich with the published Salesforce J'Accueille dataset ---
-    salesforce_bdv = _load_parquet(
+    sf_bdv = _load_parquet(
         cfg.SALESFORCE_JACCUEILLE_BDV_FILE,
         error_list=load_errors,
-        release_context=release_context,
     )
-    df_jaccueille = get_salesforce_jaccueille_counts(salesforce_bdv)
-
+    df_jaccueille = get_salesforce_jaccueille_counts(sf_bdv)
     if df_jaccueille.empty:
         logger.error("❌ [J'ACCUEILLE] Salesforce BDV data is missing or incomplete.")
         load_errors.append("J'Accueille Salesforce data missing")
 
-    if not bv_geo.empty:
-        bv_geo = bv_geo.reset_index()
-        if not df_jaccueille.empty:
-            bv_geo = bv_geo.merge(df_jaccueille, on="bassin_de_vie", how="left")
-        bv_geo["heb_accueillants_count"] = bv_geo.get(
-            "heb_accueillants_count", pd.Series(0.0, index=bv_geo.index)
-        ).fillna(0)
-        bv_geo["prospects_count"] = bv_geo.get(
-            "prospects_count", pd.Series(0.0, index=bv_geo.index)
-        ).fillna(0)
-        bv_geo["heb_jaccueille_accueillants_score"] = (
-            bv_geo["heb_accueillants_count"] > 0
-        ).astype(float)
-        bv_geo["heb_jaccueille_prospects_score"] = (
-            bv_geo["prospects_count"] > 0
-        ).astype(float)
-        bv_geo = bv_geo.set_index("bassin_de_vie")
+    odis, odis_geo, depcom_df, coddep_set = _load_and_clean_odis(refs, df_jaccueille)
+    pois_df, ecoles, sante, incl_df, incl_idx = _load_pois_and_indexes()
+    aux = _load_auxiliary_datasets(refs, load_errors)
+    bv_geo = _load_and_enrich_bv_geo(df_jaccueille, load_errors)
 
-    if not odis.empty:
-        odis = odis.reset_index()
-        if not df_jaccueille.empty:
-            odis = odis.merge(df_jaccueille, on="bassin_de_vie", how="left")
-        odis["heb_accueillants_count"] = odis.get(
-            "heb_accueillants_count", pd.Series(0.0, index=odis.index)
-        ).fillna(0)
-        odis["prospects_count"] = odis.get(
-            "prospects_count", pd.Series(0.0, index=odis.index)
-        ).fillna(0)
-        odis["heb_jaccueille_accueillants_score"] = (
-            odis["heb_accueillants_count"] > 0
-        ).astype(float)
-        odis["heb_jaccueille_prospects_score"] = (odis["prospects_count"] > 0).astype(
-            float
-        )
-        odis = odis.set_index("codgeo")
-
-    res.update(
+    result = dict(refs)
+    result.update(
         {
-            "odis": odis,
-            "odis_geo": odis_geo,
-            "annuaire_ecoles": annuaire_ecoles,
-            "annuaire_sante": annuaire_sante,
-            "annuaire_inclusion": annuaire_inclusion,
-            "incl_index": incl_index,
-            "associations_data": associations_data,
-            "formations_data": formations_data,
             "depcom_df": depcom_df,
             "coddep_set": coddep_set,
+            "odis": odis,
+            "odis_geo": odis_geo,
+            "annuaire_ecoles": ecoles,
+            "annuaire_sante": sante,
+            "annuaire_inclusion": incl_df,
+            "incl_index": incl_idx,
             "bv_geo": bv_geo,
             "bv_data": bv_geo,
-            "live_jobs_data": live_jobs_data,
-            "structures_ccas": structures_ccas,
             "pois": pois_df,
-            "refugee_associations_data": refugee_associations_data,
-            "waldec_index": waldec_index,
-            "waldec_top_index": waldec_top_index,
-            "rome_index": rome_index,
-            "rome_top_index": rome_top_index,
-            "siae_jobs_data": siae_jobs_data,
+            **aux,
             "_load_errors": load_errors,
         }
     )
-    return res
+    active_version = release_version or get_active_release_version()
+    result["_release_id"] = f"gcs:{active_version}"
+    return result
 
 
-def load_all_data_raw(
-    release_context: Optional[ReleaseContext] = None,
+def load_app_data_raw(
+    release_version: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
-    Load the full data bundle without Streamlit resource caching.
-
-    Runtime callers pass a frozen release context and therefore use the same
-    verified concurrent fetch as the Streamlit path. The context-free branch is
-    retained solely for existing local tests that mock individual file paths.
-    """
-    print("################### DATA RELOADED ###################")
-    if release_context is not None:
-        refs = load_referentiels_raw(release_context)
-        data = load_scoring_datasets_raw(refs, release_context)
-        data["_release_id"] = release_context.identity
-        return data
-
+    """Load the complete unified data bundle from local datasets."""
     refs = load_referentiels_raw()
-    return load_scoring_datasets_raw(refs)
+    return load_scoring_datasets_raw(refs, release_version=release_version)
 
 
-def get_data_mtime() -> str:
-    """Return the active immutable release ID used as the cache key."""
-    return get_active_release_context().identity
-
-
-@st.cache_resource(show_spinner=False)
-def get_referentiels_data(release_context: ReleaseContext) -> Dict[str, Any]:
-    """Cached reference indices for one immutable release context."""
-    return load_referentiels_raw(release_context)
+# =============================================================================
+# 6. Streamlit Cache & Entry Points
+# =============================================================================
 
 
 @st.cache_resource(show_spinner=False)
-def get_scoring_datasets(release_context: ReleaseContext) -> Dict[str, Any]:
-    """Cached complete scoring bundle for one immutable release context."""
-    refs = get_referentiels_data(release_context)
-    data = load_scoring_datasets_raw(refs, release_context)
-    data["_release_id"] = release_context.identity
-    return data
-
-
-def _get_scoring_datasets_for_release(
-    release_context: ReleaseContext,
-) -> Dict[str, Any]:
-    """Return complete scoring bundle for release."""
-    return get_scoring_datasets(release_context)
+def get_scoring_datasets(release_version: Optional[str] = None) -> Dict[str, Any]:
+    """Cached complete scoring bundle for one immutable release version."""
+    return load_app_data_raw(release_version)
 
 
 def get_app_data() -> Dict[str, Any]:
     """Return the complete data bundle for the active release."""
-    release_context = get_active_release_context()
-    return _get_scoring_datasets_for_release(release_context)
+    return get_scoring_datasets(get_active_release_version())
+
+
+def ensure_data_initialized(*, force_reload: bool = False) -> Dict[str, Any]:
+    """Initialize state and return the complete active data bundle."""
+    initialize_session_state()
+    if not force_reload and st.session_state.get("app_data"):
+        app_data = st.session_state["app_data"]
+    else:
+        app_data = get_app_data()
+        st.session_state["app_data"] = app_data
+
+    from services.mcp_server import set_data_context
+
+    set_data_context(app_data)
+
+    if "heavy_data_toast_shown" not in st.session_state:
+        if app_data.get("_load_errors"):
+            st.toast(
+                "Toutes les données n'ont pas pu être chargées, les résultats peuvent en être affectés",
+                icon="⚠️",
+            )
+        st.session_state["heavy_data_toast_shown"] = True
+    return app_data

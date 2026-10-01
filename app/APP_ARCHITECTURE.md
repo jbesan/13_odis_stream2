@@ -54,20 +54,20 @@ ODIS implements a secure, role-based organizational profile context enforced imm
         *   **Lists**: Performs a Union of default arrays (e.g. adding partner-specific housing lists to global defaults).
         *   **Scalars**: Performs a direct override of scalars (e.g. strategic weight boosts take precedence).
     *   **Toast Gating**: Gated in session state via `org_defaults_applied` to ensure the activation notification toast is only displayed once per login/session.
-3.  **Explicit data lifecycle and asynchronous preload (`app/utils/data_loader.py`)**:
-    *   The home page initializes only Streamlit form state and starts a non-blocking preload. It makes no synchronous GCS data read. The preload obtains the active release and prepares the complete bundle without writing Streamlit session state or changing visible content.
-    *   A `ReleaseContext` reads `current.json` and the checksummed manifest once, freezes the release ID, then fetches missing runtime Parquets into the versioned `/tmp` cache with bounded parallelism. Every downloaded file is checked against the manifest checksum before Pandas reads it. Coverage artifacts remain pipeline-only and are never part of this bundle.
-    *   `2_Formulaire.py` explicitly requests one complete `app_data` bundle before rendering its controls. The controls in `ui/forms.py` receive that bundle as an argument; they do not independently fetch datasets. This keeps their ordering/filtering metrics (ROME job counts, WALDEC association counts, prospective-city population) available and consistent.
-    *   `3_Resultats.py` likewise owns one complete bundle for a live search. An immutable shared-result snapshot is self-contained and reads no data release until the user chooses to edit or recompute it. A cold cache only delays the page that actually needs the complete data, while a preloaded cache makes that request immediate.
+3.  **Explicit data lifecycle and eager boot loading (`app/utils/data_loader.py`)**:
+    *   With Cloud Run in manual scaling (`--scaling=1 --no-cpu-throttling`) and Bake-at-Build-Time local parquets (`app/data/datasets/active/`), `main.py` and `1_Accueil.py` synchronously invoke `ensure_data_initialized()`.
+    *   The complete bundle (11 parquets, ~0.6s loading, ~187 MB RAM) is cached in Streamlit `@st.cache_resource` upon initial container boot. Runtime Shapely overheads were eliminated, relying directly on pipeline-baked `lat`/`lon` floats and raw WKB geometries.
+    *   `2_Formulaire.py` receives the already-cached `app_data` instantly (0 ms), ensuring that ordering and filtering metrics (ROME job counts, WALDEC association counts, prospective-city population) are immediately available without spinners.
+    *   `3_Resultats.py` uses the cached complete bundle for live scoring and shared-search forks. Immutable shared-result snapshots remain self-contained for display without reloading datasets.
 
 ### 1.6 Page shell, loading path and session ownership
 
 | Entry/page | Page-load data | Post-load work | State owner |
 | --- | --- | --- | --- |
-| `main.py` | No data bundle | Authenticated shared-link routing, then redirect to Accueil; starts an asynchronous complete-bundle preload | `page_shell` + `FormState` defaults |
-| `1_Accueil.py` | No data bundle | Optional interviewer/auto-detection; confirmed criteria hydrate form widgets before navigation | `FormState` |
-| `2_Formulaire.py` | Complete bundle, without RAG initialization | Interactive wizard only; individual controls never fetch data | Streamlit widget keys through `FormState` |
-| `3_Resultats.py` | Complete bundle for a live run/edit; none for immutable shared display | `SearchController` runs deterministic scoring, publishes results, then launches optional post-scoring work | `AppSession` + `SearchController` |
+| `main.py` | Complete bundle (`ensure_data_initialized`) | Authenticated shared-link routing, warms global `@st.cache_resource`, redirects to Accueil | `page_shell` + `FormState` defaults |
+| `1_Accueil.py` | Complete bundle (`ensure_data_initialized`) | Instantaneous if warmed on main; optional interviewer/auto-detection | `FormState` |
+| `2_Formulaire.py` | Complete bundle (cached, 0 ms) | Interactive wizard only; individual controls never fetch data | Streamlit widget keys through `FormState` |
+| `3_Resultats.py` | Complete bundle for live run/fork; none for immutable snapshot | `SearchController` runs deterministic scoring, publishes results, then launches optional post-scoring work | `AppSession` + `SearchController` |
 | `4_Analytics.py` | No ODIS scoring bundle | BigQuery analytics query after admin authorization | Page-local filters/cache |
 
 `ui/page_shell.py` owns the common entry convention. `ui/form_state.py` owns the translation between native widget keys and an immutable `SearchCriterias`. `services/app_session.py` owns active-search/reset transitions, while `services/search_controller.py` is the only normal deterministic execution path.
