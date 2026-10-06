@@ -18,6 +18,12 @@ For the design and data-flow details, see
 
 Run commands from the repository root.
 
+### Dependencies
+
+Pipeline dependencies are configured in `pyproject.toml` under `[dependency-groups] pipeline`.
+With `tool.uv.default-groups = ["dev", "pipeline"]`, a standard `uv sync` automatically installs all pipeline tools (`openpyxl`, `python-calamine`).
+Geospatial processing runs entirely on pure **Pandas 3.0 + Shapely 2.0** with closed-form IGN projection algorithms — with zero GeoPandas, `pyproj`, or GDAL dependencies.
+
 ### Configure credentials
 
 Create `pipeline/.env` with the credentials required by the providers used in

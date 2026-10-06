@@ -327,15 +327,6 @@ def main():
             if args.steps:
                 build_args.extend(["--steps", args.steps])
             build.main(build_args)
-            if not args.steps or "salesforce_jaccueille" in args.steps.split(","):
-                from pipeline.common import CONFIG_FILE, PipelineLogger, load_config
-
-                # This depends on the candidate's communes and postal-code
-                # mappings produced above, so it must run after build rather
-                # than alongside source ingestion.
-                ingest.clean_salesforce_jaccueille(
-                    load_config(CONFIG_FILE), PipelineLogger(run.status_file)
-                )
             logging.info("=== Build Phase Completed ===")
 
         if args.step in ["prescoring", "all"]:

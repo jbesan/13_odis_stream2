@@ -1295,8 +1295,9 @@ def clean_communes(config: Dict[str, Any], logger: PipelineLogger):
             client = get_odace_client(logger)
             df_odace = client.fetch_table(source.get("odace_table", "ref_commune_geo"))
             if not df_odace.empty:
-                import geopandas as gpd
+                import shapely
                 from shapely.geometry import shape
+                from pipeline.common import _load_geojson
 
                 # 1. Fetch and build EPCI mapping
                 epci_cfg = config["sources"].get(
@@ -1371,7 +1372,7 @@ def clean_communes(config: Dict[str, Any], logger: PipelineLogger):
 
                     if legacy_path and legacy_path.exists():
                         try:
-                            df_legacy = gpd.read_file(legacy_path)
+                            df_legacy = _load_geojson(legacy_path)
                             df_legacy.rename(columns={"code": "codgeo"}, inplace=True)
                             df_legacy["codgeo"] = (
                                 df_legacy["codgeo"].astype(str).str.zfill(5)
@@ -1402,14 +1403,11 @@ def clean_communes(config: Dict[str, Any], logger: PipelineLogger):
                 # Map EPCI
                 df_odace["epci"] = df_odace["codgeo"].map(epci_map)
 
-                # Parse GeoJSON into geometries
+                # Parse GeoJSON into geometries and convert to WKB polygon
                 geoms = df_odace["geometrie_geojson"].apply(
                     lambda x: shape(json.loads(x)) if x else None
                 )
-                gdf = gpd.GeoDataFrame(df_odace, geometry=geoms)
-
-                # Convert geometry to WKB polygon
-                gdf["polygon"] = gdf.geometry.to_wkb()
+                df_odace["polygon"] = shapely.to_wkb(geoms)
 
                 # Filter to only the required output columns to maintain exact compat
                 out_cols = [
@@ -1422,7 +1420,7 @@ def clean_communes(config: Dict[str, Any], logger: PipelineLogger):
                     "epci",
                     "polygon",
                 ]
-                df_final = pd.DataFrame(gdf[[c for c in out_cols if c in gdf.columns]])
+                df_final = pd.DataFrame(df_odace[[c for c in out_cols if c in df_odace.columns]])
 
                 df_final.to_parquet(output_path)
                 logger.log_step(
@@ -2156,17 +2154,14 @@ def clean_bpe(config: Dict[str, Any], logger: PipelineLogger):
     if reproject_mask.any():
         try:
             df_to_reproj = df[reproject_mask].copy()
-            import geopandas as gpd
+            from pipeline.common import _lambert93_to_wgs84
 
-            gdf_reproj = gpd.GeoDataFrame(
-                df_to_reproj,
-                geometry=gpd.points_from_xy(
-                    df_to_reproj["LAMBERT_X"], df_to_reproj["LAMBERT_Y"]
-                ),
-                crs="EPSG:2154",
-            ).to_crs("EPSG:4326")
-            df.loc[reproject_mask, "longitude"] = gdf_reproj.geometry.x
-            df.loc[reproject_mask, "latitude"] = gdf_reproj.geometry.y
+            coords = [
+                _lambert93_to_wgs84(float(x), float(y))
+                for x, y in zip(df_to_reproj["LAMBERT_X"], df_to_reproj["LAMBERT_Y"])
+            ]
+            df.loc[reproject_mask, "longitude"] = [c[0] for c in coords]
+            df.loc[reproject_mask, "latitude"] = [c[1] for c in coords]
             logging.info(
                 f"BPE: Reprojected {reproject_mask.sum()} coords from Lambert EPSG:2154"
             )

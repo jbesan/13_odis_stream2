@@ -1,11 +1,13 @@
 import logging
 import pandas as pd
-import geopandas as gpd
+import shapely
+from shapely.ops import transform
 import numpy as np
 import yaml
 from shapely import wkb
 from typing import Dict, Any, List
 from pathlib import Path
+from pipeline.common import _wgs84_to_lambert93
 
 from pipeline.common import (
     PipelineLogger,
@@ -253,12 +255,9 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         # Convert WKB to Geometry
         if "polygon" in communes_df.columns:
             geoms = [wkb.loads(bytes(x)) for x in communes_df["polygon"]]
-            communes_gdf = gpd.GeoDataFrame(
-                communes_df, geometry=geoms, crs="EPSG:4326"
-            )
-        else:
-            # Fallback
-            communes_gdf = gpd.GeoDataFrame(communes_df, geometry="geometry")
+            communes_df["geometry"] = geoms
+
+        communes_gdf = communes_df.copy()
 
         # Parquet inputs can already contain several dtype blocks. Start the
         # calculation from a compact frame so the derived columns below do not
@@ -712,20 +711,27 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         # Save
         if "geometry" in communes_gdf.columns:
             # SOTA: Keep only metric numerical coordinates in the massive `odis` dataframe to avoid geometry overhead for fast Euclidean distance computations
-            # LAMBERT-93 (EPSG:2154)
-            metric_geo = communes_gdf.geometry.to_crs("EPSG:2154")
-            cents = metric_geo.centroid
+            # LAMBERT-93 (EPSG:2154) using closed-form official IGN projection formulas
+            def to_l93(x, y, z=None):
+                res = [_wgs84_to_lambert93(xi, yi) for xi, yi in zip(x, y)]
+                return [r[0] for r in res], [r[1] for r in res]
+
+            l93_geoms = [
+                transform(to_l93, g) if g else None for g in communes_gdf["geometry"]
+            ]
+            cents = [g.centroid if g else None for g in l93_geoms]
             save_columns = {
-                "centroid_lon": cents.x.to_numpy(),
-                "centroid_lat": cents.y.to_numpy(),
+                "centroid_lon": np.array(
+                    [c.x if c else np.nan for c in cents], dtype="float64"
+                ),
+                "centroid_lat": np.array(
+                    [c.y if c else np.nan for c in cents], dtype="float64"
+                ),
             }
 
-            # Ensure we are in EPSG:4326 (WGS84) before serializing polygons to WKB for the UI
-            if communes_gdf.crs != "EPSG:4326":
-                temp_gdf = communes_gdf.to_crs("EPSG:4326")
-                save_columns["polygon"] = temp_gdf.geometry.to_wkb().to_numpy()
-            else:
-                save_columns["polygon"] = communes_gdf.geometry.to_wkb().to_numpy()
+            # Ensure polygon is in EPSG:4326 before serializing to WKB for the UI
+            if "polygon" not in communes_gdf.columns:
+                save_columns["polygon"] = shapely.to_wkb(communes_gdf["geometry"]).to_numpy()
 
             communes_gdf = append_columns(communes_gdf, save_columns)
 
@@ -774,11 +780,7 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
 
         # Read as standard Parquet (WKB) - BV
         bv_df = pd.read_parquet(bv_path)
-        if "polygon" in bv_df.columns:
-            geoms = [wkb.loads(bytes(x)) for x in bv_df["polygon"]]
-            bv_gdf = gpd.GeoDataFrame(bv_df, geometry=geoms, crs=cfg.PROJECTED_CRS)
-        else:
-            bv_gdf = gpd.GeoDataFrame(bv_df, geometry="geometry")
+        bv_gdf = bv_df.copy()
 
         # Read as standard Parquet (WKB) - Communes
         communes_df = pd.read_parquet(communes_path)

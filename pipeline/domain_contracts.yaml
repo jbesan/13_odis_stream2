@@ -1,0 +1,424 @@
+# Domain Contracts & Configuration Catalog for ODIS Ingest Pipeline
+# This file centralizes business configurations, domain taxonomies, thresholds, and mappings.
+# Validated with Pydantic models defined in pipeline/ingest/schemas.py.
+
+bpe:
+  target_types:
+    - "D502"
+    - "D504"
+    - "D505"
+    - "D509"
+    - "D703"
+    - "D704"
+    - "D705"
+    - "D710"
+    - "D101"
+    - "D107"
+    - "D108"
+    - "D109"
+    - "D111"
+    - "D113"
+    - "D114"
+    - "D115"
+    - "A125"
+    - "A128"
+    - "A129"
+    - "D711"
+    - "E107"
+    - "E108"
+    - "E109"
+
+  education:
+    categories:
+      - name: "is_maternelle"
+        codes: ["C107", "C108"]
+        output_col: "edu_maternelle_ct"
+      - name: "is_elementaire"
+        codes: ["C109", "C108"]
+        output_col: "edu_elementaire_ct"
+      - name: "is_college"
+        codes: ["C201"]
+        output_col: "edu_college_ct"
+      - name: "is_lycee"
+        codes: ["C301", "C302", "C303", "C305"]
+        output_col: "edu_lycee_ct"
+      - name: "is_eaje"
+        codes: ["D502"]
+        output_col: "edu_eaje_ct"
+      - name: "is_relais_petite_enfance"
+        codes: ["D504"]
+        output_col: "edu_relais_petite_enfance_ct"
+      - name: "is_alsh"
+        codes: ["D505"]
+        output_col: "edu_alsh_ct"
+      - name: "is_micro_creche"
+        codes: ["D509"]
+        output_col: "edu_micro_creche_ct"
+    labels:
+      C107: "École Maternelle"
+      C108: "École Primaire"
+      C109: "École Élémentaire"
+      C201: "Collège"
+      C301: "Lycée Général/Tech"
+      C302: "Lycée Professionnel"
+      C303: "Lycée Agricole"
+      C305: "Section Enseignement Pro"
+      D502: "Crèche / EAJE"
+      D504: "Relais Petite Enfance"
+      D505: "Accueil de loisirs (ALSH)"
+      D509: "Micro-crèche"
+
+  hebergement:
+    exact_types:
+      D703: "CHRS"
+      D704: "CPH"
+      D705: "CADA"
+    d710_patterns:
+      - regex: "fjt|foyer jeunes travailleurs"
+        sub_type: "FJT"
+      - regex: "pension"
+        sub_type: "Pension"
+    columns:
+      CHRS:
+        indicator: "is_chrs"
+        output_col: "heb_chrs_count"
+      CPH:
+        indicator: "is_cph"
+        output_col: "heb_cph_count"
+      CADA:
+        indicator: "is_cada"
+        output_col: "heb_cada_count"
+      FJT:
+        indicator: "is_fjt"
+        output_col: "heb_fjt_count"
+      Pension:
+        indicator: "is_pension"
+        output_col: "heb_pension_count"
+
+  sante:
+    indicators:
+      - code: "D101"
+        indicator: "is_hopital"
+        output_col: "count_hopital"
+        label: "Hôpital"
+      - code: "D107"
+        indicator: "is_maternite"
+        output_col: "count_maternite"
+        label: "Maternité"
+      - code: "D108"
+        indicator: "is_centre_sante"
+        output_col: "count_centre_sante"
+        label: "Centre de santé"
+      - code: "D109"
+        indicator: "is_psy"
+        output_col: "count_psy"
+        label: "Soutien Psychologique"
+      - code: "D111"
+        indicator: "is_dialyse"
+        output_col: "count_dialyse"
+        label: "Dialyse"
+      - code: "D113"
+        indicator: "is_maison_sante"
+        output_col: "count_maison_sante"
+        label: "Maison de santé"
+      - code: "D114"
+        indicator: "is_addictologie"
+        output_col: "count_addictologie"
+        label: "Addictologie"
+      - code: "D115"
+        indicator: "is_pmi"
+        output_col: "count_pmi"
+        label: "Santé maternelle et infantile (PMI)"
+
+  action_sociale:
+    indicators:
+      - code: "A125"
+        indicator: "is_antenne_justice"
+        output_col: "act_antenne_justice_count"
+        label: "Antenne de justice"
+        category: "action_sociale"
+      - code: "A128"
+        indicator: "is_france_services"
+        output_col: "act_france_services_count"
+        label: "France Services"
+        category: "action_sociale"
+      - code: "A129"
+        indicator: "is_mairie"
+        output_col: "act_mairie_count"
+        label: "Mairie"
+        category: "mairie"
+      - code: "D711"
+        indicator: "is_femmes_vuln"
+        output_col: "act_femmes_vuln_count"
+        label: "Aide femmes vulnérables"
+        category: "action_sociale"
+
+  gares:
+    types:
+      - "E107"
+      - "E108"
+      - "E109"
+    poi_label: "Gare SNCF"
+    poi_category: "mobilite"
+    output_count_col: "gare_count"
+    output_flag_col: "has_gare"
+
+electoral:
+  far_right_nuances:
+    - "RN"
+    - "LRN"
+    - "REC"
+    - "LREC"
+    - "EXD"
+    - "LEXD"
+    - "UXD"
+    - "LUXD"
+    - "BC-RN"
+    - "BC-UXD"
+    - "BC-EXD"
+  far_right_family: "Extrême droite"
+  election_pattern: "_(muni|pres)_"
+  max_history_per_category: 6
+  election_labels:
+    muni: "Municipales"
+    pres: "Présidentielle"
+  tour_labels:
+    t1: "1er tour"
+    t2: "2nd tour"
+  election_dates:
+    2026_muni_t2: "2026-06-28"
+    2026_muni_t1: "2026-06-21"
+    2022_pres_t2: "2022-04-24"
+    2022_pres_t1: "2022-04-10"
+    2020_muni_t2: "2020-06-28"
+    2020_muni_t1: "2020-03-15"
+    2017_pres_t2: "2017-05-07"
+    2017_pres_t1: "2017-04-23"
+    2014_muni_t2: "2014-03-30"
+    2014_muni_t1: "2014-03-23"
+    2012_pres_t2: "2012-05-06"
+    2012_pres_t1: "2012-04-22"
+  nuance_labels:
+    UG: "Union de la Gauche"
+    LUG: "Union de la Gauche"
+    BC-UG: "Union de la Gauche"
+    BC-UGE: "Union de la Gauche & Écologistes"
+    SOC: "Socialiste"
+    LSOC: "Parti Socialiste"
+    BC-SOC: "Parti Socialiste"
+    COM: "Parti Communiste Français"
+    LCOM: "Parti Communiste Français"
+    BC-COM: "Parti Communiste Français"
+    FI: "La France Insoumise"
+    LFI: "La France Insoumise"
+    BC-FI: "La France Insoumise"
+    VEC: "Les Écologistes"
+    LVEC: "Les Écologistes"
+    BC-ECO: "Écologistes"
+    ECO: "Écologiste"
+    LECO: "Écologistes"
+    NUP: "NUPES"
+    DVG: "Divers Gauche"
+    LDVG: "Divers Gauche"
+    BC-DVG: "Divers Gauche"
+    EXG: "Extrême Gauche"
+    LEXG: "Extrême Gauche"
+    DXG: "Divers Extrême Gauche"
+    BC-EXG: "Extrême Gauche"
+    REN: "Renaissance"
+    LREN: "Renaissance / Ensemble"
+    LREM: "La République En Marche"
+    REM: "La République En Marche"
+    BC-REM: "La République En Marche"
+    MDM: "MoDem"
+    LMDM: "MoDem"
+    BC-MDM: "MoDem"
+    HOR: "Horizons"
+    LHOR: "Horizons"
+    ENS: "Ensemble"
+    LENS: "Ensemble"
+    DVC: "Divers Centre"
+    LDVC: "Divers Centre"
+    BC-DVC: "Divers Centre"
+    UC: "Union du Centre"
+    LUC: "Union du Centre"
+    BC-UC: "Union du Centre"
+    LR: "Les Républicains"
+    LLR: "Les Républicains"
+    BC-LR: "Les Républicains"
+    DVD: "Divers Droite"
+    LDVD: "Divers Droite"
+    BC-DVD: "Divers Droite"
+    UDI: "Union des Démocrates et Indépendants"
+    LUDI: "Union des Démocrates et Indépendants"
+    BC-UDI: "Union des Démocrates et Indépendants"
+    UD: "Union de la Droite"
+    LUD: "Union de la Droite"
+    BC-UD: "Union de la Droite"
+    BC-UCD: "Union du Centre-Droite"
+    UCD: "Union du Centre-Droite"
+    LUCD: "Union du Centre-Droite"
+    DSV: "Droite Souverainiste"
+    LDSV: "Droite Souverainiste"
+    BC-DSV: "Droite Souverainiste"
+    LDLF: "Debout la France"
+    RN: "Rassemblement National"
+    LRN: "Rassemblement National"
+    BC-RN: "Rassemblement National"
+    REC: "Reconquête"
+    LREC: "Reconquête"
+    EXD: "Extrême Droite"
+    LEXD: "Extrême Droite"
+    UXD: "Union de l'Extrême Droite"
+    LUXD: "Union de l'Extrême Droite"
+    BC-UXD: "Union de l'Extrême Droite"
+    DXD: "Divers Extrême Droite"
+    BC-EXD: "Extrême Droite"
+    DIV: "Divers"
+    LDIV: "Divers"
+    BC-DIV: "Divers"
+    REG: "Régionaliste"
+    LREG: "Régionaliste"
+    BC-REG: "Régionaliste"
+    NC: "Non Classé"
+    LNC: "Non Classé"
+    GJ: "Gilets Jaunes"
+    LGJ: "Gilets Jaunes"
+    BC-GJ: "Gilets Jaunes"
+
+demographics:
+  active_population:
+    pcs_filter: "_T"
+    employment_status_codes:
+      - "1T2"
+      - "1"
+    code_active: "1T2"
+    code_employed: "1"
+  population_details:
+    sex_filter: "_T"
+    target_age_codes:
+      - "Y_LT15"
+      - "Y25T39"
+      - "Y40T54"
+    age_group_mapping:
+      Y_LT15: "jeune"
+      Y25T39: "active"
+      Y40T54: "active"
+    expected_columns:
+      - "pop_jeune_2016"
+      - "pop_active_2016"
+      - "pop_jeune_2022"
+      - "pop_active_2022"
+
+education:
+  risky_school_class_threshold: 20.0
+  uai_column_candidates:
+    - "uai_code"
+    - "numero_uai"
+    - "identifiant_de_l_etablissement"
+  insee_column_candidates:
+    - "commune_insee_code"
+    - "code_commune"
+
+mobility:
+  sustainable_modes:
+    - "Transports en commun"
+    - "Marche"
+    - "Vélo"
+    - "V\u00e9lo"
+  public_transport_modes:
+    bus: "nb_stops_bus"
+    tramway: "nb_stops_tram"
+    métro: "nb_stops_metro"
+    train: "nb_stops_train"
+
+inclusion:
+  ccas_keywords:
+    - "ccas"
+    - "cias"
+  required_contact_fields:
+    - "telephone"
+    - "courriel"
+
+rna_rag:
+  embedding_model: "text-multilingual-embedding-002"
+  output_dimensionality: 128
+  similarity_threshold: 0.70
+  hebergement_prompts:
+    iml: "Bail solidaire et Intermediation Locative (IML)"
+    citoyen: "hébergement citoyen chez l'habitant"
+
+geography:
+  plm_communes:
+    - "75056"
+    - "13055"
+    - "69123"
+
+housing:
+  odace_rent_priority:
+    commune: 1
+    maille: 2
+    EPCI: 3
+  default_rent_priority: 99
+
+runner:
+  cleaned_sources:
+    - "communes"
+    - "services_inclusion"
+    - "structures_inclusion"
+    - "population"
+    - "population_active"
+    - "logement_vacant"
+    - "logement_social"
+    - "caf"
+    - "education_annuaire"
+    - "associations"
+    - "political_nuance"
+    - "electoral_history"
+    - "housing_occupation"
+    - "education_effectifs"
+    - "bpe"
+    - "codes_postaux"
+    - "formations_annuaire"
+    - "loyers_apparts"
+    - "population_details"
+    - "nomenclature_waldec"
+    - "departements_ref"
+    - "france_travail_live"
+    - "inclusion_jobs"
+    - "mob_transports_pub"
+    - "salesforce_jaccueille"
+    - "logement_social_delay"
+    - "sante_apl"
+    - "mob_durable_share"
+    - "ter_insecurite"
+  step_to_source_map:
+    lovac: "logement_vacant"
+    rpls: "logement_social"
+    education: "education_annuaire"
+    political: "political_nuance"
+    school_effectifs: "education_effectifs"
+    loyers: "loyers_apparts"
+    departements: "departements_ref"
+    mob_durable: "mob_durable_share"
+    log_soc_delay: "logement_social_delay"
+    live_jobs: "france_travail_live"
+    inclusion_jobs: "inclusion_jobs"
+    gares: "dim_gare"
+    odace_rent: "fact_loyer_annonce"
+    formations: "formations_annuaire"
+    electoral_history: "electoral_history"
+    salesforce_jaccueille: "salesforce_jaccueille"
+  clean_filenames:
+    associations: "associations_vertical.parquet"
+    nomenclature_waldec: "referentiel_waldec.parquet"
+    hebergement_rna: "hebergement_rna_cols.parquet"
+    bpe: "bpe_pois.parquet"
+    odace_rent: "odace_loyer_annonce.parquet"
+    formations: "formations_annuaire.parquet"
+    live_jobs: "odis_ft_jobs_agg.parquet"
+    inclusion_jobs: "odis_inclusion_jobs.parquet"
+    salesforce_jaccueille: "salesforce_jaccueille.parquet"
+  output_dir_steps:
+    - "live_jobs"
+    - "inclusion_jobs"

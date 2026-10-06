@@ -17,7 +17,7 @@ load_dotenv(Path(__file__).parent / ".env")
 
 # Constants
 RAW_OUTPUT_PATH = Path("pipeline/cache/raw/salesforce_jaccueille_raw.parquet")
-OUTPUT_PATH = Path("pipeline/cache/output/salesforce_jaccueille.parquet")
+OUTPUT_PATH = Path("pipeline/cache/clean/salesforce_jaccueille.parquet")
 OUTPUT_BDV_PATH = Path("pipeline/cache/output/salesforce_jaccueille_bdv.parquet")
 
 CODES_POSTAUX_PATH = Path("pipeline/cache/clean/codes_postaux.parquet")
@@ -26,35 +26,48 @@ COMMUNES_PATH = Path("pipeline/cache/output/odis_communes.parquet")
 
 def _ttl_days() -> int:
     """Read the Salesforce cache policy from the source catalog."""
-    return load_config(CONFIG_FILE)["local_files"]["salesforce_jaccueille"]["ttl_days"]
+    cfg = load_config(CONFIG_FILE)
+    local_files = cfg.get("local_files", {})
+    if "salesforce_jaccueille" in local_files:
+        return local_files["salesforce_jaccueille"].get("ttl_days", 7)
+    return cfg.get("sources", {}).get("salesforce_jaccueille", {}).get("ttl_days", 7)
 
 
-def get_salesforce_status() -> Dict[str, Any]:
+def get_salesforce_status(cache_path: Optional[Path] = None) -> Dict[str, Any]:
     """Returns the status and age of the Salesforce J'accueille cached dataset.
+
+    Args:
+        cache_path: Optional path to the cached postal code parquet file. Defaults to OUTPUT_PATH.
 
     Returns:
         Dict[str, Any]: Status info containing exists, within_ttl, age_days, and ttl_days.
     """
     ttl_days = _ttl_days()
-    # The postal-code aggregate is the cached Salesforce source artefact.  The
-    # BDV aggregate is deliberately rebuilt for every candidate because its
-    # commune and postal-code mappings belong to that candidate run.
-    if not OUTPUT_PATH.exists():
-        return {
-            "exists": False,
-            "within_ttl": False,
-            "age_days": None,
-            "ttl_days": ttl_days,
-        }
+    target_path = Path(cache_path) if cache_path is not None else OUTPUT_PATH
+    if not target_path.exists():
+        legacy_path = Path("pipeline/cache/output/salesforce_jaccueille.parquet")
+        if (
+            cache_path is None
+            and target_path == Path("pipeline/cache/clean/salesforce_jaccueille.parquet")
+            and legacy_path.exists()
+        ):
+            target_path = legacy_path
+        else:
+            return {
+                "exists": False,
+                "within_ttl": False,
+                "age_days": None,
+                "ttl_days": ttl_days,
+            }
 
-    mtime = datetime.fromtimestamp(OUTPUT_PATH.stat().st_mtime)
+    mtime = datetime.fromtimestamp(target_path.stat().st_mtime)
     age_days = (datetime.now() - mtime).days
     return {
         "exists": True,
         "within_ttl": age_days < ttl_days,
         "age_days": age_days,
         "ttl_days": ttl_days,
-        "path": str(OUTPUT_PATH),
+        "path": str(target_path),
     }
 
 
@@ -250,31 +263,86 @@ def aggregate_by_bassin_de_vie(
     *,
     postal_codes_path: Path = CODES_POSTAUX_PATH,
     communes_path: Path = COMMUNES_PATH,
+    df_postal_codes: Optional[pd.DataFrame] = None,
+    df_communes: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
-    """Map postal-code counts to a candidate run's bassin de vie reference."""
-    if df_cp_sf.empty or not postal_codes_path.exists() or not communes_path.exists():
-        logging.warning(
-            "[Salesforce] Missing reference mappings for Bassin de Vie aggregation."
-        )
-        return pd.DataFrame(
-            columns=[
-                "bassin_de_vie",
-                "lead_count",
-                "contact_count",
-                "total_jaccueille_count",
-                "codes_postaux",
-            ]
-        )
+    """Map postal-code counts to a candidate run's bassin de vie reference.
 
-    df_cp = pd.read_parquet(postal_codes_path).drop_duplicates(
-        subset=["code_postal"], keep="first"
+    Args:
+        df_cp_sf: Postal-code aggregated Salesforce DataFrame.
+        postal_codes_path: Path to clean postal codes parquet.
+        communes_path: Path to communes parquet containing codgeo and bassin_de_vie.
+        df_postal_codes: Optional in-memory DataFrame for postal codes.
+        df_communes: Optional in-memory DataFrame for communes.
+
+    Returns:
+        pd.DataFrame: Aggregated DataFrame by bassin_de_vie with columns:
+            [bassin_de_vie, lead_count, contact_count, total_jaccueille_count, codes_postaux].
+    """
+    empty_bdv_df = pd.DataFrame(
+        columns=[
+            "bassin_de_vie",
+            "lead_count",
+            "contact_count",
+            "total_jaccueille_count",
+            "codes_postaux",
+        ]
     )
-    df_comm = pd.read_parquet(communes_path)[
-        ["codgeo", "bassin_de_vie"]
-    ].drop_duplicates(subset=["codgeo"], keep="first")
 
-    merged = df_cp_sf.merge(df_cp, on="code_postal", how="inner")
-    merged_bdv = merged.merge(df_comm, on="codgeo", how="inner")
+    if df_cp_sf.empty or "code_postal" not in df_cp_sf.columns:
+        return empty_bdv_df
+
+    if df_postal_codes is not None:
+        df_cp = df_postal_codes.copy()
+    elif postal_codes_path.exists():
+        df_cp = pd.read_parquet(postal_codes_path)
+    else:
+        logging.warning(
+            "[Salesforce] Missing postal codes reference mapping for Bassin de Vie aggregation."
+        )
+        return empty_bdv_df
+
+    if "code_postal" not in df_cp.columns or "codgeo" not in df_cp.columns:
+        logging.warning(
+            "[Salesforce] Postal codes reference mapping missing required columns 'code_postal' or 'codgeo'."
+        )
+        return empty_bdv_df
+
+    df_cp = df_cp.drop_duplicates(subset=["code_postal"], keep="first")
+
+    if df_communes is not None:
+        df_comm = df_communes.copy()
+    elif communes_path.exists():
+        df_comm = pd.read_parquet(communes_path)
+    else:
+        logging.warning(
+            "[Salesforce] Missing communes reference mapping for Bassin de Vie aggregation."
+        )
+        return empty_bdv_df
+
+    if "codgeo" not in df_comm.columns or "bassin_de_vie" not in df_comm.columns:
+        logging.warning(
+            "[Salesforce] Communes reference mapping missing required columns 'codgeo' or 'bassin_de_vie'."
+        )
+        return empty_bdv_df
+
+    df_comm = df_comm[["codgeo", "bassin_de_vie"]].drop_duplicates(
+        subset=["codgeo"], keep="first"
+    )
+
+    df_sf = df_cp_sf.copy()
+    df_sf["code_postal"] = df_sf["code_postal"].astype(str).str.strip().str.zfill(5)
+    for col in ["lead_count", "contact_count", "total_jaccueille_count"]:
+        if col not in df_sf.columns:
+            df_sf[col] = 0
+
+    df_cp["code_postal"] = df_cp["code_postal"].astype(str).str.strip().str.zfill(5)
+    df_cp["codgeo"] = df_cp["codgeo"].astype(str).str.strip()
+    df_comm["codgeo"] = df_comm["codgeo"].astype(str).str.strip()
+    df_comm["bassin_de_vie"] = df_comm["bassin_de_vie"].astype(str).str.strip()
+
+    merged = df_sf.merge(df_cp[["code_postal", "codgeo"]], on="code_postal", how="inner")
+    merged_bdv = merged.merge(df_comm[["codgeo", "bassin_de_vie"]], on="codgeo", how="inner")
 
     bdv_rows = []
     for bdv, group in merged_bdv.groupby("bassin_de_vie"):
@@ -295,103 +363,129 @@ def aggregate_by_bassin_de_vie(
 
     df_bdv = pd.DataFrame(bdv_rows)
     if df_bdv.empty:
-        df_bdv = pd.DataFrame(
-            columns=[
-                "bassin_de_vie",
-                "lead_count",
-                "contact_count",
-                "total_jaccueille_count",
-                "codes_postaux",
-            ]
-        )
+        return empty_bdv_df
 
     return df_bdv
+
+
+def fetch_and_aggregate_salesforce(
+    force: bool = False,
+    *,
+    output_path: Optional[Path] = None,
+    raw_output_path: Optional[Path] = None,
+) -> pd.DataFrame:
+    """Fetch Salesforce leads/contacts or reuse local source cache if valid.
+
+    Args:
+        force: If True, bypass cache and fetch live from Salesforce.
+        output_path: Destination path for postal code aggregate parquet. Defaults to OUTPUT_PATH.
+        raw_output_path: Destination path for raw records parquet. Defaults to RAW_OUTPUT_PATH.
+
+    Returns:
+        pd.DataFrame: Postal code aggregated DataFrame with columns:
+            [code_postal, lead_count, contact_count, total_jaccueille_count].
+    """
+    target_output_path = output_path or OUTPUT_PATH
+    target_raw_path = raw_output_path or RAW_OUTPUT_PATH
+    status = get_salesforce_status(target_output_path)
+    if not force and not status["within_ttl"] and target_output_path.resolve() != OUTPUT_PATH.resolve():
+        status = get_salesforce_status(OUTPUT_PATH)
+
+    if not force and status["within_ttl"]:
+        logging.info(
+            "[Salesforce] Local source cache is valid (%s days old < TTL %s days).",
+            status.get("age_days"),
+            status.get("ttl_days"),
+        )
+        source_file = Path(status["path"])
+        df = pd.read_parquet(source_file)
+        if target_output_path.resolve() != source_file.resolve():
+            target_output_path.parent.mkdir(parents=True, exist_ok=True)
+            df.to_parquet(target_output_path, index=False)
+        return df
+
+    logging.info("[Salesforce] Starting live Salesforce J'accueille data extraction...")
+    access_token, instance_url = get_salesforce_jwt_token()
+
+    # 1. Fetch Leads (Prospects) with status filters requested by team
+    target_statuses = (
+        "'En attente de nouvelles après RI', "
+        "'Inscription non-finalisée', "
+        "'Inscrit à une date de RI', "
+        "'En attente de conversion', "
+        "'Confirmation non finalisée'"
+    )
+    lead_soql = (
+        "SELECT Id, PostalCode, CreatedDate, Status, Blackliste__c "
+        "FROM Lead "
+        "WHERE IsDeleted = FALSE AND Blackliste__c = FALSE "
+        f"AND Status IN ({target_statuses})"
+    )
+
+    logging.info("[Salesforce] Fetching Leads...")
+    leads = fetch_soql_records(instance_url, access_token, lead_soql)
+    logging.info(f"[Salesforce] Extracted {len(leads)} active Leads.")
+
+    # 2. Fetch Contacts with filters
+    contact_soql = (
+        "SELECT Id, MailingPostalCode, CreatedDate, Blackliste__c "
+        "FROM Contact "
+        "WHERE IsDeleted = FALSE AND Blackliste__c = FALSE"
+    )
+    logging.info("[Salesforce] Fetching Contacts...")
+    contacts = fetch_soql_records(instance_url, access_token, contact_soql)
+    logging.info(f"[Salesforce] Extracted {len(contacts)} active Contacts.")
+
+    # 3. Save raw payload
+    target_raw_path.parent.mkdir(parents=True, exist_ok=True)
+    raw_df = pd.DataFrame(
+        {
+            "entity_type": ["lead"] * len(leads) + ["contact"] * len(contacts),
+            "record_id": [l.get("Id") for l in leads] + [c.get("Id") for c in contacts],
+            "postal_code": [l.get("PostalCode") for l in leads]
+            + [c.get("MailingPostalCode") for c in contacts],
+            "created_date": [l.get("CreatedDate") for l in leads]
+            + [c.get("CreatedDate") for c in contacts],
+        }
+    )
+    raw_df.to_parquet(target_raw_path, index=False)
+    logging.info(f"[Salesforce] Raw data saved to {target_raw_path}")
+
+    # 4. Process and aggregate by Postal Code
+    clean_cp_df = aggregate_salesforce_data(leads, contacts)
+    target_output_path.parent.mkdir(parents=True, exist_ok=True)
+    clean_cp_df.to_parquet(target_output_path, index=False)
+    logging.info(
+        "[Salesforce] Postal Code aggregate saved to %s (%s postal codes).",
+        target_output_path,
+        len(clean_cp_df),
+    )
+    return clean_cp_df
+
+
+get_or_fetch_salesforce_data = fetch_and_aggregate_salesforce
 
 
 def run_salesforce_ingest(
     force: bool = False,
     *,
     output_bdv_path: Path | None = None,
+    output_clean_path: Path | None = None,
     postal_codes_path: Path = CODES_POSTAUX_PATH,
     communes_path: Path = COMMUNES_PATH,
 ) -> Path:
     """Refresh Salesforce source data and build a BDV aggregate for one run.
 
-    ``OUTPUT_PATH`` remains the short-lived shared source cache.  The output
-    consumed by the application is rebuilt against the caller's run-scoped
-    geographic references and is never read from a previous release.
+    Decoupled workflow:
+    1. Extracts and aggregates by postal code (reusing cached postal-code data if valid).
+    2. Aggregates postal codes to Bassin de Vie using candidate references.
     """
     output_bdv_path = output_bdv_path or OUTPUT_BDV_PATH
-    status = get_salesforce_status()
-    if not force and status["within_ttl"]:
-        logging.info(
-            "[Salesforce] Local source cache is valid (%s days old < TTL %s days).",
-            status["age_days"],
-            status["ttl_days"],
-        )
-        clean_cp_df = pd.read_parquet(OUTPUT_PATH)
-    else:
-        logging.info(
-            "[Salesforce] Starting live Salesforce J'accueille data extraction..."
-        )
-        access_token, instance_url = get_salesforce_jwt_token()
+    clean_cp_df = fetch_and_aggregate_salesforce(
+        force=force,
+        output_path=output_clean_path or OUTPUT_PATH,
+    )
 
-        # 1. Fetch Leads (Prospects) with status filters requested by team
-        target_statuses = (
-            "'En attente de nouvelles après RI', "
-            "'Inscription non-finalisée', "
-            "'Inscrit à une date de RI', "
-            "'En attente de conversion', "
-            "'Confirmation non finalisée'"
-        )
-        lead_soql = (
-            "SELECT Id, PostalCode, CreatedDate, Status, Blackliste__c "
-            "FROM Lead "
-            "WHERE IsDeleted = FALSE AND Blackliste__c = FALSE "
-            f"AND Status IN ({target_statuses})"
-        )
-
-        logging.info("[Salesforce] Fetching Leads...")
-        leads = fetch_soql_records(instance_url, access_token, lead_soql)
-        logging.info(f"[Salesforce] Extracted {len(leads)} active Leads.")
-
-        # 2. Fetch Contacts with filters
-        contact_soql = (
-            "SELECT Id, MailingPostalCode, CreatedDate, Blackliste__c "
-            "FROM Contact "
-            "WHERE IsDeleted = FALSE AND Blackliste__c = FALSE"
-        )
-        logging.info("[Salesforce] Fetching Contacts...")
-        contacts = fetch_soql_records(instance_url, access_token, contact_soql)
-        logging.info(f"[Salesforce] Extracted {len(contacts)} active Contacts.")
-
-        # 3. Save raw payload
-        RAW_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-        raw_df = pd.DataFrame(
-            {
-                "entity_type": ["lead"] * len(leads) + ["contact"] * len(contacts),
-                "record_id": [l.get("Id") for l in leads]
-                + [c.get("Id") for c in contacts],
-                "postal_code": [l.get("PostalCode") for l in leads]
-                + [c.get("MailingPostalCode") for c in contacts],
-                "created_date": [l.get("CreatedDate") for l in leads]
-                + [c.get("CreatedDate") for c in contacts],
-            }
-        )
-        raw_df.to_parquet(RAW_OUTPUT_PATH, index=False)
-        logging.info(f"[Salesforce] Raw data saved to {RAW_OUTPUT_PATH}")
-
-        # 4. Process and aggregate by Postal Code
-        clean_cp_df = aggregate_salesforce_data(leads, contacts)
-        OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-        clean_cp_df.to_parquet(OUTPUT_PATH, index=False)
-        logging.info(
-            "[Salesforce] Postal Code aggregate saved to %s (%s postal codes).",
-            OUTPUT_PATH,
-            len(clean_cp_df),
-        )
-
-    # 5. Candidate-specific aggregation Code Postal -> BDV
     clean_bdv_df = aggregate_by_bassin_de_vie(
         clean_cp_df,
         postal_codes_path=postal_codes_path,

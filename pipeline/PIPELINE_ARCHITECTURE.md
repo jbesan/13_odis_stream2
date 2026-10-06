@@ -65,8 +65,9 @@ archived legacy source implementations.
 
 The pipeline also has deliberate non-Odace adapters:
 
-- Salesforce provides the single active J'Accueille BDV aggregate used both by
-  scoring and by result details;
+- Salesforce provides J'Accueille prospect and contact data, cleanly decoupled across phases:
+  1. **Ingest Phase** (`pipeline/ingest/cleaners/salesforce.py`): `clean_salesforce_jaccueille` extracts and aggregates Leads and Contacts by postal code into `CLEAN_DIR / "salesforce_jaccueille.parquet"`.
+  2. **Build Phase** (`pipeline/build.py`): `build_salesforce_jaccueille_bdv` maps postal codes to candidate Bassins de Vie using candidate communes and codes postaux, writing `OUTPUT_DIR / "salesforce_jaccueille_bdv.parquet"`.
 - France Travail and Les emplois de l'inclusion provide live job datasets;
 - BigQuery RNA RAG provides the configured association enrichment;
 
@@ -121,6 +122,31 @@ step succeeded.
 
 ## 3. Contract layers
 
+### Domain contracts & modular ingest architecture
+
+[domain_contracts.yaml](domain_contracts.yaml) centralizes all declarative business mappings,
+nomenclatures, thresholds, and taxonomies (validated by Pydantic models in `pipeline/ingest/schemas.py`):
+- BPE equipment taxonomies and POI labels;
+- 86 political nuances and election dates;
+- Demographic age breakdowns and active population codes;
+- Education risk threshold (< 20 pupils per class);
+- Sustainable mobility modes and transit types;
+- BigQuery RNA RAG hyperparameters and embedding prompts;
+- Geography PLM parent communes (`geography.plm_communes`);
+- Housing rent observation priority mapping (`housing.odace_rent_priority`);
+- Runner staging, filename mappings, and candidate output directory routing (`output_dir_steps`).
+
+The legacy monolithic `ingest.py` is modularized into `pipeline/ingest/`:
+- `schemas.py`: Pydantic models for domain contracts.
+- `config.py`: Cached loader (`get_domain_contracts()`).
+- `context.py`: Runtime path context.
+- `helpers.py`: Reusable utilities and RAG cache management.
+- `runner.py`: Safe execution harness (`run_clean_step_safely`, `MutedPipelineLogger`).
+- `fetcher.py`: Source downloading and staging extraction.
+- `main.py`: Pipeline entrypoint and step graph.
+- `cleaners/`: Domain-specific cleaners (BPE, electoral, demographics, housing, education, inclusion, RNA RAG, mobility, health, geography, jobs, Salesforce).
+- `__init__.py`: Package facade with transparent `_IngestModule` attribute proxy for run context and test compatibility.
+
 ### Source contracts
 
 The source catalog's `used_columns` and provider metadata define the first
@@ -164,6 +190,15 @@ The build phase joins the candidate clean datasets into commune, BdV, POI and
 vertical outputs, resolves geographic relationships, stores commune polygons
 as WKB for efficient application loading, and computes the inputs required by
 prescoring.
+
+Geospatial processing is performed with pure **Pandas 3.0 + Shapely 2.0 (C-vectorized)**
+without any dependency on GeoPandas, `pyproj`, or GDAL:
+- GeoJSON loading parses features via standard `json` and `shapely.geometry.shape()`;
+- BdV polygon dissolution uses `shapely.unary_union()` aggregated by `groupby()`;
+- Coordinates and geometries are converted to Lambert-93 (EPSG:2154) via exact
+  closed-form IGN formulas in [common.py](common.py) (`_wgs84_to_lambert93`),
+  achieving sub-millimeter agreement with PROJ with zero external C shared libraries;
+- Geometries are persisted across Parquet files as standard Well-Known Binary (`shapely.to_wkb()`).
 
 Paris, Lyon and Marseille are represented by a parent commune plus
 arrondissements. [build.py](build.py) declares an explicit metric policy rather

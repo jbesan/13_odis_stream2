@@ -691,10 +691,6 @@ def ensure_data_initialized(*, force_reload: bool = False) -> Dict[str, Any]:
         app_data = get_app_data()
         st.session_state["app_data"] = app_data
 
-    from services.mcp_server import set_data_context
-
-    set_data_context(app_data)
-
     if "heavy_data_toast_shown" not in st.session_state:
         if app_data.get("_load_errors"):
             st.toast(

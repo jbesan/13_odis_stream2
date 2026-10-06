@@ -1,15 +1,16 @@
 import argparse
 import logging
 import pandas as pd
-import geopandas as gpd
+import shapely
+from shapely.ops import transform
 import numpy as np
 from pathlib import Path
-import warnings
 from dataclasses import dataclass
 from shapely.geometry import Polygon, MultiPolygon
 from shapely.validation import make_valid
-from typing import Dict, Any, List, Literal, Optional, cast
+from typing import Dict, Any, List, Literal, Optional
 from shapely import wkb
+from pipeline.common import _wgs84_to_lambert93
 
 
 def extract_polygonal(geom):
@@ -50,10 +51,10 @@ from pipeline.common import (
     OUTPUT_DIR,
     STATUS_FILE,
 )
-import app.config as cfg
 from pipeline.anvita import compute_anvita_scores
 from pipeline.ctai import compute_ctai_scores
 from pipeline.run_context import PipelineRunError
+from pipeline.salesforce_ingest import aggregate_by_bassin_de_vie
 
 
 # Constants
@@ -309,7 +310,7 @@ def consolidate_plm_detail_list(
     return df
 
 
-def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDataFrame:
+def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> pd.DataFrame:
     """Builds the main ODIS Communes dataset."""
     logger.log_step("build_communes", "STARTED")
     try:
@@ -320,18 +321,15 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
             logger.log_step(
                 "build_communes", "FAILED", {"reason": "Clean Communes file not found"}
             )
-            return gpd.GeoDataFrame()
+            return pd.DataFrame()
 
-        # Read with pandas (WKB) and reconstruct GDF
+        # Read with pandas (WKB) and reconstruct geometries
         communes_df = pd.read_parquet(communes_path)
         if "polygon" in communes_df.columns:
             geoms = [wkb.loads(bytes(x)) for x in communes_df["polygon"]]
-            # Initialize with the native CRS (4326)
-            communes_gdf = gpd.GeoDataFrame(
-                communes_df, geometry=geoms, crs="EPSG:4326"
-            )
-        else:
-            communes_gdf = gpd.GeoDataFrame(communes_df, geometry="geometry")
+            communes_df["geometry"] = geoms
+
+        communes_gdf = communes_df
 
         # 2. Merge Indicators
         # Helper to merge
@@ -664,24 +662,10 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
                     communes_gdf[col], errors="coerce"
                 ).round(0)
 
-        # Centroids & Geometry
-        # CRITICAL: We project the STORAGE to EPSG:2154 (Lambert-93) for performance and consistency.
-        # This allows scoring.py to run without constantly re-projecting.
-
-        if communes_gdf.crs != cfg.PROJECTED_CRS:
-            with warnings.catch_warnings():
-                warnings.filterwarnings(
-                    "ignore",
-                    category=DeprecationWarning,
-                    message=".*array with ndim > 0 to a scalar is deprecated.*",
-                )
-                communes_gdf = communes_gdf.to_crs(cfg.PROJECTED_CRS)
-
-        # Store centroids in projected CRS (for fast distance calc)
-        communes_gdf["geometry"] = communes_gdf.geometry.make_valid()
-        communes_gdf["geometry"] = communes_gdf.geometry.apply(extract_polygonal)
-        communes_gdf = communes_gdf[communes_gdf.geometry.notnull()].copy()
-        communes_gdf["centroid"] = communes_gdf.geometry.centroid
+        # Clean Geometry (kept in WGS84 EPSG:4326)
+        communes_gdf["geometry"] = communes_gdf["geometry"].apply(make_valid)
+        communes_gdf["geometry"] = communes_gdf["geometry"].apply(extract_polygonal)
+        communes_gdf = communes_gdf[communes_gdf["geometry"].notnull()].copy()
 
         # 4. Bassins de Vie Mapping (for pop_be)
         # We need to load BV mapping. It's in the raw zip usually, but we can extract it or maybe we should have cleaned it?
@@ -799,11 +783,8 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         # logger.log_step("build_communes", "DEBUG", {"crs": str(communes_gdf.crs)})
 
         # Apply PLM Consolidation and arrondissement filtering
-        original_crs = communes_gdf.crs
         consolidated_df = consolidate_plm_communes(communes_gdf)
-        communes_gdf = gpd.GeoDataFrame(
-            consolidated_df, geometry="geometry", crs=original_crs
-        )
+        communes_gdf = consolidated_df
 
         # Compute ANVITA scores after PLM consolidation to avoid summing/averaging arrondissement metrics
         excel_path = (
@@ -824,14 +805,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         )
 
         # Save polygons as WKB in WGS84 (4326) for direct map rendering
-        # We ensure we are in 4326 before converting to WKB
-        if communes_gdf.crs != "EPSG:4326":
-            temp_gdf = communes_gdf.to_crs("EPSG:4326")
-            communes_gdf["polygon"] = temp_gdf.geometry.to_wkb()
-        else:
-            communes_gdf["polygon"] = communes_gdf.geometry.to_wkb()
-
-        # Drop the geometry column and conversion artifacts
+        communes_gdf["polygon"] = shapely.to_wkb(communes_gdf["geometry"])
 
         # Drop the geometry column and conversion artifacts to avoid GeoParquet metadata overriding
         # Also drop 'centroid' (shapely objects) which fails to serialize. app/data_loader.py will re-calc it.
@@ -842,7 +816,6 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
         df_to_save = communes_gdf.drop(columns=cols_to_drop).copy()
 
         output_path = OUTPUT_DIR / "odis_communes_pre.parquet"
-        # logging.info(f"DEBUG: Saving to {output_path}. Columns: {[c for c in df_to_save.columns if 'loyer' in c]}")
         df_to_save.to_parquet(
             output_path, compression="brotli", index=False
         )
@@ -852,7 +825,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
             {"path": str(output_path), "rows": len(df_to_save)},
         )
 
-        return cast(gpd.GeoDataFrame, communes_gdf)
+        return communes_gdf
 
     except Exception as e:
         logger.log_step("build_communes", "ERROR", {"error": str(e)})
@@ -861,7 +834,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> gpd.GeoDat
 
 
 def build_bassins_de_vie(
-    communes_gdf: gpd.GeoDataFrame, config: Dict[str, Any], logger: PipelineLogger
+    communes_gdf: pd.DataFrame, config: Dict[str, Any], logger: PipelineLogger
 ):
     """Aggregates Communes to Bassins de Vie."""
     logger.log_step("build_bassins_de_vie", "STARTED")
@@ -870,18 +843,15 @@ def build_bassins_de_vie(
             logging.warning("Cannot build BV: Communes empty or missing bassin_de_vie.")
             return
 
-        # Dissolve
-        # Fix geometries
-        if "polygon" in communes_gdf.columns:
-            # Only set geometry to 'polygon' if it's not already the active geometry
-            # AND if it seems to contain geometry objects (not bytes)
-            if communes_gdf.geometry.name != "polygon":
-                if not isinstance(communes_gdf["polygon"].iloc[0], bytes):
-                    geoms = [make_valid(wkb.loads(x)) for x in communes_gdf["polygon"]]
-                    communes_gdf = communes_gdf.set_geometry(geoms)
-        communes_gdf = communes_gdf.set_geometry("geometry")
+        communes_df = communes_gdf.copy()
+        if "geometry" not in communes_df.columns and "polygon" in communes_df.columns:
+            communes_df["geometry"] = [make_valid(wkb.loads(bytes(x))) for x in communes_df["polygon"]]
 
-        communes_gdf["geometry"] = communes_gdf.geometry.apply(make_valid)
+        communes_df["geometry"] = communes_df["geometry"].apply(make_valid)
+        communes_df["geometry"] = communes_df["geometry"].apply(extract_polygonal)
+        valid_communes = communes_df[
+            communes_df["bassin_de_vie"].notnull() & communes_df["geometry"].notnull()
+        ].copy()
 
         numeric_cols = [
             "population",
@@ -904,31 +874,16 @@ def build_bassins_de_vie(
             "heb_loc_iml_count",
             "heb_habitant_count",
         ]
-        # metiers_offres_diff was dropped in build_communes, so we can't sum it here if we load from there.
-        # But wait, build_bassins_de_vie takes the returned communes_gdf.
-        # If I dropped it, I can't aggregate it.
-        # But for BV level, maybe we want the ratio too?
-        # The user didn't explicitly ask for ratio in BV dataset, but "renommer la colonne en 'metiers_offres_ratio'" implies globally?
-        # Actually, for BV dataset, we aggregate communes.
-        # If we want unemployment ratio in BV, we need sum(chomeurs) / sum(active).
-        # We have pop_active and pop_chomeurs in numeric_cols.
 
-        agg_dict = {col: "sum" for col in numeric_cols if col in communes_gdf.columns}
-        # 4. Dissolve by Bassin de Vie
-        # Fix invalid geometries before dissolve
-        # 1. Try buffer(0)
-        # 1. Clean geometries for dissolve
-        communes_gdf["geometry"] = communes_gdf.geometry.make_valid()
-        communes_gdf["geometry"] = communes_gdf.geometry.apply(extract_polygonal)
-        communes_gdf = communes_gdf[communes_gdf.geometry.notnull()].copy()
+        agg_dict = {col: "sum" for col in numeric_cols if col in valid_communes.columns}
 
-        bv_gdf = communes_gdf[communes_gdf["bassin_de_vie"].notnull()].dissolve(
-            by="bassin_de_vie", aggfunc=agg_dict
+        # 4. Dissolve by Bassin de Vie via Pandas groupby + shapely.unary_union
+        bv_df = valid_communes.groupby("bassin_de_vie").agg(agg_dict)
+        bv_geoms = valid_communes.groupby("bassin_de_vie")["geometry"].apply(
+            lambda s: shapely.unary_union(s.dropna().tolist())
         )
 
-        # FIX: Remove holes from the dissolved polygons
-        # Some communes might be "enclaves" or topological errors might create holes.
-        # We want the BV to be a solid shape covering everything.
+        # Remove holes from the dissolved polygons
         def remove_holes(geom):
             if isinstance(geom, Polygon):
                 return Polygon(geom.exterior)
@@ -937,57 +892,36 @@ def build_bassins_de_vie(
                 return MultiPolygon(parts)
             return geom
 
-        # Use the active geometry column
-        bv_gdf[bv_gdf.geometry.name] = bv_gdf.geometry.apply(remove_holes)
+        bv_geoms = bv_geoms.apply(remove_holes)
 
-        bv_gdf.rename(columns={"population": "population_bv"}, inplace=True)
+        # Convert to WKB in Lambert-93 (EPSG:2154)
+        def to_l93(x, y, z=None):
+            res = [_wgs84_to_lambert93(xi, yi) for xi, yi in zip(x, y)]
+            return [r[0] for r in res], [r[1] for r in res]
+
+        bv_geoms_l93 = bv_geoms.apply(lambda g: transform(to_l93, g) if g else None)
+        bv_df["polygon"] = shapely.to_wkb(bv_geoms_l93)
+
+        bv_df.rename(columns={"population": "population_bv"}, inplace=True)
 
         # Calculate pop_chomage_ratio for BV
-        if "pop_active" in bv_gdf.columns and "pop_chomeurs" in bv_gdf.columns:
-            bv_gdf["pop_chomage_ratio"] = np.where(
-                bv_gdf["pop_active"] > 0,
-                bv_gdf["pop_chomeurs"] / bv_gdf["pop_active"],
+        if "pop_active" in bv_df.columns and "pop_chomeurs" in bv_df.columns:
+            bv_df["pop_chomage_ratio"] = np.where(
+                bv_df["pop_active"] > 0,
+                bv_df["pop_chomeurs"] / bv_df["pop_active"],
                 0.0,
             )
 
-        # J'Accueille host counts have been moved to BigQuery for security.
-        # They are now dynamic fetched in the app.
-        bv_gdf["heb_jaccueille_count"] = 0.0
-
-        # Add Label - REMOVED (Now in Referentiels)
-        # bv_cfg = config['sources']['bassins_de_vie']
-        # bv_path = CACHE_DIR / bv_cfg['archive_file']
-        # if bv_path.exists():
-        # Logic removed to avoid adding 'libgeo' back
-        #    pass
-
-        # Explicitly convert to WKB to ensure we save the PROJECTED geometry (EPSG:2154)
-        if bv_gdf.crs != cfg.PROJECTED_CRS:
-            with warnings.catch_warnings():
-                warnings.filterwarnings(
-                    "ignore",
-                    category=DeprecationWarning,
-                    message=".*array with ndim > 0 to a scalar is deprecated.*",
-                )
-                bv_gdf = bv_gdf.to_crs(cfg.PROJECTED_CRS)
-
-        bv_gdf["polygon"] = bv_gdf.geometry.to_wkb()
-
-        # Drop geometry to avoid GeoParquet 4326 default
-        # Also drop name columns if present (libgeo)
-        cols_to_drop = ["geometry", "libgeo", "libelle_bassin_de_vie"]
-        cols_to_drop = [c for c in cols_to_drop if c in bv_gdf.columns]
-
-        df_to_save = pd.DataFrame(bv_gdf.drop(columns=cols_to_drop))
+        bv_df["heb_jaccueille_count"] = 0.0
 
         output_path = OUTPUT_DIR / "odis_bassins_de_vie.parquet"
-        df_to_save.reset_index().to_parquet(
+        bv_df.reset_index().to_parquet(
             output_path, compression="brotli", index=False
         )
         logger.log_step(
             "build_bassins_de_vie",
             "CREATED",
-            {"path": str(output_path), "rows": len(df_to_save)},
+            {"path": str(output_path), "rows": len(bv_df)},
         )
 
     except Exception as e:
@@ -1424,6 +1358,51 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
         logger.log_step("generate_referentiels", "CREATED", {"path": str(output_path)})
 
 
+def build_salesforce_jaccueille_bdv(
+    config: Dict[str, Any], logger: PipelineLogger
+) -> None:
+    """Build the Salesforce J'accueille BDV aggregate from clean datasets and candidate communes."""
+    logger.log_step("build_salesforce_jaccueille_bdv", "STARTED")
+    try:
+        sf_clean_path = CLEAN_DIR / "salesforce_jaccueille.parquet"
+        cp_path = CLEAN_DIR / "codes_postaux.parquet"
+        communes_path = OUTPUT_DIR / "odis_communes_pre.parquet"
+        if not communes_path.exists():
+            communes_path = OUTPUT_DIR / "odis_communes.parquet"
+
+        if not sf_clean_path.exists():
+            raise FileNotFoundError(
+                f"Required clean Salesforce file missing: {sf_clean_path}"
+            )
+        if not cp_path.exists():
+            raise FileNotFoundError(
+                f"Required postal codes file missing: {cp_path}"
+            )
+        if not communes_path.exists():
+            raise FileNotFoundError(
+                f"Candidate communes file missing: {communes_path}"
+            )
+
+        df_sf = pd.read_parquet(sf_clean_path)
+        df_bdv = aggregate_by_bassin_de_vie(
+            df_sf,
+            postal_codes_path=cp_path,
+            communes_path=communes_path,
+        )
+
+        output_path = OUTPUT_DIR / "salesforce_jaccueille_bdv.parquet"
+        df_bdv.to_parquet(output_path, index=False)
+        logger.log_step(
+            "build_salesforce_jaccueille_bdv",
+            "COMPLETED",
+            {"path": str(output_path), "rows": len(df_bdv)},
+        )
+    except Exception as e:
+        logger.log_step("build_salesforce_jaccueille_bdv", "ERROR", {"error": str(e)})
+        logging.exception(f"Build Salesforce BDV failed: {e}")
+        raise PipelineRunError("Required build step 'salesforce_jaccueille_bdv' failed") from e
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="ODIS Build Pipeline")
     parser.add_argument(
@@ -1442,12 +1421,21 @@ def main(argv=None):
         "vertical_tables": build_vertical_tables,
         "pois": generate_pois,
         "referentiels": generate_referentiels,
+        "salesforce_jaccueille_bdv": build_salesforce_jaccueille_bdv,
+        "salesforce_jaccueille": build_salesforce_jaccueille_bdv,
     }
 
     selected_steps = (
         args.steps.split(",")
         if args.steps
-        else ["communes", "bassins_de_vie", "vertical_tables", "pois", "referentiels"]
+        else [
+            "communes",
+            "bassins_de_vie",
+            "vertical_tables",
+            "pois",
+            "referentiels",
+            "salesforce_jaccueille_bdv",
+        ]
     )
 
     required_outputs = {
@@ -1461,21 +1449,36 @@ def main(argv=None):
         ],
         "pois": ["odis_pois.parquet"],
         "referentiels": ["odis_referentiels.parquet"],
+        "salesforce_jaccueille_bdv": ["salesforce_jaccueille_bdv.parquet"],
+        "salesforce_jaccueille": ["salesforce_jaccueille_bdv.parquet"],
     }
 
     communes_gdf = None
     if "communes" in selected_steps or "bassins_de_vie" in selected_steps:
-        # We need communes for BV
-        communes_gdf = build_communes(config, logger)
-        missing = [
-            name
-            for name in required_outputs["communes"]
-            if not (OUTPUT_DIR / name).exists()
-        ]
-        if missing:
-            raise PipelineRunError(
-                f"Build step 'communes' produced no output: {missing}"
-            )
+        if "communes" in selected_steps:
+            communes_gdf = build_communes(config, logger)
+            missing = [
+                name
+                for name in required_outputs["communes"]
+                if not (OUTPUT_DIR / name).exists()
+            ]
+            if missing:
+                raise PipelineRunError(
+                    f"Build step 'communes' produced no output: {missing}"
+                )
+        elif (OUTPUT_DIR / "odis_communes_pre.parquet").exists():
+            communes_gdf = pd.read_parquet(OUTPUT_DIR / "odis_communes_pre.parquet")
+        else:
+            communes_gdf = build_communes(config, logger)
+            missing = [
+                name
+                for name in required_outputs["communes"]
+                if not (OUTPUT_DIR / name).exists()
+            ]
+            if missing:
+                raise PipelineRunError(
+                    f"Build step 'communes' produced no output: {missing}"
+                )
 
     for step_name in selected_steps:
         if step_name == "communes":

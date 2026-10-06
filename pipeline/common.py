@@ -1,7 +1,8 @@
 import os
+import math
 import yaml
 import pandas as pd
-import geopandas as gpd
+from shapely.geometry import shape
 import openpyxl  # noqa: F401  # Mandatory top-level import: fail fast if excel engine is missing
 import python_calamine  # noqa: F401  # Mandatory top-level import: fail fast if calamine engine is missing
 import logging
@@ -31,8 +32,6 @@ def configure_logging(level=logging.INFO):
         "requests",
         "urllib3",
         "pyarrow",
-        "geopandas",
-        "fiona",
         "shapely",
     ]:
         logging.getLogger(logger_name).setLevel(logging.WARNING)
@@ -123,6 +122,21 @@ def extract_zip(zip_path: Path, target_file: str) -> Path:
     return zip_path.parent / target_file
 
 
+def _load_geojson(path: Path, encoding: Optional[str] = None) -> pd.DataFrame:
+    """Loads GeoJSON into a standard pandas DataFrame with Shapely geometries."""
+    with open(path, "r", encoding=encoding or "utf-8") as f:
+        data = json.load(f)
+    features = data.get("features", [])
+    records = []
+    for feat in features:
+        props = feat.get("properties", {}) or {}
+        geom = feat.get("geometry")
+        if geom:
+            props["geometry"] = shape(geom)
+        records.append(props)
+    return pd.DataFrame(records)
+
+
 def load_dataset(path: Path, config: Dict[str, Any], **kwargs) -> pd.DataFrame:
     """Loads a dataset based on its extension or config."""
     fmt = config.get("format", "").lower()
@@ -136,7 +150,7 @@ def load_dataset(path: Path, config: Dict[str, Any], **kwargs) -> pd.DataFrame:
     elif fmt == "json":
         return pd.read_json(path, encoding=encoding, **kwargs)
     elif fmt == "geojson":
-        return gpd.read_file(path, encoding=encoding, **kwargs)
+        return _load_geojson(path, encoding=encoding)
     elif fmt == "xlsx":
         sheet = kwargs.get("sheet_name", config.get("sheet_name", 0))
         header = kwargs.get("header", config.get("header", 0))
@@ -163,7 +177,7 @@ def load_dataset(path: Path, config: Dict[str, Any], **kwargs) -> pd.DataFrame:
     elif path.suffix == ".json":
         return pd.read_json(path, encoding=encoding, **kwargs)
     elif path.suffix == ".geojson":
-        return gpd.read_file(path, encoding=encoding, **kwargs)
+        return _load_geojson(path, encoding=encoding)
     elif path.suffix == ".xlsx":
         sheet = kwargs.get("sheet_name", config.get("sheet_name", 0))
         header = kwargs.get("header", config.get("header", 0))
@@ -400,3 +414,43 @@ def finalize_ingest(
             staging_raw.unlink(missing_ok=True)
         logging.warning(f"⚠️ Reverted to last known good cache for '{source_name}'.")
         return False
+
+
+# Official IGN Lambert-93 (EPSG:2154) / GRS80 ellipsoidal parameters
+_L93_A = 6378137.0
+_L93_E = 0.08181919106
+_L93_C = 11754255.426096
+_L93_N = 0.7256077650532473
+_L93_XS = 700000.0
+_L93_YS = 12655612.0499
+_L93_LON0 = 3.0 * math.pi / 180.0
+
+
+def _lambert93_to_wgs84(x: float, y: float) -> Tuple[float, float]:
+    """Converts Lambert-93 (EPSG:2154) meters (x, y) to WGS84 (EPSG:4326) degrees (lon, lat)."""
+    dx = x - _L93_XS
+    dy = _L93_YS - y
+    r = math.hypot(dx, dy)
+    gamma = math.atan2(dx, dy)
+    lon_rad = _L93_LON0 + gamma / _L93_N
+
+    l = -(1.0 / _L93_N) * math.log(abs(r / _L93_C))
+    phi = 2.0 * math.atan(math.exp(l)) - math.pi / 2.0
+    for _ in range(5):
+        esphi = _L93_E * math.sin(phi)
+        phi = 2.0 * math.atan(math.pow((1.0 + esphi) / (1.0 - esphi), _L93_E / 2.0) * math.exp(l)) - math.pi / 2.0
+
+    return math.degrees(lon_rad), math.degrees(phi)
+
+
+def _wgs84_to_lambert93(lon: float, lat: float) -> Tuple[float, float]:
+    """Converts WGS84 (EPSG:4326) degrees (lon, lat) to Lambert-93 (EPSG:2154) meters (x, y)."""
+    phi = math.radians(lat)
+    lam = math.radians(lon)
+    esphi = _L93_E * math.sin(phi)
+    l = math.log(math.tan(math.pi / 4.0 + phi / 2.0) * math.pow((1.0 - esphi) / (1.0 + esphi), _L93_E / 2.0))
+    gamma = (lam - _L93_LON0) * _L93_N
+    r = _L93_C * math.exp(-_L93_N * l)
+    x = _L93_XS + r * math.sin(gamma)
+    y = _L93_YS - r * math.cos(gamma)
+    return x, y

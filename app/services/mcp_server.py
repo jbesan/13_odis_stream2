@@ -27,12 +27,23 @@ logger = logging.getLogger("mcp_server")
 # Initialize FastMCP Server
 mcp = FastMCP("ODIS-Core")
 
-# Initialize RNA RAG Service
-try:
-    rna_rag_service = RNARagService()
-except Exception as e:
-    logger.error(f"Failed to initialize RNARagService in MCP: {e}")
-    rna_rag_service = None
+# Lazy RNA RAG Service reference (initialized on first use to avoid slow startup blocking)
+_rna_rag_service: Optional[RNARagService] = None
+_rna_rag_lock = threading.Lock()
+
+
+def get_rna_rag_service() -> Optional[RNARagService]:
+    """Lazy initializer for RNARagService to prevent slow startup blocking."""
+    global _rna_rag_service
+    if _rna_rag_service is None:
+        with _rna_rag_lock:
+            if _rna_rag_service is None:
+                try:
+                    _rna_rag_service = RNARagService()
+                except Exception as e:
+                    logger.error(f"Failed to initialize RNARagService in MCP: {e}")
+                    return None
+    return _rna_rag_service
 
 # Global State for Data (Loaded on startup)
 DATA_CONTEXT = {}
@@ -878,7 +889,8 @@ def _search_rna_rag_logic(
     Internal logic for looking up associations via RAG.
     Resolves the Bassin de Vie code for the given commune to perform a broader search.
     """
-    if not rna_rag_service:
+    service = get_rna_rag_service()
+    if not service:
         return {
             "error": "RNARagService not initialized. Check BigQuery authentication."
         }
@@ -893,7 +905,7 @@ def _search_rna_rag_logic(
             bv_code = str(bv).replace(".0", "")
 
     try:
-        return rna_rag_service.get_associations_semantic(
+        return service.get_associations_semantic(
             query, codgeos=[codgeo], bv_code=bv_code, top_k=top_k
         )
     except Exception as e:

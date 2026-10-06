@@ -49,16 +49,12 @@ dev = [
     "psutil==7.2.2",
 ]
 pipeline = [
-    "pandas==3.0.5",
-    "geopandas==1.1.4",
-    "requests==2.34.2",
-    "pyyaml==6.0.3",
     "openpyxl==3.1.5",
     "python-calamine==0.8.2",
 ]
 
 [tool.uv]
-default-groups = ["dev"]
+default-groups = ["dev", "pipeline"]
 environments = [
     "sys_platform == 'darwin' and platform_machine == 'arm64'",
     "sys_platform == 'linux' and platform_machine == 'x86_64'",

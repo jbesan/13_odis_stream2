@@ -96,7 +96,7 @@
     },
     "ingest_all": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:20:58.357192",
+      "timestamp": "2026-10-05T10:55:57.600105+00:00",
       "details": {}
     },
     "clean_communes": {
@@ -186,7 +186,7 @@
     },
     "build_bassins_de_vie": {
       "status": "CREATED",
-      "timestamp": "2026-07-31T10:22:16.593725",
+      "timestamp": "2026-10-05T10:54:25.926021+00:00",
       "details": {
         "path": "pipeline/cache/output/odis_bassins_de_vie.parquet",
         "rows": 1707
@@ -194,7 +194,7 @@
     },
     "build_all": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T19:29:48.921026",
+      "timestamp": "2026-10-05T10:55:58.226626+00:00",
       "details": {}
     },
     "clean_voisins": {
@@ -498,8 +498,19 @@
     },
     "clean_salesforce_jaccueille": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:20:58.356744",
-      "details": {}
+      "timestamp": "2026-10-05T10:55:57.599544+00:00",
+      "details": {
+        "rows": 1,
+        "path": "pipeline/cache/clean/salesforce_jaccueille.parquet"
+      }
+    },
+    "build_salesforce_jaccueille_bdv": {
+      "status": "COMPLETED",
+      "timestamp": "2026-10-05T10:55:58.226055+00:00",
+      "details": {
+        "path": "pipeline/cache/output/salesforce_jaccueille_bdv.parquet",
+        "rows": 0
+      }
     }
   },
   "sources": {
@@ -777,6 +788,11 @@
       "status": "SKIPPED",
       "timestamp": "2026-07-31T10:00:59.509634",
       "file": "No URL provided"
+    },
+    "salesforce_jaccueille": {
+      "status": "reused_within_ttl",
+      "timestamp": "2026-10-05T10:55:37.150403+00:00",
+      "file": "pipeline/cache/clean/salesforce_jaccueille.parquet"
     }
   }
 }

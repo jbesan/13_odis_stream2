@@ -46,13 +46,19 @@ def test_publish_datasets_uploads_files_before_pointer(mock_client_class, tmp_pa
     assert "odis_referentiels.parquet" in etl.DATASET_FILES
     assert "odis_ft_jobs_coverage.parquet" not in etl.DATASET_FILES
     assert "odis_inclusion_jobs_coverage.parquet" not in etl.DATASET_FILES
-    assert [event[1] for event in events[:-1]] == [
+    expected_files = [
         f"datasets/releases/v-test-1/{filename}" for filename in etl.DATASET_FILES
     ] + ["datasets/releases/v-test-1/data_manifest.json"]
+    expected_release_files = list(etl.DATASET_FILES)
+    if Path("app/static/data/communes_france.geojson").exists():
+        expected_files.append("datasets/releases/v-test-1/communes_france.geojson")
+        expected_release_files.append("communes_france.geojson")
+
+    assert [event[1] for event in events[:-1]] == expected_files
     assert events[-1][0:2] == ("pointer", "datasets/current.json")
     pointer = json.loads(events[-1][2])
     assert pointer["version"] == "v-test-1"
-    assert pointer["files"] == etl.DATASET_FILES
+    assert pointer["files"] == expected_release_files
     assert pointer["manifest"]["name"] == "data_manifest.json"
     assert pointer["manifest"]["sha256"] == artifact_metadata(
         output_dir / "data_manifest.json"
