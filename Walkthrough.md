@@ -1,54 +1,73 @@
-# Walkthrough — Découplage Architectural Salesforce J'accueille (Ingest & Build)
+# Walkthrough — Migration Capabilities & Contexts Phase 1 (Étapes 6 & 7)
 
 ## Contexte & Objectif
 
-Dans l'architecture historique, l'ingestion Salesforce (`clean_salesforce_jaccueille`) constituait un anti-pattern architectural : elle était invoquée de manière ad-hoc dans `pipeline/etl.py` *après* la fin de la phase de build (`build.main()`), car elle mélangeait l'extraction source (leads/contacts) et l'agrégation territoriale sur le bassin de vie (qui dépendait de `odis_communes_pre.parquet` et `codes_postaux.parquet`).
+Les étapes 0 à 5 ont mis en place le filet de sécurité, les modèles `CapabilitySpec` et le catalogue sous `app/agents/capabilities/`, les blocs de contexte déclaratifs, l'instanciation des agents sans outils statiques (`tools=[]`), et la migration du coordinateur `ts_agent`.
 
-Ce découplage sépare proprement le cycle de vie Salesforce en deux étapes standards et indépendantes :
-1. **Étape d'Ingestion (`clean_salesforce_jaccueille`)** : extraction/mise en cache et agrégation au niveau code postal (`code_postal`, `lead_count`, `contact_count`, `total_jaccueille_count`), enregistrée dans `steps_map` et écrivant dans `CLEAN_DIR / "salesforce_jaccueille.parquet"`.
-2. **Étape de Build (`build_salesforce_jaccueille_bdv`)** : lecture de `CLEAN_DIR / "salesforce_jaccueille.parquet"`, jointure avec `CLEAN_DIR / "codes_postaux.parquet"` et les communes candidates pour produire l'artefact final de release `OUTPUT_DIR / "salesforce_jaccueille_bdv.parquet"`.
+Les étapes 6 et 7 complètent la Phase 1 :
+1. **Étape 6 — Drapeau de chargement différé (`ODIS_CAPABILITY_DEFERRED_LOADING`)** :
+   - Ajout de la configuration `ODIS_CAPABILITY_DEFERRED_LOADING: bool = False` et du helper `is_capability_deferred_loading_enabled() -> bool` dans `app/config.py`.
+   - Application stricte de la Règle 4 (Parité Cloud Run) : ajout de `ODIS_CAPABILITY_DEFERRED_LOADING=false` dans `app/.env` et de `ODIS_CAPABILITY_DEFERRED_LOADING=False` dans les déploiements Cloud Build (`cloudbuild.yaml` et `cloudbuild-promote.yaml`).
+   - Branchement dynamique dans `app/agents/graph.py` (`triage_step` et fallback `expert_worker_step`) via `CapabilityRegistry.build_capabilities_for_expert(..., defer_loading=is_capability_deferred_loading_enabled())`.
+   - Couverture par tests unitaires de la propagation du drapeau.
+
+2. **Étape 7 — Nettoyage final, élagage et architecture** :
+   - **Élagage du doublon `{SKILL_INSTRUCTIONS}`** : suppression de la balise `{SKILL_INSTRUCTIONS}` et de son formatage manuel dans les 6 agents experts (`housing_expert.py`, `mobility_expert.py`, `healthcare_expert.py`, `education_expert.py`, `social_integration_expert.py`, `job_hunter.py`). Les instructions sont désormais portées de façon unique et native par `Capability(instructions=...)` dans PydanticAI.
+   - **Suppression du legacy** :
+     - Suppression définitive de `app/services/knowledge_store.py` et de son test `tests/unit/test_skills_store.py`.
+     - Suppression définitive du dossier `app/agents/skills/` (et de ses 8 fichiers markdown).
+     - Nettoyage de `FALLBACK_CAPABILITIES_DIR` dans `CapabilityRegistry`.
+   - **Documentation & Living Memory** :
+     - Mise à jour de `app/APP_ARCHITECTURE.md`, `app/agents/GRAPH_ARCHITECTURE.md`, et ajout du bandeau d'obsolescence dans `app/agents/AGENT_CONTEXTS.md`.
+     - Mise à jour de la mémoire du projet dans `.agents/knowledge/topics/architecture_ai_agents.md` et `.agents/knowledge/ALWAYSREADFIRST.md`.
 
 ---
 
 ## 1. Modifications réalisées
 
-### Ingest Phase (`pipeline/ingest/cleaners/salesforce.py` & `pipeline/domain_contracts.yaml`)
-- `clean_salesforce_jaccueille` extrait ou réutilise le cache source et écrit l'agrégat code postal directement dans `context.CLEAN_DIR / "salesforce_jaccueille.parquet"`. Elle ne dépend plus de `odis_communes_pre.parquet` ni d'aucun artefact de `build.py`.
-- Imports conformes aux standards du projet (imports au niveau module top-level, utilisation directe de `context.CLEAN_DIR`).
-- Mise à jour de `pipeline/domain_contracts.yaml` :
-  - `runner.cleaned_sources` conserve `"salesforce_jaccueille"`.
-  - `runner.step_to_source_map` conserve `salesforce_jaccueille: "salesforce_jaccueille"`.
-  - `runner.clean_filenames` mappe désormais `salesforce_jaccueille: "salesforce_jaccueille.parquet"`.
-  - `runner.output_dir_steps` ne contient plus `"salesforce_jaccueille"` (écrit désormais dans `CLEAN_DIR`).
+### Configuration & Parité Cloud Run (`app/config.py`, `app/.env`, `cloudbuild.yaml`, `cloudbuild-promote.yaml`)
+- `app/config.py` : ajout de `ODIS_CAPABILITY_DEFERRED_LOADING: bool` et de la fonction typée `is_capability_deferred_loading_enabled() -> bool`.
+- `app/.env` : ajout de `ODIS_CAPABILITY_DEFERRED_LOADING=false`.
+- `cloudbuild.yaml` & `cloudbuild-promote.yaml` : ajout de `ODIS_CAPABILITY_DEFERRED_LOADING=False` dans `--set-env-vars`.
 
-### Build Phase (`pipeline/build.py`)
-- Ajout de la fonction top-level `build_salesforce_jaccueille_bdv(config, logger)` :
-  - Lit `CLEAN_DIR / "salesforce_jaccueille.parquet"`, `CLEAN_DIR / "codes_postaux.parquet"` et `OUTPUT_DIR / "odis_communes_pre.parquet"` (avec repli sur `odis_communes.parquet`).
-  - Effectue l'agrégation territoriale BDV via `aggregate_by_bassin_de_vie` (importé au top-level).
-  - Écrit l'artefact de release `OUTPUT_DIR / "salesforce_jaccueille_bdv.parquet"`.
-- Enregistrement dans `steps_map` sous `"salesforce_jaccueille_bdv"` et alias `"salesforce_jaccueille"`.
-- Ajout de `salesforce_jaccueille_bdv` dans `selected_steps` par défaut et dans `required_outputs`.
-- Correction de l'exécution isolée : `communes_gdf` est correctement rechargé depuis `odis_communes_pre.parquet` pour l'étape `bassins_de_vie`, et `salesforce_jaccueille_bdv` ne déclenche plus arbitrairement la régénération des communes.
+### Moteur de graphe (`app/agents/graph.py`)
+- Import au top-level de `is_capability_deferred_loading_enabled` (règle 3 AGENTS.md).
+- Dans `triage_step` : construction des capabilities avec `defer_loading=is_capability_deferred_loading_enabled()`.
+- Dans `expert_worker_step` (fallback standalone) : construction avec `defer_loading=is_capability_deferred_loading_enabled()`.
 
-### Module Salesforce Ingest (`pipeline/salesforce_ingest.py`)
-- Découplage de la fonction `fetch_and_aggregate_salesforce(force, output_path, raw_output_path)` extrayant les données brutes et agrégeant par code postal.
-- Sécurisation de `_ttl_days()` avec lecture robuste (fallback `local_files` -> `sources` -> 7 jours par défaut).
-- Normalisation robuste des types et validation de schéma dans `aggregate_by_bassin_de_vie` (codes postaux numériques / chaînes, colonnes obligatoires, retour de schéma vide valide si données absentes).
-- Conservation de `run_salesforce_ingest` pour une compatibilité ascendante complète.
-- Gestion du repli de cache entre `CLEAN_DIR` et le cache partagé `pipeline/cache/clean/salesforce_jaccueille.parquet`.
+### Élagage des prompts système (6 Experts thématiques)
+- `app/agents/housing_expert.py`
+- `app/agents/mobility_expert.py`
+- `app/agents/healthcare_expert.py`
+- `app/agents/education_expert.py`
+- `app/agents/social_integration_expert.py`
+- `app/agents/job_hunter.py`
+- Retrait de la section `# Consignes additionnelles issues des Skill Cards actives : {SKILL_INSTRUCTIONS}` et du paramètre `SKILL_INSTRUCTIONS=...` dans les fonctions de construction de prompt.
 
-### Orchestration Globale (`pipeline/etl.py`)
-- Suppression complète de l'appel ad-hoc `ingest.clean_salesforce_jaccueille(...)` après `build.main()` (lignes 330-338). Le build exécute désormais naturellement `salesforce_jaccueille_bdv`.
+### Suppression du code déprécié
+- `app/services/knowledge_store.py` (supprimé).
+- `tests/unit/test_skills_store.py` (supprimé).
+- Répertoire `app/agents/skills/` (8 fichiers markdown supprimés).
+- `app/agents/capability_registry.py` : retrait de `FALLBACK_CAPABILITIES_DIR`.
 
-### Tests & Documentation
-- `pipeline/tests/test_domain_contracts.py` : vérification que `salesforce_jaccueille` n'est plus dans `output_dir_steps` et que son nom de fichier clean est `salesforce_jaccueille.parquet`.
-- `pipeline/tests/test_salesforce_ingest.py` : tests unitaires et d'intégration validant la production du fichier clean dans `CLEAN_DIR`, la production du fichier BDV dans `OUTPUT_DIR`, l'intégration CLI de build, l'alias CLI, le repli sur `odis_communes.parquet`, la robustesse sur codes postaux int/str et schémas incomplets, et la non-régression de l'étape isolée `bassins_de_vie`.
-- Mise à jour de `PIPELINE_ARCHITECTURE.md` et `.agents/knowledge/topics/architecture_pipeline.md`.
+### Tests & Validation
+- `tests/unit/test_capabilities_migration_baseline.py` :
+  - Validation que `{SKILL_INSTRUCTIONS}` est absent des prompts rendus.
+  - Validation de la structure complète des prompts système.
+  - Validation de l'injection des instructions au niveau `Capability`.
+  - Ajout des tests `test_baseline_deferred_loading_flag_and_capability_propagation` et `test_triage_step_deferred_loading_flag`.
+- `tests/unit/test_capability_registry.py` :
+  - Ajout du test `test_build_capabilities_defer_loading`.
+- `tests/unit/test_agent_tools_offline.py` :
+  - Typage strict validé sans diagnostic `ty`.
 
 ---
 
 ## 2. Vérifications exécutées
 
-- **Tests du pipeline** : `uv run pytest --tb=line pipeline/tests/` → **106 tests passés** (100 %).
-- **Tests racine** : `uv run pytest --tb=line tests/` → **563 passés, 5 ignorés** (100 %).
-- **Linter Ruff** : `uv run ruff check pipeline/` → **0 erreur**.
+- **Tests unitaires** : `uv run pytest tests/unit/ -k "not test_places and not test_live" --tb=line`
+  - **661 tests passés**, 1 ignoré, 1 désélectionné (100% vert).
+- **Linter Ruff** : `uv run ruff check`
+  - 0 avertissement, 0 erreur sur l'ensemble du projet.
+- **Vérification de types Ty** : `uv run ty check app tests`
+  - 0 diagnostic, 100% vert.

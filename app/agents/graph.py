@@ -1,5 +1,6 @@
 import logging
 import asyncio
+from dataclasses import asdict
 import os
 import logfire
 from typing import Any
@@ -10,9 +11,10 @@ from pydantic_graph.step import StepContext
 from pydantic_graph.util import TypeExpression
 from pydantic_graph.join import reduce_list_append
 
-from pydantic_ai import FunctionToolset
+from pydantic_ai import AgentRunResult, FunctionToolset
 from pydantic_ai.usage import UsageLimits
 
+from core.evidence import DomainArtifact as EvidenceDomainArtifact
 from core.models import DomainReport, CityAnalysisReport
 from agents.state import (
     ODISDeps,
@@ -22,6 +24,7 @@ from agents.state import (
     ExpertList,
     AgentArtifact,
 )
+from agents.capability_registry import VALID_EXPERTS, get_default_capability_registry
 from agents.ts_agent import ts_agent, SwarmPlan
 from agents.utils import sanitize_llm_markdown
 from agents.job_hunter import job_hunter_agent
@@ -46,6 +49,7 @@ from agents.web_search import (
 from services.ai_pricing import estimate_google_grounding_cost_eur
 from utils.logger import log_agent_trace
 import services.bq_logger as bq_logger
+from config import is_capability_deferred_loading_enabled
 from agents.agent_config import get_model, get_p_model, get_model_settings
 
 
@@ -83,9 +87,7 @@ async def triage_step(
     model = get_p_model("ts_agent", client=ctx.deps.client)
 
     try:
-        from pydantic_ai import AgentRunResult as RunResult
-
-        result: RunResult[SwarmPlan] = await ts_agent.run(
+        result: AgentRunResult[SwarmPlan] = await ts_agent.run(
             user_msg,
             deps=ctx.deps,
             model=model,
@@ -143,8 +145,6 @@ async def triage_step(
                     if ctx.state.messages
                     else "Question directe"
                 )
-                from dataclasses import asdict
-
                 state_dict = asdict(ctx.state)
                 if ctx.state.focus_city:
                     state_dict["focus_city"] = ctx.state.focus_city.model_dump()
@@ -167,47 +167,72 @@ async def triage_step(
 
             return End(direct_ans)
 
-        # 2. POPULATE Swarm Tasks and Skill Cards
+        # 2. POPULATE Swarm Tasks, Capabilities, and Backward-Compatible Fields
         ctx.state.active_skills = []
         ctx.state.expert_tasks = {}
+        ctx.state.expert_capabilities = {}
         ctx.state.expert_skill_instructions = {}
         ctx.state.expert_skill_tools = {}
 
-        from services.knowledge_store import KnowledgeStore
-
-        store = KnowledgeStore()
+        capability_registry = get_default_capability_registry()
 
         experts_to_run = []
         for task in plan.tasks:
-            experts_to_run.append(task.expert)
-            ctx.state.expert_tasks[task.expert] = task.task_description
-            ctx.state.active_skills.extend(task.skill_cards)
-            allowed_tools = ctx.state.expert_skill_tools.setdefault(task.expert, [])
+            if isinstance(task, dict):
+                task_expert = task.get("expert")
+                task_desc = task.get("task_description", "")
+                task_caps = task.get("capabilities") or task.get("skill_cards") or []
+            else:
+                task_expert = getattr(task, "expert", None)
+                task_desc = getattr(task, "task_description", "")
+                task_caps = getattr(task, "capabilities", None) or getattr(
+                    task, "skill_cards", []
+                )
 
-            # Load instructions for this expert's skill cards
+            if not task_expert:
+                continue
+
+            experts_to_run.append(task_expert)
+            ctx.state.expert_tasks[task_expert] = task_desc
+
+            # Canonicalize capability IDs for active_skills and execution
+            canonical_task_caps = [
+                capability_registry.resolve_capability_id(c) for c in task_caps
+            ]
+            ctx.state.active_skills.extend(canonical_task_caps)
+
+            # Build Pydantic AI Capability objects for this expert run
+            caps = capability_registry.build_capabilities_for_expert(
+                canonical_task_caps,
+                defer_loading=is_capability_deferred_loading_enabled(),
+                expert=task_expert,
+            )
+            ctx.state.expert_capabilities[task_expert] = caps
+
+            # Backward-compatible tracking of tools and instructions
+            allowed_tools = ctx.state.expert_skill_tools.setdefault(task_expert, [])
             skill_insts = []
-            for skill_id in task.skill_cards:
-                card = store.get_skill_card(skill_id)
-                if card:
-                    for tool_id in card.get("tools", []) or []:
-                        if tool_id not in allowed_tools:
-                            allowed_tools.append(str(tool_id))
-                if card and card.get("instructions"):
+            for spec_id in canonical_task_caps:
+                spec = capability_registry.get(spec_id)
+                for tool_id in spec.tools:
+                    if tool_id not in allowed_tools:
+                        allowed_tools.append(tool_id)
+                if spec.instructions:
                     skill_insts.append(
-                        f"--- Skill Card: {skill_id} ---\n{card.get('instructions')}"
+                        f"--- Capability: {spec.id} ---\n{spec.instructions}"
                     )
 
             if skill_insts:
-                ctx.state.expert_skill_instructions[task.expert] = "\n\n".join(
+                ctx.state.expert_skill_instructions[task_expert] = "\n\n".join(
                     skill_insts
                 )
             else:
-                ctx.state.expert_skill_instructions[task.expert] = (
+                ctx.state.expert_skill_instructions[task_expert] = (
                     "Aucune consigne spécifique de Skill Card active."
                 )
 
-        # Deduplicate active skills
-        ctx.state.active_skills = list(set(ctx.state.active_skills))
+        # Deduplicate active skills while preserving order
+        ctx.state.active_skills = list(dict.fromkeys(ctx.state.active_skills))
 
         # 3. APPEND LOCAL DETERMINISTIC WORKERS IN FULL ANALYSIS MODE
         if plan.swarm_mode == "full_analysis":
@@ -215,6 +240,7 @@ async def triage_step(
                 if local_worker not in experts_to_run:
                     experts_to_run.append(local_worker)
                     ctx.state.expert_tasks[local_worker] = "Analyse déterministe locale"
+                    ctx.state.expert_capabilities[local_worker] = []
                     ctx.state.expert_skill_instructions[local_worker] = (
                         "Traitement déterministe Python"
                     )
@@ -348,8 +374,6 @@ async def expert_worker_step(
             )
             typed = None
             if city_res.expert_artifacts.get(domain):
-                from core.evidence import DomainArtifact as EvidenceDomainArtifact
-
                 typed = EvidenceDomainArtifact.model_validate(
                     city_res.expert_artifacts[domain]
                 )
@@ -397,8 +421,24 @@ async def expert_worker_step(
     try:
         # Use the specific task description generated by the ts_agent coordinator, fallback to raw user_msg
         expert_query = ctx.state.expert_tasks.get(domain) or user_msg
-        logger.info("🚀 [%s] Running legacy expert task", domain.upper())
-        dynamic_toolsets = _dynamic_toolsets_for_expert(ctx.state, domain)
+        logger.info("🚀 [%s] Running expert task", domain.upper())
+
+        # Resolve capabilities for this run (with backward-compatible fallback)
+        capabilities = ctx.state.expert_capabilities.get(domain)
+        dynamic_toolsets = None
+        if capabilities is None:
+            # Standalone invocation without triage (e.g. legacy callers or unit tests)
+            if ctx.state.expert_skill_tools.get(domain):
+                dynamic_toolsets = _dynamic_toolsets_for_expert(ctx.state, domain)
+            elif domain in VALID_EXPERTS:
+                capability_registry = get_default_capability_registry()
+                base_cap_id = capability_registry.get_base_capability_id(domain)
+                capabilities = capability_registry.build_capabilities_for_expert(
+                    [base_cap_id],
+                    defer_loading=is_capability_deferred_loading_enabled(),
+                    expert=domain,
+                )
+
         web_scope = f"{ctx.state.run_id}:{domain}:{id(ctx)}"
         web_scope_token = set_web_search_scope(web_scope)
 
@@ -410,6 +450,7 @@ async def expert_worker_step(
                     model=model,
                     model_settings=get_model_settings(domain),
                     usage_limits=UsageLimits(request_limit=5),
+                    capabilities=capabilities,
                     toolsets=dynamic_toolsets,
                 )
         finally:
@@ -563,8 +604,6 @@ async def synthesizer_step(
             if ctx.state.messages
             else "Analyse IA"
         )
-        from dataclasses import asdict
-
         state_dict = asdict(ctx.state)
         if ctx.state.focus_city:
             state_dict["focus_city"] = ctx.state.focus_city.model_dump()
@@ -582,7 +621,6 @@ async def synthesizer_step(
         )
     except Exception as e:
         logger.warning(f"⚠️ [BQ-LOG] Synthesis logging failed: {e}")
-
 
     # 3. BUILD COMPLETE COMPOSITE REPORT (Decoupled Synthesis + As-is Domain Artifacts)
     city_res = None

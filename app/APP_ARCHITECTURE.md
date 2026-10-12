@@ -282,10 +282,13 @@ app/
 2.  Call `st.set_page_config()` first, then `page_shell.enter_page()` with the page telemetry name and any admin/shared-link policy.
 3.  Use `page_shell` sidebar primitives and feature-specific components from `app/ui/components.py`.
 
-#### Adding an AI Agent Skill Card
-1.  Create a new Markdown file with YAML frontmatter under `app/agents/skills/`.
-2.  Define the `domain` (e.g., `mobility_expert`), `id`, and specific constraints.
-3.  Update the coordinator `ts_agent.py` prompts to plan and select the new skill card ID under appropriate user criteria conditions.
+#### Adding an AI Agent Capability
+1.  Create a new Markdown file with YAML frontmatter under `app/agents/capabilities/`.
+2.  Define `id`, `name`, `description`, `experts` (e.g., `["mobility_expert"]`), `tools`, `contexts`, and `loading_policy` (`eager_only` or `deferrable`).
+3.  The capability is automatically validated and loaded fail-closed by `CapabilityRegistry`.
+4.  Update the coordinator `ts_agent.py` prompts / catalog table to plan and select the new capability ID under appropriate user criteria conditions.
+
+- **Capability Deferred Loading**: Controlled by `ODIS_CAPABILITY_DEFERRED_LOADING=false` (default `False` in Phase 1). Checked using `is_capability_deferred_loading_enabled()` in `app/config.py`.
 
 ---
 

@@ -7,10 +7,11 @@ for loading and managing agent capabilities from markdown definitions.
 import logging
 import re
 from pathlib import Path
-from typing import Any, Callable, Dict, Final, List, Literal, Optional, Union
+from typing import Any, Callable, Dict, Final, List, Literal, Optional, Sequence, Set, Union
 
 import frontmatter
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic_ai import Capability
 
 import config as cfg
 from agents.tools import (
@@ -68,6 +69,24 @@ CANONICAL_TOOLS: Final[Dict[str, Callable[..., Any]]] = {
 }
 
 CANONICAL_TOOL_NAMES: Final[frozenset[str]] = frozenset(CANONICAL_TOOLS.keys())
+
+LEGACY_SKILL_TO_CAPABILITY: Final[Dict[str, str]] = {
+    "housing_full_analysis": "housing_adequation_territoire",
+    "mobility_full_analysis": "mobility_adequation_territoire",
+    "healthcare_full_analysis": "healthcare_adequation_territoire",
+    "education_full_analysis": "education_adequation_territoire",
+    "social_full_analysis": "social_adequation_territoire",
+    "job_full_analysis": "job_adequation_territoire",
+}
+
+EXPERT_DEFAULT_CAPABILITY: Final[Dict[str, str]] = {
+    "housing_expert": "housing_adequation_territoire",
+    "mobility_expert": "mobility_adequation_territoire",
+    "healthcare_expert": "healthcare_adequation_territoire",
+    "education_expert": "education_adequation_territoire",
+    "social_integration_expert": "social_adequation_territoire",
+    "job_hunter": "job_adequation_territoire",
+}
 
 
 def is_canonical_tool(tool_name: str) -> bool:
@@ -543,7 +562,6 @@ class CapabilitySpec(BaseModel):
 
 
 DEFAULT_CAPABILITIES_DIR: Final[Path] = Path(cfg.APP_DIR) / "agents" / "capabilities"
-FALLBACK_CAPABILITIES_DIR: Final[Path] = Path(cfg.APP_DIR) / "agents" / "skills"
 
 
 class CapabilityRegistry:
@@ -561,8 +579,7 @@ class CapabilityRegistry:
 
         Args:
             capabilities_dir: Path to directory containing .md capability specs.
-                Defaults to 'app/agents/capabilities' under project root (with fallback
-                to 'app/agents/skills' if capabilities directory does not exist).
+                Defaults to 'app/agents/capabilities' under project root.
             auto_load: Whether to eagerly load and validate all capabilities on init.
 
         Raises:
@@ -570,12 +587,7 @@ class CapabilityRegistry:
             CapabilityValidationError: If any capability file fails validation.
         """
         if capabilities_dir is None:
-            if DEFAULT_CAPABILITIES_DIR.is_dir():
-                self.capabilities_dir = DEFAULT_CAPABILITIES_DIR
-            elif FALLBACK_CAPABILITIES_DIR.is_dir():
-                self.capabilities_dir = FALLBACK_CAPABILITIES_DIR
-            else:
-                self.capabilities_dir = DEFAULT_CAPABILITIES_DIR
+            self.capabilities_dir = DEFAULT_CAPABILITIES_DIR
         else:
             self.capabilities_dir = Path(capabilities_dir)
 
@@ -631,12 +643,19 @@ class CapabilityRegistry:
         if not isinstance(capability_id, str) or not capability_id.strip():
             raise CapabilityNotFoundError(f"Invalid capability ID: {capability_id!r}")
 
-        if capability_id not in self._specs:
-            raise CapabilityNotFoundError(
-                f"Capability '{capability_id}' not found in registry. "
-                f"Available capabilities: {sorted(self._specs.keys())}"
-            )
-        return self._specs[capability_id]
+        cleaned = capability_id.strip()
+        if cleaned in self._specs:
+            return self._specs[cleaned]
+
+        if cleaned in LEGACY_SKILL_TO_CAPABILITY:
+            canonical = LEGACY_SKILL_TO_CAPABILITY[cleaned]
+            if canonical in self._specs:
+                return self._specs[canonical]
+
+        raise CapabilityNotFoundError(
+            f"Capability '{cleaned}' not found in registry. "
+            f"Available capabilities: {sorted(self._specs.keys())}"
+        )
 
     def list_all(self) -> List[CapabilitySpec]:
         """Lists all registered capabilities sorted alphabetically by ID.
@@ -710,6 +729,150 @@ class CapabilityRegistry:
                 if tool_name not in resolved:
                     resolved[tool_name] = get_canonical_tool(tool_name)
         return resolved
+
+    def resolve_capability_id(self, identifier: str) -> str:
+        """Resolves a capability identifier or legacy skill card alias to its canonical ID.
+
+        Args:
+            identifier: The capability ID or legacy skill card alias.
+
+        Returns:
+            The canonical capability ID.
+
+        Raises:
+            CapabilityNotFoundError: If the identifier cannot be resolved.
+        """
+        if not isinstance(identifier, str) or not identifier.strip():
+            raise CapabilityNotFoundError(f"Invalid capability ID: {identifier!r}")
+
+        cleaned = identifier.strip()
+        if cleaned in self._specs:
+            return cleaned
+
+        if cleaned in LEGACY_SKILL_TO_CAPABILITY:
+            canonical = LEGACY_SKILL_TO_CAPABILITY[cleaned]
+            if canonical in self._specs:
+                return canonical
+
+        raise CapabilityNotFoundError(
+            f"Capability '{cleaned}' not found in registry. "
+            f"Available capabilities: {sorted(self._specs.keys())}"
+        )
+
+    def build_capability(
+        self,
+        capability_id: str,
+        defer_loading: bool = False,
+        excluded_tools: Optional[Set[str]] = None,
+    ) -> Capability:
+        """Instantiates a Pydantic AI Capability object from a registered specification.
+
+        Args:
+            capability_id: Unique capability identifier or legacy alias.
+            defer_loading: Whether to defer capability loading (default False in Phase 1).
+            excluded_tools: Optional set of tool names to omit from registration to
+                avoid duplicate tool names across multiple capabilities in the same run.
+
+        Returns:
+            Instantiated pydantic_ai.Capability.
+
+        Raises:
+            CapabilityNotFoundError: If capability_id is not in registry.
+            ToolNotFoundError: If a tool declared by the capability cannot be resolved.
+        """
+        canonical_id = self.resolve_capability_id(capability_id)
+        spec = self.get(canonical_id)
+
+        excluded = excluded_tools or set()
+        tools_list: List[Callable[..., Any]] = []
+        for tool_name in spec.tools:
+            if tool_name not in excluded:
+                tools_list.append(get_canonical_tool(tool_name))
+
+        return Capability(
+            id=spec.id,
+            description=spec.description,
+            instructions=spec.instructions,
+            tools=tools_list,
+            defer_loading=defer_loading,
+        )
+
+    def get_base_capability_id(self, expert: str) -> str:
+        """Returns the canonical base capability ID for an expert domain.
+
+        Args:
+            expert: Expert identifier (e.g. 'housing_expert', 'job_hunter').
+
+        Returns:
+            The canonical capability ID for adéquation territoire.
+
+        Raises:
+            CapabilityValidationError: If expert is unknown.
+        """
+        if expert not in VALID_EXPERTS:
+            raise CapabilityValidationError(
+                f"Invalid expert '{expert}'. Allowed experts: {sorted(VALID_EXPERTS)}"
+            )
+        return EXPERT_DEFAULT_CAPABILITY[expert]
+
+    def build_capabilities_for_expert(
+        self,
+        capability_ids: Sequence[str],
+        defer_loading: bool = False,
+        expert: Optional[str] = None,
+    ) -> List[Capability]:
+        """Instantiates Pydantic AI Capability objects for an expert run with tool deduplication.
+
+        Ensures that if multiple capabilities declare the same tool, it is only registered
+        once (on the first capability encountered) to prevent Pydantic AI tool name collision.
+
+        Args:
+            capability_ids: Sequence of capability identifiers or legacy aliases.
+            defer_loading: Whether to defer loading (default False in Phase 1).
+            expert: Optional expert name to validate that declared capabilities belong to it.
+
+        Returns:
+            List of instantiated pydantic_ai.Capability objects.
+
+        Raises:
+            CapabilityNotFoundError: If any capability ID cannot be resolved.
+            CapabilityValidationError: If any capability is not allowed for the given expert.
+            ToolNotFoundError: If any declared tool cannot be resolved.
+        """
+        if expert is not None and expert not in VALID_EXPERTS:
+            raise CapabilityValidationError(
+                f"Invalid expert '{expert}'. Allowed experts: {sorted(VALID_EXPERTS)}"
+            )
+
+        capabilities: List[Capability] = []
+        registered_tools: Set[str] = set()
+
+        for cid in capability_ids:
+            canonical_id = self.resolve_capability_id(cid)
+            spec = self.get(canonical_id)
+
+            if expert is not None and expert not in spec.experts:
+                raise CapabilityValidationError(
+                    f"Capability '{spec.id}' is not permitted for expert '{expert}'. "
+                    f"Allowed experts: {sorted(spec.experts)}"
+                )
+
+            tools_for_cap: List[Callable[..., Any]] = []
+            for tool_name in spec.tools:
+                if tool_name not in registered_tools:
+                    registered_tools.add(tool_name)
+                    tools_for_cap.append(get_canonical_tool(tool_name))
+
+            cap = Capability(
+                id=spec.id,
+                description=spec.description,
+                instructions=spec.instructions,
+                tools=tools_for_cap,
+                defer_loading=defer_loading,
+            )
+            capabilities.append(cap)
+
+        return capabilities
 
     def register(self, spec: CapabilitySpec, overwrite: bool = False) -> None:
         """Registers a CapabilitySpec directly in memory.

@@ -3,6 +3,7 @@ import logging
 from typing import List, Dict, Any, Optional, Literal, NamedTuple
 from dataclasses import dataclass, field
 from pydantic import BaseModel, Field, ConfigDict, model_validator
+from pydantic_ai import Capability
 from google import genai
 from core.models import SearchCriterias, SearchResultsData, CommuneResult
 from core.evidence import DomainArtifact as EvidenceDomainArtifact, WebSearchBatchResult
@@ -155,6 +156,9 @@ class GraphState:
     expert_tasks: Dict[str, str] = field(
         default_factory=dict
     )  # Maps expert domain -> tailored task/mission
+    expert_capabilities: Dict[str, List[Capability]] = field(
+        default_factory=dict
+    )  # Maps expert domain -> compiled Pydantic AI Capability instances for run
     expert_skill_instructions: Dict[str, str] = field(
         default_factory=dict
     )  # Maps expert domain -> skill cards instructions

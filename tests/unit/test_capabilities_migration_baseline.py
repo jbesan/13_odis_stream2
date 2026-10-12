@@ -6,8 +6,10 @@ This serves as the regression safety net throughout the Phase 1 refactoring.
 """
 
 import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 from pydantic_ai import RunContext
 
+from agents.capability_registry import get_default_capability_registry
 from agents.state import GraphState, ODISDeps
 from agents.education_expert import education_expert_agent, education_expert_instructions
 from agents.healthcare_expert import healthcare_expert_agent, healthcare_expert_instructions
@@ -154,21 +156,43 @@ EXPERT_CONFIGS = [
 @pytest.mark.asyncio
 @pytest.mark.parametrize("domain,agent,prompt_func,expected_tools", EXPERT_CONFIGS)
 async def test_baseline_expert_rendered_prompt_and_tools(domain, agent, prompt_func, expected_tools):
-    """Verifies that all 6 experts render stable prompts and expose their expected tools on the rich dossier."""
+    """Verifies that all 6 experts render stable prompts without duplicate SKILL_INSTRUCTIONS and expose expected capabilities."""
     state = _make_rich_state()
     ctx = RunContext(deps=ODISDeps(state=state), model=None, usage=None, prompt=None)
 
     prompt = await prompt_func(ctx)
 
-    # 1. Structural checks
+    # 1. Structural checks on base prompt
     assert state.odis_brief in prompt
     assert "Bordeaux" in prompt
     assert "33063" in prompt
     assert "Contexte de collaboration" in prompt
+    assert "Projet de vie du bénéficiaire" in prompt
+    assert "Critères de recherche du foyer" in prompt
+    assert "Commune à analyser" in prompt
 
-    # 2. Tool registration check
-    registered_tools = list(agent._function_toolset.tools.keys())
-    assert set(registered_tools) == set(expected_tools)
+    # 2. Pruning verification: NO duplicate SKILL_INSTRUCTIONS in base prompt
+    assert "{SKILL_INSTRUCTIONS}" not in prompt
+    assert "Consignes additionnelles issues des Skill Cards actives" not in prompt
+    assert "Aucune consigne spécifique de Skill Card active" not in prompt
+
+    # 3. Tool registration check
+    # Singletons have 0 static tools by default; domain tools are supplied via capabilities.
+    assert list(agent._function_toolset.tools.keys()) == []
+
+    # 4. Capability injection check: instructions & tools are carried by Capability
+    registry = get_default_capability_registry()
+    base_cap_id = registry.get_base_capability_id(domain)
+    caps = registry.build_capabilities_for_expert([base_cap_id], expert=domain)
+    assert len(caps) >= 1
+    cap = caps[0]
+    cap_instructions = cap.get_instructions()
+    assert len(cap_instructions) >= 1
+    assert len(cap_instructions[0].strip()) > 0
+    assert cap.tools is not None
+
+    expert_tools = registry.resolve_tools_for_expert(domain)
+    assert set(expected_tools).issubset(set(expert_tools.keys()))
 
 
 @pytest.mark.asyncio
@@ -195,3 +219,85 @@ async def test_baseline_empty_state_robustness(domain, agent, prompt_func, expec
 
     prompt = await prompt_func(ctx)
     assert "Aucun briefing particulier renseigné" in prompt or "Commune Inconnue" in prompt
+
+
+def test_baseline_deferred_loading_flag_and_capability_propagation(monkeypatch: pytest.MonkeyPatch):
+    """Verifies that the deferred loading flag defaults to False and propagates to Capability."""
+    from config import is_capability_deferred_loading_enabled
+
+    registry = get_default_capability_registry()
+
+    # Default should be False
+    monkeypatch.delenv("ODIS_CAPABILITY_DEFERRED_LOADING", raising=False)
+    assert is_capability_deferred_loading_enabled() is False
+
+    caps = registry.build_capabilities_for_expert(
+        ["housing_adequation_territoire"],
+        defer_loading=is_capability_deferred_loading_enabled(),
+        expert="housing_expert",
+    )
+    assert caps[0].defer_loading is False
+
+    # Enabled via flag
+    monkeypatch.setenv("ODIS_CAPABILITY_DEFERRED_LOADING", "true")
+    assert is_capability_deferred_loading_enabled() is True
+
+    caps_def = registry.build_capabilities_for_expert(
+        ["housing_adequation_territoire"],
+        defer_loading=is_capability_deferred_loading_enabled(),
+        expert="housing_expert",
+    )
+    assert caps_def[0].defer_loading is True
+
+
+@pytest.mark.asyncio
+async def test_triage_step_deferred_loading_flag(monkeypatch: pytest.MonkeyPatch):
+    """Verifies that triage_step passes is_capability_deferred_loading_enabled() to expert capabilities."""
+    from agents.graph import triage_step
+    from agents.ts_agent import SwarmPlan, ExpertTask
+
+    class MockStepContext:
+        def __init__(self, state: GraphState, deps: ODISDeps):
+            self.state = state
+            self.deps = deps
+
+    plan = SwarmPlan(
+        swarm_mode="specific_ask",
+        tasks=[
+            ExpertTask(
+                expert="housing_expert",
+                task_description="Analyse logement",
+                capabilities=["housing_adequation_territoire"],
+            )
+        ],
+    )
+
+    # 1. When flag is False
+    monkeypatch.setenv("ODIS_CAPABILITY_DEFERRED_LOADING", "false")
+    with patch("agents.graph.ts_agent.run", new_callable=AsyncMock) as mock_run:
+        mock_res = MagicMock()
+        mock_res.output = plan
+        mock_res.usage = MagicMock(return_value=MagicMock(input_tokens=1, output_tokens=1, total_tokens=2, requests=1))
+        mock_run.return_value = mock_res
+
+        state_false = GraphState()
+        deps_false = ODISDeps(state=state_false)
+        ctx_false = MockStepContext(state_false, deps_false)
+        await triage_step(ctx_false)  # type: ignore
+        assert state_false.expert_capabilities["housing_expert"][0].defer_loading is False
+
+    # 2. When flag is True
+    monkeypatch.setenv("ODIS_CAPABILITY_DEFERRED_LOADING", "true")
+    with patch("agents.graph.ts_agent.run", new_callable=AsyncMock) as mock_run:
+        mock_res = MagicMock()
+        mock_res.output = plan
+        mock_res.usage = MagicMock(return_value=MagicMock(input_tokens=1, output_tokens=1, total_tokens=2, requests=1))
+        mock_run.return_value = mock_res
+
+        state_true = GraphState()
+        deps_true = ODISDeps(state=state_true)
+        ctx_true = MockStepContext(state_true, deps_true)
+        await triage_step(ctx_true)  # type: ignore
+        assert state_true.expert_capabilities["housing_expert"][0].defer_loading is True
+
+

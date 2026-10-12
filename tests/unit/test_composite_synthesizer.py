@@ -38,7 +38,9 @@ def test_build_composite_synthesis_context():
     state = GraphState(
         odis_brief="Famille avec 2 enfants recherchant un logement et un accès rapide aux transports.",
         focus_city=marseille,
-        search_results=SearchResultsData(search_hash="h1", results=[marseille], current_geo=marseille),
+        search_results=SearchResultsData(
+            search_hash="h1", results=[marseille], current_geo=marseille
+        ),
     )
 
     ctx_str = build_composite_synthesis_context(state)
@@ -75,7 +77,9 @@ async def test_synthesizer_agent_offline_run():
     state = GraphState(
         odis_brief="Dossier relocalisation",
         focus_city=marseille,
-        search_results=SearchResultsData(search_hash="h1", results=[marseille], current_geo=marseille),
+        search_results=SearchResultsData(
+            search_hash="h1", results=[marseille], current_geo=marseille
+        ),
     )
     deps = ODISDeps(state=state, client=MagicMock())
 
@@ -96,7 +100,9 @@ async def test_synthesizer_agent_offline_run():
         return ModelResponse(parts=[TextPart(content=expected_synthesis)])
 
     with synthesizer_agent.override(model=FunctionModel(call_model)):
-        result = await synthesizer_agent.run("Synthèse demandée pour Marseille.", deps=deps)
+        result = await synthesizer_agent.run(
+            "Synthèse demandée pour Marseille.", deps=deps
+        )
         assert "Avis Global d'Orientation pour Marseille" in result.output
         assert "Analyse Comparative Territoriale" in result.output
         assert "Et ensuite ?" in result.output
@@ -144,31 +150,53 @@ async def test_graph_end_to_end_with_local_nodes_offline():
 
     state = GraphState(
         odis_brief="Dossier test",
-        search_criteria=SearchCriterias(commune_actuelle=CriteriaItem(code="33063", label="Bordeaux")),
-        search_results=SearchResultsData(search_hash="h1", results=[focus], current_geo=ref),
+        search_criteria=SearchCriterias(
+            commune_actuelle=CriteriaItem(code="33063", label="Bordeaux")
+        ),
+        search_results=SearchResultsData(
+            search_hash="h1", results=[focus], current_geo=ref
+        ),
         focus_city=focus,
-        messages=[{"role": "user", "content": "Fais une analyse complète pour Saint-Jean-d'Angély."}],
+        messages=[
+            {
+                "role": "user",
+                "content": "Fais une analyse complète pour Saint-Jean-d'Angély.",
+            }
+        ],
     )
     deps = ODISDeps(state=state, client=MagicMock())
 
     # Mock ts_agent planning to full_analysis with housing_expert
     def mock_ts_model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         from pydantic_ai import ToolCallPart
+
         tool_name = info.output_tools[0].name if info.output_tools else "final_result"
         args = {
             "swarm_mode": "full_analysis",
-            "tasks": [{"expert": "housing_expert", "task_description": "Logement", "skill_cards": []}],
+            "tasks": [
+                {
+                    "expert": "housing_expert",
+                    "task_description": "Logement",
+                    "capabilities": ["housing_adequation_territoire"],
+                }
+            ],
         }
         return ModelResponse(parts=[ToolCallPart(tool_name, args)])
 
-    def mock_expert_model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+    def mock_expert_model(
+        messages: list[ModelMessage], info: AgentInfo
+    ) -> ModelResponse:
         from pydantic_ai import ToolCallPart
+
         tool_name = info.output_tools[0].name if info.output_tools else "final_result"
         args = {"result": "Disponibilité confirmée."}
         return ModelResponse(parts=[ToolCallPart(tool_name, args)])
 
-    def mock_synth_model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+    def mock_synth_model(
+        messages: list[ModelMessage], info: AgentInfo
+    ) -> ModelResponse:
         from pydantic_ai import ToolCallPart
+
         tool_name = info.output_tools[0].name if info.output_tools else "final_result"
         args = {
             "avis_global": "Très favorable pour la famille.",
@@ -182,7 +210,10 @@ async def test_graph_end_to_end_with_local_nodes_offline():
     from agents.housing_expert import housing_expert_agent
 
     with (
-        patch("agents.ccas_worker.search_ccas", return_value=[{"nom": "CCAS Local", "codgeo": "17347"}]),
+        patch(
+            "agents.ccas_worker.search_ccas",
+            return_value=[{"nom": "CCAS Local", "codgeo": "17347"}],
+        ),
         patch("agents.graph.bq_logger.log_agent_state_to_bq", return_value=None),
         ts_agent.override(model=FunctionModel(mock_ts_model)),
         housing_expert_agent.override(model=FunctionModel(mock_expert_model)),
@@ -223,14 +254,24 @@ async def test_graph_end_to_end_with_local_nodes_offline():
         idx_ccas = output.index("🏛️ Contact du CCAS")
         idx_next_steps = output.index("## ❓ Et ensuite ? (Pistes d'action)")
 
-        assert idx_exec < idx_experts < idx_comp < idx_unverified < idx_ccas < idx_next_steps
+        assert (
+            idx_exec
+            < idx_experts
+            < idx_comp
+            < idx_unverified
+            < idx_ccas
+            < idx_next_steps
+        )
 
         # Verify that structured CityAnalysisReport is populated on the commune
         assert city.analysis_report is not None
         assert city.analysis_report.city_name == "Saint-Jean-d'Angély"
         assert city.analysis_report.city_code == "17347"
         assert "housing_expert" in city.analysis_report.domains
-        assert city.analysis_report.domains["housing_expert"].content == "Disponibilité confirmée."
+        assert (
+            city.analysis_report.domains["housing_expert"].content
+            == "Disponibilité confirmée."
+        )
         assert city.analysis_report.analyse_comparative is not None
         assert city.analysis_report.to_flat_markdown() == output
 
@@ -350,7 +391,9 @@ def test_render_initial_analysis_report_with_structured_report():
         patch("ui.ai_analysis_dialog.st.header") as mock_hdr,
         patch("ui.ai_analysis_dialog.st.tabs", return_value=[MagicMock()]) as mock_tabs,
         patch("ui.ai_analysis_dialog.st.divider"),
-        patch("ui.ai_analysis_dialog.st.columns", return_value=(MagicMock(), MagicMock())),
+        patch(
+            "ui.ai_analysis_dialog.st.columns", return_value=(MagicMock(), MagicMock())
+        ),
         patch("ui.ai_analysis_dialog._render_sources_popover") as mock_sources,
     ):
         _render_initial_analysis_report(commune, "")
@@ -379,7 +422,9 @@ def test_interactive_chat_enabled_logic():
     from core.models import Org
 
     chat_org = Org(id="chat_org", name="Chat Org", enable_interactive_chat=True)
-    no_chat_org = Org(id="no_chat_org", name="No Chat Org", enable_interactive_chat=False)
+    no_chat_org = Org(
+        id="no_chat_org", name="No Chat Org", enable_interactive_chat=False
+    )
 
     with patch.dict(os.environ, {"ODIS_AI_FREE_MODE": "False"}, clear=False):
         assert cfg.is_interactive_chat_enabled(chat_org) is True
@@ -408,12 +453,19 @@ def test_ia_analysis_content_chat_disabled_for_default_org():
 
     with (
         patch.dict(os.environ, {"ODIS_AI_FREE_MODE": "False"}, clear=False),
-        patch("ui.ai_analysis_dialog.st.session_state", {
-            "search_results": search_results,
-            "active_search_hash": "test_h",
-            "org": Org(id="no_chat_org", name="No Chat Org", enable_interactive_chat=False),
-        }),
-        patch("ui.ai_analysis_dialog._render_initial_analysis_report") as mock_render_report,
+        patch(
+            "ui.ai_analysis_dialog.st.session_state",
+            {
+                "search_results": search_results,
+                "active_search_hash": "test_h",
+                "org": Org(
+                    id="no_chat_org", name="No Chat Org", enable_interactive_chat=False
+                ),
+            },
+        ),
+        patch(
+            "ui.ai_analysis_dialog._render_initial_analysis_report"
+        ) as mock_render_report,
         patch("ui.ai_analysis_dialog.st.chat_input") as mock_chat_input,
     ):
         ia_analysis_content("Bordeaux", "33063", None)
@@ -447,12 +499,19 @@ def test_ia_analysis_content_chat_enabled_for_org():
 
     with (
         patch.dict(os.environ, {"ODIS_AI_FREE_MODE": "False"}, clear=False),
-        patch("ui.ai_analysis_dialog.st.session_state", {
-            "search_results": search_results,
-            "active_search_hash": "test_h",
-            "org": Org(id="chat_org", name="Chat Org", enable_interactive_chat=True),
-        }),
-        patch("ui.ai_analysis_dialog._render_initial_analysis_report") as mock_render_report,
+        patch(
+            "ui.ai_analysis_dialog.st.session_state",
+            {
+                "search_results": search_results,
+                "active_search_hash": "test_h",
+                "org": Org(
+                    id="chat_org", name="Chat Org", enable_interactive_chat=True
+                ),
+            },
+        ),
+        patch(
+            "ui.ai_analysis_dialog._render_initial_analysis_report"
+        ) as mock_render_report,
         patch("ui.ai_analysis_dialog.st.divider"),
         patch("ui.ai_analysis_dialog.st.subheader"),
         patch("ui.ai_analysis_dialog.st.chat_message") as mock_chat_msg,
@@ -490,8 +549,15 @@ def test_render_sources_popover_list_and_sublist_format():
         # Verify markdown calls
         assert mock_markdown.call_count >= 2
         content_call = mock_markdown.call_args_list[1][0][0]
-        assert "- [INSEE Logement](https://insee.fr/logement) — *donnée socle*" in content_call
-        assert "  - <small style='color: gray;'>Domaine : insee.fr</small>" in content_call
-        assert "  - <small style='color: gray;'>Mots clés : logement bordeaux</small>" in content_call
+        assert (
+            "- [INSEE Logement](https://insee.fr/logement) — *donnée socle*"
+            in content_call
+        )
+        assert (
+            "  - <small style='color: gray;'>Domaine : insee.fr</small>" in content_call
+        )
+        assert (
+            "  - <small style='color: gray;'>Mots clés : logement bordeaux</small>"
+            in content_call
+        )
         assert "  - <small style='color: gray;'>Données 2024</small>" in content_call
-

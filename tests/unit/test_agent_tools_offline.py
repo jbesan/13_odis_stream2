@@ -1,8 +1,10 @@
 import pytest
 from pydantic_ai import ModelMessage, ModelResponse, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from types import SimpleNamespace
 from unittest.mock import patch, MagicMock, AsyncMock
 
+from agents.graph import expert_worker_step
 from agents.education_expert import education_expert_agent, EducationResult
 from agents.healthcare_expert import healthcare_expert_agent, HealthcareResult
 from agents.housing_expert import housing_expert_agent, HousingResult
@@ -20,6 +22,7 @@ from agents.tools import (
     search_inclusion_jobs_batch_tool,
 )
 from agents.state import GraphState, ODISDeps
+from agents.capability_registry import get_default_capability_registry
 from core.models import CommuneResult
 
 
@@ -96,8 +99,15 @@ async def test_education_agent_tool_calling_offline(mock_deps):
         ) as mock_search:
             mock_search.return_value = [{"name": "Crèche 1"}, {"name": "École 1"}]
 
+            capabilities = (
+                get_default_capability_registry().build_capabilities_for_expert(
+                    ["education_adequation_territoire"]
+                )
+            )
             result = await education_expert_agent.run(
-                "Quelles sont les écoles à Saint-Jean-d'Angély ?", deps=mock_deps
+                "Quelles sont les écoles à Saint-Jean-d'Angély ?",
+                deps=mock_deps,
+                capabilities=capabilities,
             )
 
             mock_search.assert_called_once_with(
@@ -136,8 +146,15 @@ async def test_healthcare_agent_tool_calling_offline(mock_deps):
         ) as mock_search:
             mock_search.return_value = [{"name": "Hôpital 1"}, {"name": "PMI 1"}]
 
+            capabilities = (
+                get_default_capability_registry().build_capabilities_for_expert(
+                    ["healthcare_adequation_territoire"]
+                )
+            )
             result = await healthcare_expert_agent.run(
-                "Y a-t-il des hôpitaux ?", deps=mock_deps
+                "Y a-t-il des hôpitaux ?",
+                deps=mock_deps,
+                capabilities=capabilities,
             )
 
             mock_search.assert_called_once_with(
@@ -189,8 +206,15 @@ async def test_housing_agent_tool_calling_offline(mock_deps):
         ):
             mock_search.return_value = [{"name": "CADA 1"}]
 
+            capabilities = (
+                get_default_capability_registry().build_capabilities_for_expert(
+                    ["housing_adequation_territoire"]
+                )
+            )
             result = await housing_expert_agent.run(
-                "Quels sont les hébergements et le trajet vers Niort ?", deps=mock_deps
+                "Quels sont les hébergements et le trajet vers Niort ?",
+                deps=mock_deps,
+                capabilities=capabilities,
             )
 
             mock_search.assert_called_once_with(
@@ -234,8 +258,15 @@ async def test_mobility_agent_tool_calling_offline(mock_deps):
         with patch(
             "agents.tools.compute_routes", return_value={"duration": "1h30"}
         ) as mock_routes:
+            capabilities = (
+                get_default_capability_registry().build_capabilities_for_expert(
+                    ["mobility_adequation_territoire"]
+                )
+            )
             result = await mobility_expert_agent.run(
-                "Combien de temps pour aller à Bordeaux en train ?", deps=mock_deps
+                "Combien de temps pour aller à Bordeaux en train ?",
+                deps=mock_deps,
+                capabilities=capabilities,
             )
 
             mock_routes.assert_called_once_with(
@@ -273,8 +304,15 @@ async def test_job_hunter_agent_tool_calling_offline(mock_deps):
         ) as mock_jobs:
             mock_jobs.return_value = {"offres": [{"id": "123"}]}
 
+            capabilities = (
+                get_default_capability_registry().build_capabilities_for_expert(
+                    ["job_adequation_territoire"]
+                )
+            )
             result = await job_hunter_agent.run(
-                "Cherche des offres de mécanicien.", deps=mock_deps
+                "Cherche des offres de mécanicien.",
+                deps=mock_deps,
+                capabilities=capabilities,
             )
 
             mock_jobs.assert_called_once_with(
@@ -313,8 +351,15 @@ async def test_social_integration_agent_tool_calling_offline(mock_deps):
         ) as mock_rna:
             mock_rna.return_value = [{"name": "Club Foot"}]
 
+            capabilities = (
+                get_default_capability_registry().build_capabilities_for_expert(
+                    ["social_adequation_territoire"]
+                )
+            )
             result = await social_integration_expert_agent.run(
-                "Cherche des cours de français et du football.", deps=mock_deps
+                "Cherche des cours de français et du football.",
+                deps=mock_deps,
+                capabilities=capabilities,
             )
 
             mock_rna.assert_called_once_with(
@@ -341,7 +386,7 @@ def test_inclusion_and_rna_search_query_insee_validation():
 
     # Missing query - must fail validation
     with pytest.raises(pydantic.ValidationError):
-        InclusionJobSearchQuery(location="13018")
+        InclusionJobSearchQuery.model_validate({"location": "13018"})
 
     # Invalid department code (2 digits) - must fail validation
     with pytest.raises(pydantic.ValidationError):
@@ -383,3 +428,59 @@ async def test_search_inclusion_jobs_batch_tool_execution():
         assert results["A1203|13018|jardinier"]["total"] == 1
         assert results["|2A004|accueil"]["total"] == 1
         assert mock_logic.call_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "domain,expected_cap_id",
+    [
+        ("housing_expert", "housing_adequation_territoire"),
+        ("mobility_expert", "mobility_adequation_territoire"),
+        ("healthcare_expert", "healthcare_adequation_territoire"),
+        ("education_expert", "education_adequation_territoire"),
+        ("social_integration_expert", "social_adequation_territoire"),
+        ("job_hunter", "job_adequation_territoire"),
+    ],
+)
+async def test_expert_worker_standalone_fallback_all_six_experts(
+    mock_deps, domain, expected_cap_id
+):
+    """Verifies that standalone execution of expert_worker_step correctly resolves base capabilities for all 6 experts."""
+    state = GraphState(
+        run_id="run-standalone",
+        focus_city=CommuneResult(name="Saint-Jean-d'Angély", codgeo="17347"),
+    )
+    deps = ODISDeps(state=state, client=None)
+    ctx = SimpleNamespace(inputs=domain, state=state, deps=deps)
+
+    captured_kwargs = {}
+
+    class FakeAgent:
+        async def run(self, *args, **kwargs):
+            captured_kwargs.update(kwargs)
+            res = MagicMock()
+            res.output.result = "OK"
+            res.usage = MagicMock(
+                requests=1, request_tokens=10, response_tokens=5, total_tokens=15
+            )
+            res.all_messages = MagicMock(return_value=[])
+            return res
+
+    agent_var = f"{domain}_agent"
+
+    with (
+        patch(f"agents.graph.{agent_var}", FakeAgent()),
+        patch("agents.graph.get_model", return_value="google:gemini-3.1-flash-lite"),
+        patch("agents.graph.get_p_model", return_value=object()),
+        patch("agents.graph.get_model_settings", return_value={}),
+        patch("agents.graph.log_agent_trace"),
+    ):
+        artifact = await expert_worker_step(ctx)
+
+    assert artifact.result == "OK"
+    assert "capabilities" in captured_kwargs
+    caps = captured_kwargs["capabilities"]
+    assert caps is not None
+    assert len(caps) == 1
+    assert caps[0].id == expected_cap_id
+

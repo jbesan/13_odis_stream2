@@ -225,7 +225,7 @@ def get_swarm_boilerplate(
     """Returns the standardized swarm collaboration boilerplate context prompt."""
     if agent_type == "expert":
         return (
-            "**Contexte de collaboration (Swarm d'agents IA)** :\n"
+            "# Contexte de collaboration (Swarm d'agents IA) :\n"
             "- Tu es un expert thématique faisant partie d'un swarm d'agents IA. La demande provient de l'agent coordinateur.\n"
             "- L'utilisateur final est un **Travailleur Social humain** qui accompagne un bénéficiaire (généralement une personne réfugiée et sa famille) dans sa relocalisation.\n"
             "- Formule tes analyses à partir de tes recherches qualitatives en plus des données quantitatives du dossier joint.\n"
@@ -239,14 +239,14 @@ def get_swarm_boilerplate(
         )
     elif agent_type == "coordinator":
         return (
-            "**Contexte de collaboration (Swarm d'agents IA)** :\n"
+            "# Contexte de collaboration (Swarm d'agents IA) :\n"
             "- Tu es le coordinateur d'un swarm d'agents IA thématiques.\n"
             "- L'utilisateur final est un **Travailleur Social humain** qui accompagne un bénéficiaire (généralement une personne réfugiée et sa famille) dans sa relocalisation.\n"
             "- Planifie le travail ou réponds directement à partir du dossier JSON pour l'aider dans son accompagnement.\n"
         )
     elif agent_type == "synthesizer":
         return (
-            "**Contexte de collaboration (Swarm d'agents IA)** :\n"
+            "# Contexte de collaboration (Swarm d'agents IA) :\n"
             "- Tu es le synthétiseur final d'un swarm d'agents IA thématiques.\n"
             "- L'utilisateur final est un **Travailleur Social humain** qui accompagne un bénéficiaire (généralement une personne réfugiée et sa famille) dans sa relocalisation.\n"
             "- Synthétise les retours des experts pour éclairer la décision du travailleur social.\n"
@@ -254,7 +254,7 @@ def get_swarm_boilerplate(
         )
     elif agent_type == "job_curator":
         return (
-            "**Contexte de collaboration (CIP / Insertion)** :\n"
+            "# Contexte de collaboration (CIP / Insertion) :\n"
             "- Tu es un CIP (Conseiller en Insertion Professionnelle) expert en insertion professionnelle de réfugiés.\n"
             "- Sélectionne de manière factuelle et rigoureuse les 5 meilleures offres d'emploi pour aider le Travailleur Social humain.\n"
         )

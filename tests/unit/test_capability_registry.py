@@ -12,7 +12,7 @@ from agents.capability_registry import (
     CANONICAL_TOOL_NAMES,
     CANONICAL_TOOLS,
     DEFAULT_CAPABILITIES_DIR,
-    FALLBACK_CAPABILITIES_DIR,
+    EXPERT_DEFAULT_CAPABILITY,
     VALID_EXPERTS,
     CapabilityNotFoundError,
     CapabilityRegistry,
@@ -297,8 +297,6 @@ def test_default_capabilities_directories():
     """Validates that DEFAULT_CAPABILITIES_DIR points to app/agents/capabilities and is a directory."""
     assert DEFAULT_CAPABILITIES_DIR.is_dir()
     assert DEFAULT_CAPABILITIES_DIR.name == "capabilities"
-    assert FALLBACK_CAPABILITIES_DIR.is_dir()
-    assert FALLBACK_CAPABILITIES_DIR.name == "skills"
 
 
 def test_registry_loads_all_production_capabilities():
@@ -536,14 +534,6 @@ def test_registry_expert_tools_alignment_with_agents():
     for expert, cap_id in prefix_map.items():
         spec = registry.get(cap_id)
         assert set(spec.tools) == expected_tools_by_expert[expert]
-
-
-def test_registry_fallback_to_legacy_skills_directory():
-    """Verifies that pointing registry to FALLBACK_CAPABILITIES_DIR loads the legacy skills correctly."""
-    legacy_registry = CapabilityRegistry(capabilities_dir=FALLBACK_CAPABILITIES_DIR)
-    assert len(legacy_registry) == 8
-    assert "housing_full_analysis" in legacy_registry
-    assert "housing_adequation_territoire" not in legacy_registry
 
 
 # ==============================================================================
@@ -954,18 +944,32 @@ Instructions.
     assert spec.tags == ["logement"]
 
 
-def test_registry_auto_fallback_when_default_dir_missing(
+def test_registry_raises_when_default_dir_missing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
-    """Validates that when DEFAULT_CAPABILITIES_DIR does not exist, registry falls back to FALLBACK_CAPABILITIES_DIR."""
+    """Validates that when DEFAULT_CAPABILITIES_DIR does not exist, registry raises FileNotFoundError."""
     non_existent = tmp_path / "non_existent_capabilities"
     monkeypatch.setattr(
         "agents.capability_registry.DEFAULT_CAPABILITIES_DIR", non_existent
     )
-    registry = CapabilityRegistry(capabilities_dir=None)
-    assert registry.capabilities_dir == FALLBACK_CAPABILITIES_DIR
-    assert len(registry) == 8
-    assert "housing_full_analysis" in registry
+    with pytest.raises(FileNotFoundError):
+        CapabilityRegistry(capabilities_dir=None)
+
+
+def test_build_capabilities_defer_loading():
+    """Validates that build_capabilities_for_expert correctly sets defer_loading on Capability."""
+    registry = CapabilityRegistry()
+    caps_eager = registry.build_capabilities_for_expert(
+        ["housing_adequation_territoire"], defer_loading=False, expert="housing_expert"
+    )
+    assert len(caps_eager) == 1
+    assert caps_eager[0].defer_loading is False
+
+    caps_deferred = registry.build_capabilities_for_expert(
+        ["housing_adequation_territoire"], defer_loading=True, expert="housing_expert"
+    )
+    assert len(caps_deferred) == 1
+    assert caps_deferred[0].defer_loading is True
 
 
 def test_registry_live_agent_toolsets_subset_of_capabilities():
@@ -989,5 +993,77 @@ def test_registry_live_agent_toolsets_subset_of_capabilities():
         assert agent_static_tools.issubset(set(spec.tools)), (
             f"Agent static tools {agent_static_tools} not subset of {spec.id} tools {spec.tools}"
         )
+
+
+def test_registry_get_base_capability_id_all_experts():
+    """Validates that get_base_capability_id maps all 6 expert domains to existing adéquation capabilities."""
+    registry = get_default_capability_registry()
+    for expert in VALID_EXPERTS:
+        base_cap_id = registry.get_base_capability_id(expert)
+        assert EXPERT_DEFAULT_CAPABILITY[expert] == base_cap_id
+        assert base_cap_id in registry
+        spec = registry.get(base_cap_id)
+        assert expert in spec.experts
+        assert base_cap_id.endswith("_adequation_territoire")
+
+    assert registry.get_base_capability_id("job_hunter") == "job_adequation_territoire"
+    assert (
+        registry.get_base_capability_id("social_integration_expert")
+        == "social_adequation_territoire"
+    )
+
+    with pytest.raises(CapabilityValidationError):
+        registry.get_base_capability_id("unknown_expert")
+
+
+def test_registry_build_capabilities_expert_validation():
+    """Validates that build_capabilities_for_expert enforces expert authorization boundaries."""
+    registry = get_default_capability_registry()
+
+    # Valid expert assignment succeeds
+    caps = registry.build_capabilities_for_expert(
+        ["housing_adequation_territoire"], expert="housing_expert"
+    )
+    assert len(caps) == 1
+    assert caps[0].id == "housing_adequation_territoire"
+
+    # Cross-expert assignment must fail closed
+    with pytest.raises(CapabilityValidationError) as exc_info:
+        registry.build_capabilities_for_expert(
+            ["housing_adequation_territoire"], expert="job_hunter"
+        )
+    assert "not permitted for expert 'job_hunter'" in str(exc_info.value)
+
+    # Invalid expert name must fail closed
+    with pytest.raises(CapabilityValidationError):
+        registry.build_capabilities_for_expert(
+            ["housing_adequation_territoire"], expert="invalid_expert"
+        )
+
+
+def test_registry_build_capabilities_multi_capability_tool_deduplication():
+    """Validates that overlapping tools across multiple capabilities are registered only once."""
+    registry = get_default_capability_registry()
+
+    # job_adequation_territoire and job_extend_job_search share search_referentiels_batch_tool,
+    # search_job_offers_batch_tool, and search_inclusion_jobs_batch_tool
+    caps = registry.build_capabilities_for_expert(
+        ["job_adequation_territoire", "job_extend_job_search"],
+        expert="job_hunter",
+    )
+    assert len(caps) == 2
+
+    # First capability gets its declared tools
+    cap1_tools = [t.__name__ for t in caps[0].tools]
+    assert len(cap1_tools) == 5
+
+    # Second capability has duplicate tools omitted so no tool name collision occurs in PydanticAI
+    cap2_tools = [t.__name__ for t in caps[1].tools]
+    assert len(cap2_tools) == 0
+
+    # Total unique tools across capabilities equals union of declared tools
+    all_tools = cap1_tools + cap2_tools
+    assert len(all_tools) == len(set(all_tools))
+
 
 

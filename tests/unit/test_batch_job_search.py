@@ -1,12 +1,13 @@
 import pytest
 from pydantic_ai.models.test import TestModel
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 import sys
 import os
 
 # Ensure app is in path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "app")))
 
+from agents.capability_registry import get_default_capability_registry
 from agents.job_hunter import job_hunter_agent
 from agents.state import GraphState, ODISDeps
 from agents.tools import search_job_offers_batch, JobOfferSearchQuery
@@ -64,14 +65,15 @@ def test_search_job_offers_invalid_rome_regex():
 
 @pytest.mark.asyncio
 async def test_job_hunter_tool_registration(test_deps):
-    """Verify that JobHunter has the batch tool and NOT the unitary one."""
+    """Verify that JobHunter capability has the batch tool and NOT the unitary one."""
+    # In Phase 1 Étape 4, static tools are 0 on agent singletons; tools are provided via capabilities
+    assert list(job_hunter_agent._function_toolset.tools.keys()) == []
 
-    # Check tool names in the agent
-    # In PydanticAI, tools are accessible via _function_toolset (contains 'tools' dict)
-    tool_names = list(job_hunter_agent._function_toolset.tools.keys())
+    registry = get_default_capability_registry()
+    job_tools = registry.resolve_tools_for_expert("job_hunter")
 
-    assert "search_job_offers_batch_tool" in tool_names
-    assert "search_job_offers_tool" not in tool_names
+    assert "search_job_offers_batch_tool" in job_tools
+    assert "search_job_offers_tool" not in job_tools
 
 
 @pytest.mark.asyncio
@@ -80,9 +82,6 @@ async def test_job_hunter_execution_with_batch_mock(test_deps):
     mock_model = TestModel()
 
     with job_hunter_agent.override(model=mock_model):
-        # Patching async tools using AsyncMock
-        from unittest.mock import AsyncMock
-
         with (
             patch(
                 "agents.tools.search_referentiels_batch", new_callable=AsyncMock
@@ -106,8 +105,13 @@ async def test_job_hunter_execution_with_batch_mock(test_deps):
                 },
             }
 
+            caps = get_default_capability_registry().build_capabilities_for_expert(
+                ["job_adequation_territoire"]
+            )
             result = await job_hunter_agent.run(
-                "Cherche des jobs de boulanger et pâtissier à Paris", deps=test_deps
+                "Cherche des jobs de boulanger et pâtissier à Paris",
+                deps=test_deps,
+                capabilities=caps,
             )
             assert result.output is not None
             # The agent might not produce content if the mock model doesn't return anything,

@@ -420,7 +420,8 @@ def map_ui_config_to_search_criterias(
         sante=config.besoin_sante,
         weight_profile=config.weight_profile,
         criteria_weights=config.criteria_weights,
-        notes_qualitatives=[],
+        notes_qualitatives=list(getattr(config, "notes_qualitatives", []) or []),
+        odis_brief=str(getattr(config, "odis_brief", "") or ""),
         # Org Specifics
         org_context=getattr(config, "org_context", None),
         org_strategic_locations=getattr(config, "org_strategic_locations", []),
@@ -512,6 +513,11 @@ def launch_background_city_analysis(
         "focus_city": {"name": nom, "codgeo": codgeo},
         "search_results": run_search_results,
         "criteria_hash": h,
+        "odis_brief": str(
+            getattr(search_criterias, "odis_brief", "")
+            or (store.get(h, {}).get("odis_brief", "") if isinstance(store.get(h), dict) else "")
+            or ""
+        ),
         "messages": _copy_run_input(messages)
         if messages
         else [
@@ -722,7 +728,12 @@ def rehydrate_graph_state(input_data: dict) -> "GraphState":
         search_results=sr,
         focus_city=fc,
         execution_mode=input_data.get("execution_mode", "full_analysis"),
-        odis_brief=getattr(sc, "odis_brief", ""),
+        odis_brief=str(
+            input_data.get("odis_brief")
+            or getattr(sc, "odis_brief", "")
+            or (get_odis_bg_store().get(str(input_data.get("criteria_hash", "")), {}).get("odis_brief", "") if isinstance(get_odis_bg_store().get(str(input_data.get("criteria_hash", ""))), dict) else "")
+            or ""
+        ),
         messages=input_data.get("messages", []),
         interaction_id=input_data.get("interaction_id", "unknown"),
         username=input_data.get("username", "unknown"),

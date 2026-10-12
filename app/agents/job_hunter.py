@@ -3,13 +3,6 @@ from pydantic_ai import Agent, RunContext
 from pydantic import BaseModel, Field
 from .state import ODISDeps, ODISContextBuilder
 from .agent_config import create_agent, get_swarm_boilerplate
-from .tools import (
-    search_job_offers_batch_tool,
-    get_job_details_tool,
-    search_inclusion_jobs_batch_tool,
-    get_inclusion_job_details_tool,
-    search_referentiels_batch_tool,
-)
 
 logger = logging.getLogger("job_hunter_agent_v2")
 
@@ -49,35 +42,26 @@ JOB_HUNTER_SYSTEM_PROMPT = """
 {COMMUNE_CONTEXT}
 ```
 
+# Ta mission
+**Rôle** : Agent thématique Emploi (Job Hunter) / Expert du marché de l'emploi.
+**Règle** : Reste STRICTEMENT sur l'Emploi (offres France Travail/SIAE, adéquation métier, détails d'offres). Ne traite aucun autre sujet (logement, transport, santé, école, association/intégration générale), d'autres experts s'en chargent.
+
+**DIRECTIVES DE TRAVAIL** :
+1. **Priorisation et Outils** :
+   - Pour la recherche d'offres France Travail : vérifie TOUJOURS si des offres correspondantes pré-chargées sont disponibles sous `Données emploi et formation`. Si oui, utilise-les directement avant d'effectuer une nouvelle recherche.
+   - Utilise les outils mis à disposition par les capabilities actives pour approfondir (détail d'offres, structures d'insertion, référentiels).
+
 # Contexte spécifique à l'emploi :
 ```json
 {SPECIFIC_CONTEXT}
 ```
-
-**Rôle** : Agent thématique Emploi (Job Hunter) / Expert du marché de l'emploi.
-**Règle** : Reste STRICTEMENT sur l'Emploi (offres France Travail/SIAE, adéquation métier, détails d'offres). Ne traite aucun autre sujet (logement, transport, santé, école, association/intégration générale), d'autres experts s'en chargent.
-
-# Consignes additionnelles issues des Skill Cards actives :
-{SKILL_INSTRUCTIONS}
-
-**DIRECTIVES DE TRAVAIL** :
-1. **Priorisation et Outils** :
-   - Pour la recherche d'offres France Travail : vérifie TOUJOURS si des offres correspondantes pré-chargées sont disponibles sous `Données emploi et formation`. Si oui, **n'appelle pas** `search_job_offers_batch_tool`, utilise-les directement.
-   - Pour obtenir le détail d'une offre : appelle immédiatement `get_job_details_tool` pour cet ID.
-   - Pour les métiers en insertion : utilise `search_inclusion_jobs_batch_tool` si demandé.
 """
 
 
 job_hunter_agent: Agent[ODISDeps, JobHunterResult] = create_agent(
     "job_hunter",
     deps_type=ODISDeps,
-    tools=[
-        search_job_offers_batch_tool,
-        get_job_details_tool,
-        search_inclusion_jobs_batch_tool,
-        get_inclusion_job_details_tool,
-        search_referentiels_batch_tool,
-    ],
+    tools=[],
     output_type=JobHunterResult,
 )
 
@@ -89,9 +73,6 @@ async def job_hunter_instructions(ctx: RunContext[ODISDeps]) -> str:
     contexts = ODISContextBuilder.expert_prompt_contexts(
         state, "job_hunter"
     )
-    skill_inst = state.expert_skill_instructions.get(
-        "job_hunter", "Aucune consigne spécifique de Skill Card active."
-    )
     boilerplate = get_swarm_boilerplate("expert")
 
     return JOB_HUNTER_SYSTEM_PROMPT.format(
@@ -100,5 +81,4 @@ async def job_hunter_instructions(ctx: RunContext[ODISDeps]) -> str:
         CRITERIA_CONTEXT=contexts.criteria,
         COMMUNE_CONTEXT=contexts.commune,
         SPECIFIC_CONTEXT=contexts.specific,
-        SKILL_INSTRUCTIONS=skill_inst,
     )
