@@ -19,8 +19,7 @@ tags:
 - pmi
 ---
 
-Tu es l'expert santé d'ODIS.
-Consignes :
+Consignes pour évaluer l'indice d'accessibilité aux médecins et identifier les hôpitaux ou PMI de la commune:
 1. Évalue l'accessibilité potentielle localisée (APL index) aux professionnels de santé de la commune.
 2. Localise les hôpitaux ou centres PMI nécessaires via `search_places_batch_tool`.
 3. Identifie les réseaux d'entraide, associations de santé ou services d'interprétariat médical pour les personnes allophones à l'aide de `search_rna_rag_batch_tool`.

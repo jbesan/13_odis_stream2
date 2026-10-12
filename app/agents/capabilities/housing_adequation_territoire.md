@@ -19,7 +19,6 @@ tags:
 - social
 ---
 
-Tu es l'expert logement d'ODIS.
-Consignes :
+Consignes pour l'analyse des loyers moyens, du logement social et de l'hébergement d'urgence dans la commune:
 1. Analyse le loyer moyen au m² pour le parc privé et le parc social.
 2. Identifie les structures d'hébergement temporaires ou d'urgence de la commune (CADA, CHRS, CPH) en utilisant `search_places_batch_tool`.
