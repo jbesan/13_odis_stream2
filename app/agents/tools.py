@@ -37,10 +37,14 @@ class RnaSearchQuery(BaseModel):
         max_length=5,
         description="Termes statutaires ou mots-clés concrets indispensables (2 à 4 mots, max 5 requêtes). Ne JAMAIS inclure le nom de la commune.",
     )
-    codgeo: str = Field(
+    city_code_insee: str = Field(
         pattern=r"^(?:\d{2}|2[ABab])\d{3}$",
         examples=["33063"],
-        description="Code INSEE officiel de la commune.",
+        description=(
+            "Code INSEE officiel de la commune (5 caractères, ex: '33063', '2A004'). "
+            "Prendre STRICTEMENT la valeur du champ 'Code INSEE' présent dans la section 'Commune à analyser'. "
+            "Ne JAMAIS mettre de code postal ni de département seul."
+        ),
     )
     top_k: int = Field(
         default=10,
@@ -81,9 +85,13 @@ class RouteCalculationQuery(BaseModel):
 class JobOfferSearchQuery(BaseModel):
     """Recherche d'offres d'emploi sur France Travail en mode batch."""
 
-    location: Optional[str] = Field(
+    city_code_insee: Optional[str] = Field(
         None,
-        description="Code INSEE de la commune (5 chiffres) ou nom de commune.",
+        description=(
+            "Code INSEE officiel de la commune (5 caractères, ex: '75056', '13018'). "
+            "Prendre STRICTEMENT la valeur du champ 'Code INSEE' présent dans la section 'Commune à analyser'. "
+            "Ne JAMAIS mettre de code postal (ex: 69400 est interdit) ni de département seul."
+        ),
     )
     rome: Optional[str] = Field(
         None,
@@ -105,13 +113,13 @@ class JobOfferSearchQuery(BaseModel):
 class InclusionJobSearchQuery(BaseModel):
     """Recherche d'offres d'insertion (SIAE) sur Les emplois de l'inclusion."""
 
-    location: str = Field(
+    city_code_insee: str = Field(
         pattern=r"^(?:\d{2}|2[ABab])\d{3}$",
-        examples=["13018"],
+        examples=["13018", "69264"],
         description=(
-            "Code INSEE officiel de la commune (5 caractères, ex: '13018', '2A004'). "
-            "Prendre STRICTEMENT le 'Code INSEE' présent dans la section 'Commune à analyser'. "
-            "Ne JAMAIS mettre de code postal (ex: 13440 est interdit) ni de département seul."
+            "Code INSEE officiel de la commune (5 caractères, ex: '13018', '69264', '2A004'). "
+            "Prendre STRICTEMENT la valeur du champ 'Code INSEE' présent dans la section 'Commune à analyser'. "
+            "Ne JAMAIS mettre de code postal (ex: 13440 ou 69400 sont interdits) ni de département seul."
         ),
     )
     rome: Optional[str] = Field(
@@ -270,10 +278,10 @@ async def search_job_offers_batch(
     """Effectue plusieurs recherches d'offres d'emploi en parallèle sur France Travail.
 
     Args:
-        searches: Liste d'objets JobOfferSearchQuery {location, rome, query, distance}
+        searches: Liste d'objets JobOfferSearchQuery {city_code_insee, rome, query, distance}
 
     Returns:
-        Dictionnaire mappant une clé unique ("rome|location|query") aux résultats.
+        Dictionnaire mappant une clé unique ("rome|city_code_insee|query") aux résultats.
     """
     logger.info(
         f"🚀 [TOOL] search_job_offers_batch parallel start: {len(searches)} queries"
@@ -281,7 +289,7 @@ async def search_job_offers_batch(
 
     async def _single_job_search(s: JobOfferSearchQuery):
         rome = s.rome
-        loc = s.location
+        loc = s.city_code_insee
         q_text = s.query
         distance = s.distance
         key = f"{rome or ''}|{loc or ''}|{q_text or ''}"
@@ -403,7 +411,9 @@ async def search_rna_rag_batch(
 
 async def search_rna_rag_batch_tool(params: RnaSearchQuery) -> List[Dict[str, Any]]:
     """Recherche BM25 sur le Répertoire National des Associations (RNA) officiel sur l'ensemble du bassin de vie de la commune."""
-    return await search_rna_rag_batch(params.queries, params.codgeo, top_k=params.top_k)
+    return await search_rna_rag_batch(
+        params.queries, params.city_code_insee, top_k=params.top_k
+    )
 
 
 # ==============================================================================
@@ -427,17 +437,17 @@ async def search_inclusion_jobs_batch(
     """Recherche d'offres SIAE (Insertion par l'Activité Économique) sur la plateforme officielle Emplois Inclusion.
 
     Args:
-        searches: Liste d'objets InclusionJobSearchQuery {location, rome, query}
+        searches: Liste d'objets InclusionJobSearchQuery {city_code_insee, rome, query}
 
     Returns:
-        Dictionnaire mappant une clé unique ("rome|location|query") aux résultats.
+        Dictionnaire mappant une clé unique ("rome|city_code_insee|query") aux résultats.
     """
     logger.info(
         f"🚀 [TOOL] search_inclusion_jobs_batch parallel start: {len(searches)} queries"
     )
 
     async def _single_inclusion_search(s: InclusionJobSearchQuery):
-        loc = s.location
+        loc = s.city_code_insee
         rome = s.rome
         query_text = s.query
         key = f"{rome or ''}|{loc or ''}|{query_text or ''}"

@@ -36,8 +36,8 @@ async def test_search_job_offers_batch_logic():
         mock_logic.return_value = {"offres": [], "total": 10}
 
         queries = [
-            JobOfferSearchQuery(rome="D1102", location="75056"),
-            JobOfferSearchQuery(rome="D1104", location="75056"),
+            JobOfferSearchQuery(rome="D1102", city_code_insee="75056"),
+            JobOfferSearchQuery(rome="D1104", city_code_insee="75056"),
         ]
 
         results = await search_job_offers_batch(queries)

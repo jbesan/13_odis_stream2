@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 from app.services.rna_rag import (
     BM25Ranker,
     RNARagService,
+    configure_bigquery_pool,
     normalize_tokens,
     strip_accents,
 )
@@ -207,3 +208,46 @@ def test_get_associations_by_codgeo(mock_clients):
     assert len(results) == 1
     assert results[0]["name"] == "Secours Populaire"
     assert bq.query.called
+
+
+def test_configure_bigquery_pool_mounts_adapters():
+    """Verifies configure_bigquery_pool configures HTTPAdapter on both _http and _auth_request.session."""
+    mock_client = MagicMock()
+    mock_http = MagicMock()
+    mock_auth_req = MagicMock()
+    mock_auth_session = MagicMock()
+
+    mock_client._http = mock_http
+    mock_http._auth_request = mock_auth_req
+    mock_auth_req.session = mock_auth_session
+
+    configure_bigquery_pool(mock_client, pool_size=50)
+
+    # Check that mount was called for both https:// and http:// on _http
+    assert mock_http.mount.call_count == 2
+    # Check that mount was called for both https:// and http:// on auth session
+    assert mock_auth_session.mount.call_count == 2
+
+
+def test_configure_bigquery_pool_real_session():
+    """Verifies that configure_bigquery_pool sets pool_maxsize=50 on real requests.Session objects."""
+    import requests
+
+    class FakeClient:
+        def __init__(self):
+            self._http = requests.Session()
+            auth_req = MagicMock()
+            auth_req.session = requests.Session()
+            self._http._auth_request = auth_req
+
+    fake_client = FakeClient()
+    configure_bigquery_pool(fake_client, pool_size=50)
+
+    assert fake_client._http.adapters["https://"]._pool_maxsize == 50
+    assert fake_client._http.adapters["http://"]._pool_maxsize == 50
+    assert (
+        fake_client._http._auth_request.session.adapters["https://"]._pool_maxsize == 50
+    )
+    assert (
+        fake_client._http._auth_request.session.adapters["http://"]._pool_maxsize == 50
+    )

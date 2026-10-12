@@ -285,7 +285,7 @@ async def test_job_hunter_agent_tool_calling_offline(mock_deps):
 
     def call_model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         if len(messages) == 1:
-            args = {"searches": [{"location": "17347", "rome": "I1604"}]}
+            args = {"searches": [{"city_code_insee": "17347", "rome": "I1604"}]}
             return ModelResponse(
                 parts=[ToolCallPart("search_job_offers_batch_tool", args)]
             )
@@ -316,7 +316,7 @@ async def test_job_hunter_agent_tool_calling_offline(mock_deps):
             )
 
             mock_jobs.assert_called_once_with(
-                [JobOfferSearchQuery(location="17347", rome="I1604")]
+                [JobOfferSearchQuery(city_code_insee="17347", rome="I1604")]
             )
             assert isinstance(result.output, JobHunterResult)
             assert result.output.result == "Analyse: 3 offres trouvées."
@@ -331,7 +331,10 @@ async def test_social_integration_agent_tool_calling_offline(mock_deps):
 
     def call_model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         if len(messages) == 1:
-            args = {"queries": ["cours de français", "football"], "codgeo": "17347"}
+            args = {
+                "queries": ["cours de français", "football"],
+                "city_code_insee": "17347",
+            }
             return ModelResponse(
                 parts=[ToolCallPart("search_rna_rag_batch_tool", args)]
             )
@@ -374,38 +377,38 @@ def test_inclusion_and_rna_search_query_insee_validation():
     import pydantic
 
     # Valid metropolitan INSEE (5 digits) with required query
-    q1 = InclusionJobSearchQuery(location="13018", query="maraichage")
-    assert q1.location == "13018"
+    q1 = InclusionJobSearchQuery(city_code_insee="13018", query="maraichage")
+    assert q1.city_code_insee == "13018"
     assert q1.query == "maraichage"
 
     # Valid Corsican INSEE (2A/2B + 3 digits) with required query
-    q2 = InclusionJobSearchQuery(location="2A004", query="espaces verts")
-    assert q2.location == "2A004"
-    q3 = InclusionJobSearchQuery(location="2B033", query="accueil")
-    assert q3.location == "2B033"
+    q2 = InclusionJobSearchQuery(city_code_insee="2A004", query="espaces verts")
+    assert q2.city_code_insee == "2A004"
+    q3 = InclusionJobSearchQuery(city_code_insee="2B033", query="accueil")
+    assert q3.city_code_insee == "2B033"
 
     # Missing query - must fail validation
     with pytest.raises(pydantic.ValidationError):
-        InclusionJobSearchQuery.model_validate({"location": "13018"})
+        InclusionJobSearchQuery.model_validate({"city_code_insee": "13018"})
 
     # Invalid department code (2 digits) - must fail validation
     with pytest.raises(pydantic.ValidationError):
-        InclusionJobSearchQuery(location="13", query="accueil")
+        InclusionJobSearchQuery(city_code_insee="13", query="accueil")
 
     # Invalid free-text / postal code with non-digits
     with pytest.raises(pydantic.ValidationError):
-        InclusionJobSearchQuery(location="Marseille", query="accueil")
+        InclusionJobSearchQuery(city_code_insee="Marseille", query="accueil")
 
     # RNA validation: metropolitan and Corsican
-    rna_metro = RnaSearchQuery(queries=["entraide"], codgeo="33063")
-    assert rna_metro.codgeo == "33063"
+    rna_metro = RnaSearchQuery(queries=["entraide"], city_code_insee="33063")
+    assert rna_metro.city_code_insee == "33063"
 
-    rna_corsica = RnaSearchQuery(queries=["entraide"], codgeo="2A004")
-    assert rna_corsica.codgeo == "2A004"
+    rna_corsica = RnaSearchQuery(queries=["entraide"], city_code_insee="2A004")
+    assert rna_corsica.city_code_insee == "2A004"
 
     # RNA invalid department code
     with pytest.raises(pydantic.ValidationError):
-        RnaSearchQuery(queries=["entraide"], codgeo="33")
+        RnaSearchQuery(queries=["entraide"], city_code_insee="33")
 
 
 @pytest.mark.asyncio
@@ -418,8 +421,10 @@ async def test_search_inclusion_jobs_batch_tool_execution():
         }
 
         queries = [
-            InclusionJobSearchQuery(location="13018", rome="A1203", query="jardinier"),
-            InclusionJobSearchQuery(location="2A004", query="accueil"),
+            InclusionJobSearchQuery(
+                city_code_insee="13018", rome="A1203", query="jardinier"
+            ),
+            InclusionJobSearchQuery(city_code_insee="2A004", query="accueil"),
         ]
         results = await search_inclusion_jobs_batch_tool(queries)
 

@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 from google.cloud import bigquery
+from requests.adapters import HTTPAdapter
 
 from agents.agent_config import get_gemini_client
 
@@ -205,6 +206,32 @@ class BM25Ranker:
         return scored[:top_k]
 
 
+def configure_bigquery_pool(client: bigquery.Client, pool_size: int = 50) -> None:
+    """Configures HTTP connection pool maxsize on a BigQuery client and its auth session.
+
+    By default, requests.adapters.HTTPAdapter uses pool_maxsize=10. When concurrent queries
+    run in parallel (e.g. parallel swarm expert executions calling search_rna_rag_batch),
+    the number of concurrent requests to bigquery.googleapis.com and oauth2.googleapis.com
+    exceeds 10, causing urllib3 to discard pooled connections and emit warnings.
+
+    Args:
+        client: The BigQuery client instance to configure.
+        pool_size: The connection pool size (default 50).
+    """
+    http_session = getattr(client, "_http", None)
+    if http_session is not None and hasattr(http_session, "mount"):
+        adapter = HTTPAdapter(pool_connections=pool_size, pool_maxsize=pool_size)
+        http_session.mount("https://", adapter)
+        http_session.mount("http://", adapter)
+
+        auth_req = getattr(http_session, "_auth_request", None)
+        if auth_req is not None:
+            auth_session = getattr(auth_req, "session", None)
+            if auth_session is not None and hasattr(auth_session, "mount"):
+                auth_session.mount("https://", adapter)
+                auth_session.mount("http://", adapter)
+
+
 class RNARagService:
     """Service for RNA RAG associative search.
 
@@ -224,6 +251,7 @@ class RNARagService:
                 )
 
             self.bq_client = bigquery.Client(project=self.data_project)
+            configure_bigquery_pool(self.bq_client, pool_size=50)
             self.bm25_ranker = BM25Ranker()
 
             # Optional GenAI client for backwards compatibility
