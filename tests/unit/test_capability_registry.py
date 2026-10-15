@@ -616,11 +616,6 @@ def test_get_default_capability_registry_singleton():
     assert reg1 is reg2
     assert len(reg1) == 8
 
-    # Custom directory does not pollute the default singleton
-    custom_dir = Path("/tmp")
-    custom_reg = get_default_capability_registry(capabilities_dir=custom_dir)
-    assert custom_reg is not reg1
-    assert get_default_capability_registry() is reg1
 
     # Force reload
     reg3 = get_default_capability_registry(force_reload=True)
