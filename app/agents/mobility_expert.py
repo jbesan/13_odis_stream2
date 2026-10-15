@@ -3,10 +3,6 @@ from pydantic_ai import Agent, RunContext
 from pydantic import BaseModel, Field
 from .state import ODISDeps, ODISContextBuilder
 from .agent_config import create_agent, get_swarm_boilerplate
-from .tools import (
-    search_places_batch_tool,
-    compute_routes_tool,
-)
 
 logger = logging.getLogger("mobility_expert")
 
@@ -46,24 +42,21 @@ MOBILITY_EXPERT_SYSTEM_PROMPT = """
 {COMMUNE_CONTEXT}
 ```
 
+# Ta mission
+**Rôle** : Agent thématique Mobilité (Mobility Expert).
+**Règle** : Reste STRICTEMENT sur la Mobilité (transports, temps de trajet, aides au permis, tarifs transports). Ne traite aucun autre sujet (logement, santé, école, association/intégration, emploi), d'autres experts s'en chargent.
+
 # Contexte spécifique à la mobilité :
 ```json
 {SPECIFIC_CONTEXT}
 ```
-
-**Rôle** : Agent thématique Mobilité (Mobility Expert).
-**Règle** : Reste STRICTEMENT sur la Mobilité (transports, temps de trajet, aides au permis, tarifs transports). Ne traite aucun autre sujet (logement, santé, école, association/intégration, emploi), d'autres experts s'en chargent.
-
-# Consignes additionnelles issues des Skill Cards actives :
-{SKILL_INSTRUCTIONS}
-
 """
 
 
 mobility_expert_agent: Agent[ODISDeps, MobilityResult] = create_agent(
     "mobility_expert",
     deps_type=ODISDeps,
-    tools=[search_places_batch_tool, compute_routes_tool],
+    tools=[],
     output_type=MobilityResult,
 )
 
@@ -74,9 +67,6 @@ async def mobility_expert_instructions(ctx: RunContext[ODISDeps]) -> str:
     contexts = ODISContextBuilder.expert_prompt_contexts(
         state, "mobility_expert"
     )
-    skill_inst = state.expert_skill_instructions.get(
-        "mobility_expert", "Aucune consigne spécifique de Skill Card active."
-    )
     boilerplate = get_swarm_boilerplate("expert")
 
     return MOBILITY_EXPERT_SYSTEM_PROMPT.format(
@@ -85,5 +75,4 @@ async def mobility_expert_instructions(ctx: RunContext[ODISDeps]) -> str:
         CRITERIA_CONTEXT=contexts.criteria,
         COMMUNE_CONTEXT=contexts.commune,
         SPECIFIC_CONTEXT=contexts.specific,
-        SKILL_INSTRUCTIONS=skill_inst,
     )

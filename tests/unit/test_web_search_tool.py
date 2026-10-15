@@ -5,8 +5,8 @@ from unittest.mock import patch
 
 import pytest
 
+from agents.capability_registry import get_default_capability_registry
 from agents.grounding import extract_web_grounding
-from agents.graph import _dynamic_toolsets_for_expert
 from agents.state import GraphState, ODISDeps
 from agents.web_search import (
     DEFAULT_WEB_SEARCH_TIMEOUT_SECONDS,
@@ -292,21 +292,22 @@ def test_web_batch_without_provider_metadata_is_not_presented_as_consulted():
     assert web[0]["search_terms"] == ["tarification solidaire TCL"]
 
 
-def test_web_tool_is_injected_only_when_skill_card_allows_it():
-    allowed = _dynamic_toolsets_for_expert(
-        GraphState(
-            expert_skill_tools={"social_integration_expert": [WEB_SEARCH_TOOL_ID]}
-        ),
-        "social_integration_expert",
+def test_web_tool_is_injected_only_when_capability_allows_it():
+    registry = get_default_capability_registry()
+    social_caps = registry.build_capabilities_for_expert(
+        ["social_adequation_territoire"], expert="social_integration_expert"
     )
-    denied = _dynamic_toolsets_for_expert(
-        GraphState(expert_skill_tools={"social_integration_expert": []}),
-        "social_integration_expert",
+    education_caps = registry.build_capabilities_for_expert(
+        ["education_adequation_territoire"], expert="education_expert"
     )
 
-    assert allowed is not None
-    assert list(allowed[0].tools) == [WEB_SEARCH_TOOL_ID]
-    assert denied is None
+    social_tool_names = [getattr(t, "__name__", str(t)) for c in social_caps for t in c.tools]
+    education_tool_names = [
+        getattr(t, "__name__", str(t)) for c in education_caps for t in c.tools
+    ]
+
+    assert WEB_SEARCH_TOOL_ID in social_tool_names
+    assert WEB_SEARCH_TOOL_ID not in education_tool_names
 
 
 @pytest.mark.asyncio
@@ -315,7 +316,9 @@ async def test_expert_worker_passes_dynamic_web_tool_and_deduplicates_usage():
         messages=[{"role": "user", "content": "Analyse l'intégration."}],
         run_id="run-1",
         expert_tasks={"social_integration_expert": "Cherche les aides locales."},
-        expert_skill_tools={"social_integration_expert": [WEB_SEARCH_TOOL_ID]},
+        expert_capabilities={
+            "social_integration_expert": ["social_adequation_territoire"]
+        },
     )
     deps = ODISDeps(state=state, client=object())
     calls = {}
@@ -349,7 +352,7 @@ async def test_expert_worker_passes_dynamic_web_tool_and_deduplicates_usage():
 
     class FakeAgent:
         async def run(self, *args, **kwargs):
-            calls["toolsets"] = kwargs["toolsets"]
+            calls["capabilities"] = kwargs.get("capabilities")
             scope = f"run-1:social_integration_expert:{id(context)}"
             # Use a real UsageStats so the graph merge exercises the same
             # accounting path as the direct wrapper.
@@ -382,8 +385,11 @@ async def test_expert_worker_passes_dynamic_web_tool_and_deduplicates_usage():
 
         artifact = await expert_worker_step(context)
 
-    assert calls["toolsets"] is not None
-    assert WEB_SEARCH_TOOL_ID in calls["toolsets"][0].tools
+    assert calls["capabilities"] is not None
+    cap_tool_names = [
+        getattr(t, "__name__", str(t)) for c in calls["capabilities"] for t in c.tools
+    ]
+    assert WEB_SEARCH_TOOL_ID in cap_tool_names
     assert artifact.usage.requests == 2
     assert artifact.usage.grounding_queries == 1
     assert (

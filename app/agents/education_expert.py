@@ -3,7 +3,6 @@ from pydantic_ai import Agent, RunContext
 from pydantic import BaseModel, Field
 from .state import ODISDeps, ODISContextBuilder
 from .agent_config import create_agent, get_swarm_boilerplate
-from .tools import search_places_batch_tool
 
 logger = logging.getLogger("education_expert")
 
@@ -43,24 +42,21 @@ EDUCATION_EXPERT_SYSTEM_PROMPT = """
 {COMMUNE_CONTEXT}
 ```
 
+# Ta mission
+**Rôle** : Agent thématique Éducation (Education Expert).
+**Règle** : Reste STRICTEMENT sur l'Éducation (crèches, écoles, collèges, lycées, modalités scolaires). Ne traite aucun autre sujet (logement, transport, santé, association/intégration, emploi), d'autres experts s'en chargent.
+
 # Contexte spécifique à l'éducation :
 ```json
 {SPECIFIC_CONTEXT}
 ```
-
-**Rôle** : Agent thématique Éducation (Education Expert).
-**Règle** : Reste STRICTEMENT sur l'Éducation (crèches, écoles, collèges, lycées, modalités scolaires). Ne traite aucun autre sujet (logement, transport, santé, association/intégration, emploi), d'autres experts s'en chargent.
-
-# Consignes additionnelles issues des Skill Cards actives :
-{SKILL_INSTRUCTIONS}
-
 """
 
 
 education_expert_agent: Agent[ODISDeps, EducationResult] = create_agent(
     "education_expert",
     deps_type=ODISDeps,
-    tools=[search_places_batch_tool],
+    tools=[],
     output_type=EducationResult,
 )
 
@@ -71,9 +67,6 @@ async def education_expert_instructions(ctx: RunContext[ODISDeps]) -> str:
     contexts = ODISContextBuilder.expert_prompt_contexts(
         state, "education_expert"
     )
-    skill_inst = state.expert_skill_instructions.get(
-        "education_expert", "Aucune consigne spécifique de Skill Card active."
-    )
     boilerplate = get_swarm_boilerplate("expert")
 
     return EDUCATION_EXPERT_SYSTEM_PROMPT.format(
@@ -82,6 +75,5 @@ async def education_expert_instructions(ctx: RunContext[ODISDeps]) -> str:
         CRITERIA_CONTEXT=contexts.criteria,
         COMMUNE_CONTEXT=contexts.commune,
         SPECIFIC_CONTEXT=contexts.specific,
-        SKILL_INSTRUCTIONS=skill_inst,
     )
 

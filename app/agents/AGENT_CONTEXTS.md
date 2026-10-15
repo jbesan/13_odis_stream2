@@ -1,5 +1,8 @@
 # Synthesis of Agent Contexts & Visibility Matrix (ACL)
 
+> [!WARNING]
+> **OBSOLÈTE / ARCHIVÉ (2026-10-12)** : Ce document décrit l'ancien mécanisme de tags `odis_visibility` qui a été déprécié et retiré. L'architecture active repose désormais sur la spécification par Capabilities de Phase 1 (`CapabilityRegistry`, `CapabilitySpec`, blocs de contexte modulaires déclarés par les capabilities et `Capability(instructions=...)`). Référence actuelle : `docs/AGENTS_CONTEXT_SPEC.md` et `app/agents/GRAPH_ARCHITECTURE.md`.
+
 This document summarizes the data currently injected into each agent and defines the metadata-driven "Visibility Contract" (ACL) used to automate context generation.
 
 ## 1. The "Brittleness" Problem (Cherry-Picking)

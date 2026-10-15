@@ -1,5 +1,6 @@
 import logging
 import asyncio
+from dataclasses import asdict
 import os
 import logfire
 from typing import Any
@@ -10,9 +11,10 @@ from pydantic_graph.step import StepContext
 from pydantic_graph.util import TypeExpression
 from pydantic_graph.join import reduce_list_append
 
-from pydantic_ai import FunctionToolset
+from pydantic_ai import AgentRunResult
 from pydantic_ai.usage import UsageLimits
 
+from core.evidence import DomainArtifact as EvidenceDomainArtifact
 from core.models import DomainReport, CityAnalysisReport
 from agents.state import (
     ODISDeps,
@@ -22,6 +24,7 @@ from agents.state import (
     ExpertList,
     AgentArtifact,
 )
+from agents.capability_registry import VALID_EXPERTS, get_default_capability_registry
 from agents.ts_agent import ts_agent, SwarmPlan
 from agents.utils import sanitize_llm_markdown
 from agents.job_hunter import job_hunter_agent
@@ -36,16 +39,15 @@ from agents.ccas_worker import locate_ccas_deterministic
 from agents.source_registry import source_keys, source_references_for_result
 from agents.usage import capture_usage_stats, usage_trace_attributes
 from agents.web_search import (
-    WEB_SEARCH_TOOL_ID,
     pop_web_search_result,
     pop_web_search_usage,
     reset_web_search_scope,
-    search_web_batch_tool,
     set_web_search_scope,
 )
 from services.ai_pricing import estimate_google_grounding_cost_eur
 from utils.logger import log_agent_trace
 import services.bq_logger as bq_logger
+from config import is_capability_deferred_loading_enabled
 from agents.agent_config import get_model, get_p_model, get_model_settings
 
 
@@ -83,9 +85,7 @@ async def triage_step(
     model = get_p_model("ts_agent", client=ctx.deps.client)
 
     try:
-        from pydantic_ai import AgentRunResult as RunResult
-
-        result: RunResult[SwarmPlan] = await ts_agent.run(
+        result: AgentRunResult[SwarmPlan] = await ts_agent.run(
             user_msg,
             deps=ctx.deps,
             model=model,
@@ -143,8 +143,6 @@ async def triage_step(
                     if ctx.state.messages
                     else "Question directe"
                 )
-                from dataclasses import asdict
-
                 state_dict = asdict(ctx.state)
                 if ctx.state.focus_city:
                     state_dict["focus_city"] = ctx.state.focus_city.model_dump()
@@ -167,47 +165,15 @@ async def triage_step(
 
             return End(direct_ans)
 
-        # 2. POPULATE Swarm Tasks and Skill Cards
-        ctx.state.active_skills = []
+        # 2. POPULATE Swarm Tasks and Capabilities
         ctx.state.expert_tasks = {}
-        ctx.state.expert_skill_instructions = {}
-        ctx.state.expert_skill_tools = {}
-
-        from services.knowledge_store import KnowledgeStore
-
-        store = KnowledgeStore()
+        ctx.state.expert_capabilities = {}
 
         experts_to_run = []
         for task in plan.tasks:
             experts_to_run.append(task.expert)
             ctx.state.expert_tasks[task.expert] = task.task_description
-            ctx.state.active_skills.extend(task.skill_cards)
-            allowed_tools = ctx.state.expert_skill_tools.setdefault(task.expert, [])
-
-            # Load instructions for this expert's skill cards
-            skill_insts = []
-            for skill_id in task.skill_cards:
-                card = store.get_skill_card(skill_id)
-                if card:
-                    for tool_id in card.get("tools", []) or []:
-                        if tool_id not in allowed_tools:
-                            allowed_tools.append(str(tool_id))
-                if card and card.get("instructions"):
-                    skill_insts.append(
-                        f"--- Skill Card: {skill_id} ---\n{card.get('instructions')}"
-                    )
-
-            if skill_insts:
-                ctx.state.expert_skill_instructions[task.expert] = "\n\n".join(
-                    skill_insts
-                )
-            else:
-                ctx.state.expert_skill_instructions[task.expert] = (
-                    "Aucune consigne spécifique de Skill Card active."
-                )
-
-        # Deduplicate active skills
-        ctx.state.active_skills = list(set(ctx.state.active_skills))
+            ctx.state.expert_capabilities[task.expert] = list(task.capabilities)
 
         # 3. APPEND LOCAL DETERMINISTIC WORKERS IN FULL ANALYSIS MODE
         if plan.swarm_mode == "full_analysis":
@@ -215,13 +181,10 @@ async def triage_step(
                 if local_worker not in experts_to_run:
                     experts_to_run.append(local_worker)
                     ctx.state.expert_tasks[local_worker] = "Analyse déterministe locale"
-                    ctx.state.expert_skill_instructions[local_worker] = (
-                        "Traitement déterministe Python"
-                    )
-                    ctx.state.expert_skill_tools[local_worker] = []
+                    ctx.state.expert_capabilities[local_worker] = []
 
         logger.info(
-            f"🧠 [TS_AGENT] Swarm Plan: experts={experts_to_run}, skills={ctx.state.active_skills}"
+            f"🧠 [TS_AGENT] Swarm Plan: experts={experts_to_run}, capabilities={ctx.state.expert_capabilities}"
         )
         return ExpertList(experts=experts_to_run)
 
@@ -246,21 +209,6 @@ async def extract_domains(
     """Helper to unwrap the DTO into a list of strings for mapping."""
     return ctx.inputs.experts
 
-
-def _dynamic_toolsets_for_expert(
-    state: GraphState, domain: str
-) -> list[FunctionToolset[ODISDeps]] | None:
-    """Build per-run toolsets from the Skill Cards selected by triage."""
-
-    allowed_tools = set(state.expert_skill_tools.get(domain, []))
-    if WEB_SEARCH_TOOL_ID not in allowed_tools:
-        return None
-    return [
-        FunctionToolset(
-            [search_web_batch_tool],
-            id=f"{domain}_web_search",
-        )
-    ]
 
 
 @logfire.instrument("Expert Node: {ctx.inputs}")
@@ -348,8 +296,6 @@ async def expert_worker_step(
             )
             typed = None
             if city_res.expert_artifacts.get(domain):
-                from core.evidence import DomainArtifact as EvidenceDomainArtifact
-
                 typed = EvidenceDomainArtifact.model_validate(
                     city_res.expert_artifacts[domain]
                 )
@@ -397,8 +343,37 @@ async def expert_worker_step(
     try:
         # Use the specific task description generated by the ts_agent coordinator, fallback to raw user_msg
         expert_query = ctx.state.expert_tasks.get(domain) or user_msg
-        logger.info("🚀 [%s] Running legacy expert task", domain.upper())
-        dynamic_toolsets = _dynamic_toolsets_for_expert(ctx.state, domain)
+        logger.info("🚀 [%s] Running expert task", domain.upper())
+
+        # Resolve and compile capabilities for this run
+        cap_ids = ctx.state.expert_capabilities.get(domain)
+        if not cap_ids and domain in VALID_EXPERTS:
+            capability_registry = get_default_capability_registry()
+            base_cap_id = capability_registry.get_base_capability_id(domain)
+            cap_ids = [base_cap_id]
+
+        capabilities = None
+        if cap_ids:
+            capability_registry = get_default_capability_registry()
+            capabilities = capability_registry.build_capabilities_for_expert(
+                cap_ids,
+                defer_loading=is_capability_deferred_loading_enabled(),
+                expert=domain,
+            )
+
+        exposed_tools: list[str] = [
+            getattr(t, "__name__", str(t))
+            for cap in (capabilities or [])
+            for t in (cap.tools or [])
+        ]
+        logger.info(
+            "🛠️ [%s] Exposed tools: %s (capabilities: %s)",
+            domain.upper(),
+            exposed_tools,
+            cap_ids,
+        )
+        trace_attrs["exposed_tools"] = exposed_tools
+
         web_scope = f"{ctx.state.run_id}:{domain}:{id(ctx)}"
         web_scope_token = set_web_search_scope(web_scope)
 
@@ -410,7 +385,7 @@ async def expert_worker_step(
                     model=model,
                     model_settings=get_model_settings(domain),
                     usage_limits=UsageLimits(request_limit=5),
-                    toolsets=dynamic_toolsets,
+                    capabilities=capabilities,
                 )
         finally:
             direct_web_usage = pop_web_search_usage(ctx.deps, web_scope)
@@ -563,8 +538,6 @@ async def synthesizer_step(
             if ctx.state.messages
             else "Analyse IA"
         )
-        from dataclasses import asdict
-
         state_dict = asdict(ctx.state)
         if ctx.state.focus_city:
             state_dict["focus_city"] = ctx.state.focus_city.model_dump()
@@ -582,7 +555,6 @@ async def synthesizer_step(
         )
     except Exception as e:
         logger.warning(f"⚠️ [BQ-LOG] Synthesis logging failed: {e}")
-
 
     # 3. BUILD COMPLETE COMPOSITE REPORT (Decoupled Synthesis + As-is Domain Artifacts)
     city_res = None

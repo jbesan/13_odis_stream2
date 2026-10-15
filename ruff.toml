@@ -16,4 +16,4 @@ ignore = [
 
 [lint.per-file-ignores]
 # Notebook cells commonly consume variables created by earlier interactive cells.
-"notebooks/*.ipynb" = ["F821"]
+"notebooks/*.ipynb" = ["F821", "E722"]

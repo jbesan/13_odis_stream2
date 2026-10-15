@@ -5,6 +5,7 @@ import re
 
 from pydantic import BaseModel, ConfigDict
 
+from agents.capability_registry import get_default_capability_registry
 from agents.state import GraphState, ODISContextBuilder
 from core.evidence import DossierEvidence
 
@@ -60,6 +61,21 @@ def project_social_context(state: GraphState) -> ExpertEvidencePacket:
             )
         )
     city = state.focus_city
+    instructions = "Aucune consigne spécifique."
+    cap_ids = state.expert_capabilities.get("social_integration_expert")
+    if cap_ids:
+        registry = get_default_capability_registry()
+        cap_texts = []
+        for cid in cap_ids:
+            try:
+                spec = registry.get(cid)
+                if spec.instructions:
+                    cap_texts.append(spec.instructions)
+            except Exception:
+                pass
+        if cap_texts:
+            instructions = "\n\n".join(cap_texts)
+
     return ExpertEvidencePacket(
         domain="social_integration_expert",
         target_city_name=city.name if city else "Commune inconnue",
@@ -68,9 +84,7 @@ def project_social_context(state: GraphState) -> ExpertEvidencePacket:
             "social_integration_expert",
             "Analyser l'intégration sociale et le tissu associatif.",
         ),
-        skill_instructions=state.expert_skill_instructions.get(
-            "social_integration_expert", "Aucune consigne spécifique."
-        ),
+        skill_instructions=instructions,
         dossier_evidence=records,
     )
 

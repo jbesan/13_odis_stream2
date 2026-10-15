@@ -746,3 +746,20 @@ def is_interactive_chat_enabled(
         return ORGANIZATION_PROFILES[org_context].enable_interactive_chat
 
     return False
+
+
+def is_capability_deferred_loading_enabled() -> bool:
+    """Checks if capability deferred loading is enabled.
+
+    Returns True if ODIS_CAPABILITY_DEFERRED_LOADING is set to 'true', '1' or 'yes'
+    in the environment.
+
+    Returns:
+        bool: True if deferred loading of capabilities is enabled.
+    """
+    return os.environ.get("ODIS_CAPABILITY_DEFERRED_LOADING", "false").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+
