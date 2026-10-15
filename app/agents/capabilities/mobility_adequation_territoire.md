@@ -4,7 +4,6 @@ name: Adéquation Territoriale - Mobilité
 description: Consignes pour analyser les réseaux de transports en commun locaux et les réductions tarifaires solidaires.
 experts:
 - mobility_expert
-domain: mobility_expert
 tools:
 - search_places_batch_tool
 - compute_routes_tool

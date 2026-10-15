@@ -4,7 +4,6 @@ name: Adéquation Territoriale - Emploi
 description: Consignes pour analyser les opportunités France Travail, les codes ROME, les offres détaillées et les structures d'insertion (SIAE) dans la commune.
 experts:
 - job_hunter
-domain: job_hunter
 tools:
 - search_job_offers_batch_tool
 - get_job_details_tool

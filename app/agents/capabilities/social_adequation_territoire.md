@@ -4,7 +4,6 @@ name: Adéquation Territoriale - Insertion Sociale
 description: Consignes pour localiser services aux réfugiés et les associations pertinentes pour l'intégration et l'insertion locale.
 experts:
 - social_integration_expert
-domain: social_integration_expert
 tools:
 - search_places_batch_tool
 - search_rna_rag_batch_tool

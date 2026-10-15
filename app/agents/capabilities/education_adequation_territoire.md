@@ -4,7 +4,6 @@ name: Adéquation Territoriale - Éducation
 description: Consignes pour identifier les écoles par tranches d'âges et les modalités d'inscription scolaires locales.
 experts:
 - education_expert
-domain: education_expert
 tools:
 - search_places_batch_tool
 contexts:

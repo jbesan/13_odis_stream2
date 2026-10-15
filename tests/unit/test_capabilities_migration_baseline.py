@@ -106,14 +106,6 @@ def _make_rich_state() -> GraphState:
         search_criteria=criteria,
         focus_city=commune,
         odis_brief=criteria.odis_brief,
-        expert_skill_instructions={
-            "job_hunter": "Skill: Analyse emploi standard.",
-            "housing_expert": "Skill: Analyse logement standard.",
-            "mobility_expert": "Skill: Analyse mobilité standard.",
-            "healthcare_expert": "Skill: Analyse santé standard.",
-            "education_expert": "Skill: Analyse éducation standard.",
-            "social_integration_expert": "Skill: Analyse sociale standard.",
-        },
     )
 
 
@@ -191,8 +183,8 @@ async def test_baseline_expert_rendered_prompt_and_tools(domain, agent, prompt_f
     assert len(cap_instructions[0].strip()) > 0
     assert cap.tools is not None
 
-    expert_tools = registry.resolve_tools_for_expert(domain)
-    assert set(expected_tools).issubset(set(expert_tools.keys()))
+    cap_tool_names = [getattr(t, "__name__", str(t)) for t in cap.tools]
+    assert set(expected_tools).issubset(set(cap_tool_names))
 
 
 @pytest.mark.asyncio
@@ -247,19 +239,21 @@ def test_baseline_deferred_loading_flag_and_capability_propagation(monkeypatch: 
         defer_loading=is_capability_deferred_loading_enabled(),
         expert="housing_expert",
     )
-    assert caps_def[0].defer_loading is True
+    # S5: Hot-start capabilities requested by the TS are always eager (defer_loading=False)
+    assert caps_def[0].defer_loading is False
 
 
 @pytest.mark.asyncio
 async def test_triage_step_deferred_loading_flag(monkeypatch: pytest.MonkeyPatch):
-    """Verifies that triage_step passes is_capability_deferred_loading_enabled() to expert capabilities."""
-    from agents.graph import triage_step
+    """Verifies that triage_step populates capability IDs and expert_worker_step compiles capabilities with deferred loading flag."""
+    from agents.graph import triage_step, expert_worker_step
     from agents.ts_agent import SwarmPlan, ExpertTask
 
     class MockStepContext:
-        def __init__(self, state: GraphState, deps: ODISDeps):
+        def __init__(self, state: GraphState, deps: ODISDeps, inputs=None):
             self.state = state
             self.deps = deps
+            self.inputs = inputs
 
     plan = SwarmPlan(
         swarm_mode="specific_ask",
@@ -284,20 +278,39 @@ async def test_triage_step_deferred_loading_flag(monkeypatch: pytest.MonkeyPatch
         deps_false = ODISDeps(state=state_false)
         ctx_false = MockStepContext(state_false, deps_false)
         await triage_step(ctx_false)  # type: ignore
-        assert state_false.expert_capabilities["housing_expert"][0].defer_loading is False
+        assert state_false.expert_capabilities["housing_expert"] == [
+            "housing_adequation_territoire"
+        ]
+
+    # Verify worker step compiles capabilities with defer_loading False
+    worker_ctx_false = MockStepContext(state_false, deps_false, inputs="housing_expert")
+    with patch("agents.graph.housing_expert_agent.run", new_callable=AsyncMock) as mock_agent_run:
+        mock_res = MagicMock()
+        mock_res.output = MagicMock(result="Logement")
+        mock_res.usage = MagicMock(return_value=MagicMock(input_tokens=1, output_tokens=1, total_tokens=2, requests=1, grounding_queries=0))
+        mock_res.all_messages = MagicMock(return_value=[])
+        mock_agent_run.return_value = mock_res
+        await expert_worker_step(worker_ctx_false)  # type: ignore
+        caps = mock_agent_run.call_args.kwargs["capabilities"]
+        assert caps[0].defer_loading is False
 
     # 2. When flag is True
     monkeypatch.setenv("ODIS_CAPABILITY_DEFERRED_LOADING", "true")
-    with patch("agents.graph.ts_agent.run", new_callable=AsyncMock) as mock_run:
+    state_true = GraphState(
+        expert_tasks={"housing_expert": "Analyse logement"},
+        expert_capabilities={"housing_expert": ["housing_adequation_territoire"]},
+    )
+    deps_true = ODISDeps(state=state_true)
+    worker_ctx_true = MockStepContext(state_true, deps_true, inputs="housing_expert")
+    with patch("agents.graph.housing_expert_agent.run", new_callable=AsyncMock) as mock_agent_run:
         mock_res = MagicMock()
-        mock_res.output = plan
-        mock_res.usage = MagicMock(return_value=MagicMock(input_tokens=1, output_tokens=1, total_tokens=2, requests=1))
-        mock_run.return_value = mock_res
-
-        state_true = GraphState()
-        deps_true = ODISDeps(state=state_true)
-        ctx_true = MockStepContext(state_true, deps_true)
-        await triage_step(ctx_true)  # type: ignore
-        assert state_true.expert_capabilities["housing_expert"][0].defer_loading is True
+        mock_res.output = MagicMock(result="Logement")
+        mock_res.usage = MagicMock(return_value=MagicMock(input_tokens=1, output_tokens=1, total_tokens=2, requests=1, grounding_queries=0))
+        mock_res.all_messages = MagicMock(return_value=[])
+        mock_agent_run.return_value = mock_res
+        await expert_worker_step(worker_ctx_true)  # type: ignore
+        caps = mock_agent_run.call_args.kwargs["capabilities"]
+        # S5: Hot-start capabilities requested by the TS are always eager (defer_loading=False)
+        assert caps[0].defer_loading is False
 
 

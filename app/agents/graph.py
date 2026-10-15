@@ -11,7 +11,7 @@ from pydantic_graph.step import StepContext
 from pydantic_graph.util import TypeExpression
 from pydantic_graph.join import reduce_list_append
 
-from pydantic_ai import AgentRunResult, FunctionToolset
+from pydantic_ai import AgentRunResult
 from pydantic_ai.usage import UsageLimits
 
 from core.evidence import DomainArtifact as EvidenceDomainArtifact
@@ -39,11 +39,9 @@ from agents.ccas_worker import locate_ccas_deterministic
 from agents.source_registry import source_keys, source_references_for_result
 from agents.usage import capture_usage_stats, usage_trace_attributes
 from agents.web_search import (
-    WEB_SEARCH_TOOL_ID,
     pop_web_search_result,
     pop_web_search_usage,
     reset_web_search_scope,
-    search_web_batch_tool,
     set_web_search_scope,
 )
 from services.ai_pricing import estimate_google_grounding_cost_eur
@@ -167,72 +165,15 @@ async def triage_step(
 
             return End(direct_ans)
 
-        # 2. POPULATE Swarm Tasks, Capabilities, and Backward-Compatible Fields
-        ctx.state.active_skills = []
+        # 2. POPULATE Swarm Tasks and Capabilities
         ctx.state.expert_tasks = {}
         ctx.state.expert_capabilities = {}
-        ctx.state.expert_skill_instructions = {}
-        ctx.state.expert_skill_tools = {}
-
-        capability_registry = get_default_capability_registry()
 
         experts_to_run = []
         for task in plan.tasks:
-            if isinstance(task, dict):
-                task_expert = task.get("expert")
-                task_desc = task.get("task_description", "")
-                task_caps = task.get("capabilities") or task.get("skill_cards") or []
-            else:
-                task_expert = getattr(task, "expert", None)
-                task_desc = getattr(task, "task_description", "")
-                task_caps = getattr(task, "capabilities", None) or getattr(
-                    task, "skill_cards", []
-                )
-
-            if not task_expert:
-                continue
-
-            experts_to_run.append(task_expert)
-            ctx.state.expert_tasks[task_expert] = task_desc
-
-            # Canonicalize capability IDs for active_skills and execution
-            canonical_task_caps = [
-                capability_registry.resolve_capability_id(c) for c in task_caps
-            ]
-            ctx.state.active_skills.extend(canonical_task_caps)
-
-            # Build Pydantic AI Capability objects for this expert run
-            caps = capability_registry.build_capabilities_for_expert(
-                canonical_task_caps,
-                defer_loading=is_capability_deferred_loading_enabled(),
-                expert=task_expert,
-            )
-            ctx.state.expert_capabilities[task_expert] = caps
-
-            # Backward-compatible tracking of tools and instructions
-            allowed_tools = ctx.state.expert_skill_tools.setdefault(task_expert, [])
-            skill_insts = []
-            for spec_id in canonical_task_caps:
-                spec = capability_registry.get(spec_id)
-                for tool_id in spec.tools:
-                    if tool_id not in allowed_tools:
-                        allowed_tools.append(tool_id)
-                if spec.instructions:
-                    skill_insts.append(
-                        f"--- Capability: {spec.id} ---\n{spec.instructions}"
-                    )
-
-            if skill_insts:
-                ctx.state.expert_skill_instructions[task_expert] = "\n\n".join(
-                    skill_insts
-                )
-            else:
-                ctx.state.expert_skill_instructions[task_expert] = (
-                    "Aucune consigne spécifique de Skill Card active."
-                )
-
-        # Deduplicate active skills while preserving order
-        ctx.state.active_skills = list(dict.fromkeys(ctx.state.active_skills))
+            experts_to_run.append(task.expert)
+            ctx.state.expert_tasks[task.expert] = task.task_description
+            ctx.state.expert_capabilities[task.expert] = list(task.capabilities)
 
         # 3. APPEND LOCAL DETERMINISTIC WORKERS IN FULL ANALYSIS MODE
         if plan.swarm_mode == "full_analysis":
@@ -241,13 +182,9 @@ async def triage_step(
                     experts_to_run.append(local_worker)
                     ctx.state.expert_tasks[local_worker] = "Analyse déterministe locale"
                     ctx.state.expert_capabilities[local_worker] = []
-                    ctx.state.expert_skill_instructions[local_worker] = (
-                        "Traitement déterministe Python"
-                    )
-                    ctx.state.expert_skill_tools[local_worker] = []
 
         logger.info(
-            f"🧠 [TS_AGENT] Swarm Plan: experts={experts_to_run}, skills={ctx.state.active_skills}"
+            f"🧠 [TS_AGENT] Swarm Plan: experts={experts_to_run}, capabilities={ctx.state.expert_capabilities}"
         )
         return ExpertList(experts=experts_to_run)
 
@@ -272,21 +209,6 @@ async def extract_domains(
     """Helper to unwrap the DTO into a list of strings for mapping."""
     return ctx.inputs.experts
 
-
-def _dynamic_toolsets_for_expert(
-    state: GraphState, domain: str
-) -> list[FunctionToolset[ODISDeps]] | None:
-    """Build per-run toolsets from the Skill Cards selected by triage."""
-
-    allowed_tools = set(state.expert_skill_tools.get(domain, []))
-    if WEB_SEARCH_TOOL_ID not in allowed_tools:
-        return None
-    return [
-        FunctionToolset(
-            [search_web_batch_tool],
-            id=f"{domain}_web_search",
-        )
-    ]
 
 
 @logfire.instrument("Expert Node: {ctx.inputs}")
@@ -423,21 +345,34 @@ async def expert_worker_step(
         expert_query = ctx.state.expert_tasks.get(domain) or user_msg
         logger.info("🚀 [%s] Running expert task", domain.upper())
 
-        # Resolve capabilities for this run (with backward-compatible fallback)
-        capabilities = ctx.state.expert_capabilities.get(domain)
-        dynamic_toolsets = None
-        if capabilities is None:
-            # Standalone invocation without triage (e.g. legacy callers or unit tests)
-            if ctx.state.expert_skill_tools.get(domain):
-                dynamic_toolsets = _dynamic_toolsets_for_expert(ctx.state, domain)
-            elif domain in VALID_EXPERTS:
-                capability_registry = get_default_capability_registry()
-                base_cap_id = capability_registry.get_base_capability_id(domain)
-                capabilities = capability_registry.build_capabilities_for_expert(
-                    [base_cap_id],
-                    defer_loading=is_capability_deferred_loading_enabled(),
-                    expert=domain,
-                )
+        # Resolve and compile capabilities for this run
+        cap_ids = ctx.state.expert_capabilities.get(domain)
+        if not cap_ids and domain in VALID_EXPERTS:
+            capability_registry = get_default_capability_registry()
+            base_cap_id = capability_registry.get_base_capability_id(domain)
+            cap_ids = [base_cap_id]
+
+        capabilities = None
+        if cap_ids:
+            capability_registry = get_default_capability_registry()
+            capabilities = capability_registry.build_capabilities_for_expert(
+                cap_ids,
+                defer_loading=is_capability_deferred_loading_enabled(),
+                expert=domain,
+            )
+
+        exposed_tools: list[str] = [
+            getattr(t, "__name__", str(t))
+            for cap in (capabilities or [])
+            for t in (cap.tools or [])
+        ]
+        logger.info(
+            "🛠️ [%s] Exposed tools: %s (capabilities: %s)",
+            domain.upper(),
+            exposed_tools,
+            cap_ids,
+        )
+        trace_attrs["exposed_tools"] = exposed_tools
 
         web_scope = f"{ctx.state.run_id}:{domain}:{id(ctx)}"
         web_scope_token = set_web_search_scope(web_scope)
@@ -451,7 +386,6 @@ async def expert_worker_step(
                     model_settings=get_model_settings(domain),
                     usage_limits=UsageLimits(request_limit=5),
                     capabilities=capabilities,
-                    toolsets=dynamic_toolsets,
                 )
         finally:
             direct_web_usage = pop_web_search_usage(ctx.deps, web_scope)

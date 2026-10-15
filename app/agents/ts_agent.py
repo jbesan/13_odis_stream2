@@ -5,9 +5,9 @@ and planning tasks assigned to domain experts with authorized capabilities.
 """
 
 import logging
-from typing import Any, Final, List, Literal, Optional
+from typing import List, Literal, Optional
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_ai import Agent, RunContext
 
 from agents.agent_config import create_agent, get_swarm_boilerplate
@@ -20,26 +20,6 @@ from agents.capability_registry import (
 from agents.state import ODISContextBuilder, ODISDeps
 
 logger = logging.getLogger("ts_agent")
-
-# Backward compatibility mapping for legacy skill card references.
-# Deprecated: use CapabilityRegistry instead.
-SKILL_CARD_EXPERT: Final[dict[str, ExpertName]] = {
-    "education_full_analysis": "education_expert",
-    "healthcare_full_analysis": "healthcare_expert",
-    "housing_full_analysis": "housing_expert",
-    "job_extend_job_search": "job_hunter",
-    "job_fetch_specific_offer": "job_hunter",
-    "job_full_analysis": "job_hunter",
-    "mobility_full_analysis": "mobility_expert",
-    "social_full_analysis": "social_integration_expert",
-    "education_adequation_territoire": "education_expert",
-    "healthcare_adequation_territoire": "healthcare_expert",
-    "housing_adequation_territoire": "housing_expert",
-    "mobility_adequation_territoire": "mobility_expert",
-    "social_adequation_territoire": "social_integration_expert",
-    "job_adequation_territoire": "job_hunter",
-}
-
 
 class ExpertTask(BaseModel):
     """Specification of an expert task in the swarm execution plan."""
@@ -57,62 +37,19 @@ class ExpertTask(BaseModel):
     capabilities: List[str] = Field(
         ...,
         min_length=1,
-        validation_alias=AliasChoices("capabilities", "skill_cards"),
         description=(
             "Liste des identifiants de capabilities à charger pour cette mission (ex: ['housing_adequation_territoire']). "
             "Au moins une capability obligatoire."
         ),
     )
 
-    @model_validator(mode="before")
+    @field_validator("capabilities", mode="before")
     @classmethod
-    def _normalize_skill_cards_to_capabilities(cls, data: Any) -> Any:
-        """Normalizes backward-compatible 'skill_cards' parameter to 'capabilities'.
-
-        Handles dicts and attribute-bearing objects, string-to-list coercion,
-        and fallback from empty/None capabilities to skill_cards.
-
-        Args:
-            data: Raw input data (dict or object) before validation.
-
-        Returns:
-            Normalized dictionary or object with 'capabilities' populated.
-        """
-        if isinstance(data, dict):
-            caps = data.get("capabilities")
-            skills = data.get("skill_cards")
-            if (
-                caps is None or (isinstance(caps, (list, tuple)) and len(caps) == 0)
-            ) and skills is not None:
-                caps = skills
-            if isinstance(caps, str):
-                caps = [caps]
-            if caps is not None:
-                data["capabilities"] = caps
-        elif hasattr(data, "__dict__") and not isinstance(data, type):
-            caps = getattr(data, "capabilities", None)
-            skills = getattr(data, "skill_cards", None)
-            if (
-                caps is None or (isinstance(caps, (list, tuple)) and len(caps) == 0)
-            ) and skills is not None:
-                caps = skills
-            if isinstance(caps, str):
-                caps = [caps]
-            return {
-                "expert": getattr(data, "expert", None),
-                "task_description": getattr(data, "task_description", None),
-                "capabilities": caps,
-            }
-        return data
-
-    @property
-    def skill_cards(self) -> List[str]:
-        """Backward-compatible property returning capabilities.
-
-        Returns:
-            List of capability identifiers.
-        """
-        return self.capabilities
+    def _coerce_capabilities_list(cls, v: object) -> object:
+        """Coerces single string capability input into a list."""
+        if isinstance(v, str):
+            return [v.strip()] if v.strip() else []
+        return v
 
     @model_validator(mode="after")
     def validate_task_capabilities(self) -> "ExpertTask":
@@ -137,17 +74,16 @@ class ExpertTask(BaseModel):
                 )
             cleaned_id = cap_id.strip()
             try:
-                canonical_id = registry.resolve_capability_id(cleaned_id)
-                spec = registry.get(canonical_id)
-            except CapabilityNotFoundError:
-                raise ValueError(f"Capability inconnue : {cleaned_id}")
+                spec = registry.get(cleaned_id)
+            except CapabilityNotFoundError as exc:
+                raise ValueError(f"Capability inconnue : {cleaned_id}") from exc
 
             if self.expert not in spec.experts:
                 raise ValueError(
                     f"La capability '{cleaned_id}' n'est pas autorisée pour l'expert '{self.expert}' "
                     f"(experts autorisés : {sorted(spec.experts)})"
                 )
-            normalized_caps.append(canonical_id)
+            normalized_caps.append(spec.id)
 
         self.capabilities = list(dict.fromkeys(normalized_caps))
         return self
@@ -208,27 +144,6 @@ class SwarmPlan(BaseModel):
         experts = [task.expert for task in self.tasks]
         if len(experts) != len(set(experts)):
             raise ValueError("Un expert ne peut apparaître qu'une seule fois par plan")
-
-        capability_registry = get_default_capability_registry()
-        for task in self.tasks:
-            if not task.capabilities:
-                raise ValueError(
-                    f"Chaque tâche d'expert doit déclarer au moins une capability (expert: {task.expert})"
-                )
-            normalized_caps: List[str] = []
-            for cap_id in task.capabilities:
-                try:
-                    canonical_id = capability_registry.resolve_capability_id(cap_id)
-                    spec = capability_registry.get(canonical_id)
-                except CapabilityNotFoundError:
-                    raise ValueError(f"Capability inconnue : {cap_id}")
-                if task.expert not in spec.experts:
-                    raise ValueError(
-                        f"La capability '{cap_id}' n'est pas autorisée pour l'expert '{task.expert}' "
-                        f"(experts autorisés : {sorted(spec.experts)})"
-                    )
-                normalized_caps.append(canonical_id)
-            task.capabilities = list(dict.fromkeys(normalized_caps))
 
         return self
 
@@ -322,3 +237,8 @@ async def ts_agent_instructions(ctx: RunContext[ODISDeps]) -> str:
         DATA_CONTEXT=data_context,
         CAPABILITIES_CATALOG=catalog_str,
     )
+
+
+# Eagerly load and validate default capability registry at boot (fail-closed)
+get_default_capability_registry()
+

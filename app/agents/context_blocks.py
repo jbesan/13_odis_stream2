@@ -717,13 +717,3 @@ def render_context_blocks(
     reg = registry or get_default_context_registry()
     return reg.render(contexts, state, focus_city=focus_city, compact=compact)
 
-
-# Default expert domain context mapping
-EXPERT_CONTEXT_MAP: Final[Dict[str, List[str]]] = {
-    "education_expert": ["commune.education"],
-    "housing_expert": ["commune.housing"],
-    "healthcare_expert": ["commune.healthcare"],
-    "mobility_expert": ["commune.mobility"],
-    "job_hunter": ["commune.job"],
-    "social_integration_expert": ["commune.social", "commune.territory"],
-}

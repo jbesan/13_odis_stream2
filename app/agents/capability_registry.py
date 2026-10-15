@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from pydantic_ai import Capability
 
 import config as cfg
+from agents.context_blocks import get_default_context_registry
 from agents.tools import (
     compute_routes_tool,
     get_inclusion_job_details_tool,
@@ -69,15 +70,6 @@ CANONICAL_TOOLS: Final[Dict[str, Callable[..., Any]]] = {
 }
 
 CANONICAL_TOOL_NAMES: Final[frozenset[str]] = frozenset(CANONICAL_TOOLS.keys())
-
-LEGACY_SKILL_TO_CAPABILITY: Final[Dict[str, str]] = {
-    "housing_full_analysis": "housing_adequation_territoire",
-    "mobility_full_analysis": "mobility_adequation_territoire",
-    "healthcare_full_analysis": "healthcare_adequation_territoire",
-    "education_full_analysis": "education_adequation_territoire",
-    "social_full_analysis": "social_adequation_territoire",
-    "job_full_analysis": "job_adequation_territoire",
-}
 
 EXPERT_DEFAULT_CAPABILITY: Final[Dict[str, str]] = {
     "housing_expert": "housing_adequation_territoire",
@@ -173,10 +165,6 @@ class CapabilitySpec(BaseModel):
         min_length=1,
         description="List of domain experts allowed to execute this capability.",
     )
-    domain: Optional[str] = Field(
-        default=None,
-        description="Compatibility field reflecting the primary expert domain.",
-    )
     tools: List[str] = Field(
         default_factory=list,
         description="List of canonical tool names required by this capability.",
@@ -204,20 +192,16 @@ class CapabilitySpec(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _normalize_experts_and_domain(cls, data: Any) -> Any:
-        """Normalizes and validates backwards-compatible domain and experts fields.
+    def _normalize_yaml_fields(cls, data: Any) -> Any:
+        """Normalizes and deduplicates YAML fields.
 
         Args:
             data: Raw dictionary or input object before validation.
 
         Returns:
             Normalized dictionary.
-
-        Raises:
-            ValueError: If domain contradicts declared experts.
         """
         if isinstance(data, dict):
-            domain = data.get("domain")
             experts = data.get("experts")
 
             # Allow experts to be given as a single string (YAML scalar)
@@ -233,28 +217,6 @@ class CapabilitySpec(BaseModel):
                     if e
                 ]
                 data["experts"] = list(dict.fromkeys(cleaned_exp))
-                experts = data["experts"]
-
-            if not experts and domain:
-                if isinstance(domain, str):
-                    cleaned_dom = domain.strip()
-                    data["experts"] = [cleaned_dom]
-                    data["domain"] = cleaned_dom
-                elif isinstance(domain, list):
-                    data["experts"] = list(dict.fromkeys(domain))
-                    data["domain"] = data["experts"][0] if data["experts"] else None
-            elif experts and domain:
-                if isinstance(domain, str):
-                    domain = domain.strip()
-                elif isinstance(domain, list):
-                    domain = domain[0].strip() if domain and isinstance(domain[0], str) else None
-                data["domain"] = domain
-                if domain and domain not in experts:
-                    raise ValueError(
-                        f"Conflicting domain '{domain}' does not match declared experts: {experts}"
-                    )
-            elif experts and not domain:
-                data["domain"] = experts[0] if experts else None
 
             # Allow tools, contexts, and tags to be given as single strings (YAML scalars)
             for list_field in ("tools", "contexts", "tags"):
@@ -483,34 +445,6 @@ class CapabilitySpec(BaseModel):
                 f"Validation failed for capability{loc}: {exc}"
             ) from exc
 
-    def to_markdown(self) -> str:
-        """Serializes the CapabilitySpec back to a Markdown string with YAML frontmatter.
-
-        Returns:
-            Markdown formatted string with YAML frontmatter header and body instructions.
-        """
-        metadata: Dict[str, Any] = {
-            "id": self.id,
-            "name": self.name,
-            "description": self.description,
-            "experts": self.experts,
-        }
-        if self.domain:
-            metadata["domain"] = self.domain
-        if self.tools:
-            metadata["tools"] = self.tools
-        if self.contexts:
-            metadata["contexts"] = self.contexts
-        if self.loading_policy:
-            metadata["loading_policy"] = self.loading_policy
-        if self.version:
-            metadata["version"] = self.version
-        if self.tags:
-            metadata["tags"] = self.tags
-
-        post = frontmatter.Post(self.instructions.strip() + "\n", **metadata)
-        return frontmatter.dumps(post) + "\n"
-
     @classmethod
     def from_file(cls, file_path: Union[str, Path]) -> "CapabilitySpec":
         """Loads and validates a CapabilitySpec from a Markdown file.
@@ -621,12 +555,34 @@ class CapabilityRegistry:
                     f"Duplicate capability ID '{spec.id}' found in '{file_path}' "
                     f"(already registered from another file)."
                 )
+            self._validate_spec_contexts(spec, source=str(file_path))
             new_specs[spec.id] = spec
 
         self._specs = new_specs
         logger.info(
             f"Successfully loaded and cached {len(self._specs)} capabilities from {self.capabilities_dir}"
         )
+
+    def _validate_spec_contexts(
+        self, spec: CapabilitySpec, source: Optional[str] = None
+    ) -> None:
+        """Validates that all context blocks declared by a capability exist in ContextRegistry.
+
+        Args:
+            spec: The CapabilitySpec to validate.
+            source: Optional file path or description for error messages.
+
+        Raises:
+            CapabilityValidationError: If any declared context block is unknown.
+        """
+        ctx_registry = get_default_context_registry()
+        for ctx_id in spec.contexts:
+            if not ctx_registry.has(ctx_id):
+                loc = f" in '{source}'" if source else f" in capability '{spec.id}'"
+                raise CapabilityValidationError(
+                    f"Unknown context block '{ctx_id}' declared{loc}. "
+                    f"Available context blocks: {ctx_registry.list_ids()}"
+                )
 
     def get(self, capability_id: str) -> CapabilitySpec:
         """Retrieves a capability by its ID.
@@ -646,11 +602,6 @@ class CapabilityRegistry:
         cleaned = capability_id.strip()
         if cleaned in self._specs:
             return self._specs[cleaned]
-
-        if cleaned in LEGACY_SKILL_TO_CAPABILITY:
-            canonical = LEGACY_SKILL_TO_CAPABILITY[cleaned]
-            if canonical in self._specs:
-                return self._specs[canonical]
 
         raise CapabilityNotFoundError(
             f"Capability '{cleaned}' not found in registry. "
@@ -688,53 +639,11 @@ class CapabilityRegistry:
             if expert in spec.experts
         ]
 
-    def resolve_tools(self, capability_id: str) -> Dict[str, Callable[..., Any]]:
-        """Resolves all tools declared in a capability to their callable functions.
-
-        Args:
-            capability_id: The capability identifier.
-
-        Returns:
-            Dict mapping tool name to callable function.
-
-        Raises:
-            CapabilityNotFoundError: If capability_id is not in registry.
-            ToolNotFoundError: If a tool is not found in canonical tools.
-        """
-        spec = self.get(capability_id)
-        resolved: Dict[str, Callable[..., Any]] = {}
-        for tool_name in spec.tools:
-            resolved[tool_name] = get_canonical_tool(tool_name)
-        return resolved
-
-    def resolve_tools_for_expert(self, expert: str) -> Dict[str, Callable[..., Any]]:
-        """Resolves all unique tools declared across all capabilities for a given expert.
-
-        Tools are returned in stable order of appearance, deduplicated.
-
-        Args:
-            expert: The identifier of the expert (e.g. 'housing_expert').
-
-        Returns:
-            Dict mapping canonical tool names to callable functions.
-
-        Raises:
-            CapabilityValidationError: If expert is invalid.
-            ToolNotFoundError: If a tool is not found in canonical tools.
-        """
-        specs = self.get_for_expert(expert)
-        resolved: Dict[str, Callable[..., Any]] = {}
-        for spec in specs:
-            for tool_name in spec.tools:
-                if tool_name not in resolved:
-                    resolved[tool_name] = get_canonical_tool(tool_name)
-        return resolved
-
     def resolve_capability_id(self, identifier: str) -> str:
-        """Resolves a capability identifier or legacy skill card alias to its canonical ID.
+        """Resolves a capability identifier to its canonical ID.
 
         Args:
-            identifier: The capability ID or legacy skill card alias.
+            identifier: The capability ID.
 
         Returns:
             The canonical capability ID.
@@ -742,60 +651,7 @@ class CapabilityRegistry:
         Raises:
             CapabilityNotFoundError: If the identifier cannot be resolved.
         """
-        if not isinstance(identifier, str) or not identifier.strip():
-            raise CapabilityNotFoundError(f"Invalid capability ID: {identifier!r}")
-
-        cleaned = identifier.strip()
-        if cleaned in self._specs:
-            return cleaned
-
-        if cleaned in LEGACY_SKILL_TO_CAPABILITY:
-            canonical = LEGACY_SKILL_TO_CAPABILITY[cleaned]
-            if canonical in self._specs:
-                return canonical
-
-        raise CapabilityNotFoundError(
-            f"Capability '{cleaned}' not found in registry. "
-            f"Available capabilities: {sorted(self._specs.keys())}"
-        )
-
-    def build_capability(
-        self,
-        capability_id: str,
-        defer_loading: bool = False,
-        excluded_tools: Optional[Set[str]] = None,
-    ) -> Capability:
-        """Instantiates a Pydantic AI Capability object from a registered specification.
-
-        Args:
-            capability_id: Unique capability identifier or legacy alias.
-            defer_loading: Whether to defer capability loading (default False in Phase 1).
-            excluded_tools: Optional set of tool names to omit from registration to
-                avoid duplicate tool names across multiple capabilities in the same run.
-
-        Returns:
-            Instantiated pydantic_ai.Capability.
-
-        Raises:
-            CapabilityNotFoundError: If capability_id is not in registry.
-            ToolNotFoundError: If a tool declared by the capability cannot be resolved.
-        """
-        canonical_id = self.resolve_capability_id(capability_id)
-        spec = self.get(canonical_id)
-
-        excluded = excluded_tools or set()
-        tools_list: List[Callable[..., Any]] = []
-        for tool_name in spec.tools:
-            if tool_name not in excluded:
-                tools_list.append(get_canonical_tool(tool_name))
-
-        return Capability(
-            id=spec.id,
-            description=spec.description,
-            instructions=spec.instructions,
-            tools=tools_list,
-            defer_loading=defer_loading,
-        )
+        return self.get(identifier).id
 
     def get_base_capability_id(self, expert: str) -> str:
         """Returns the canonical base capability ID for an expert domain.
@@ -823,12 +679,16 @@ class CapabilityRegistry:
     ) -> List[Capability]:
         """Instantiates Pydantic AI Capability objects for an expert run with tool deduplication.
 
-        Ensures that if multiple capabilities declare the same tool, it is only registered
-        once (on the first capability encountered) to prevent Pydantic AI tool name collision.
+        Hot start: Capabilities explicitly requested in capability_ids (e.g. planned by ts_agent)
+        are ALWAYS eagerly loaded (defer_loading=False).
+        If defer_loading is True and an expert is specified, additional capabilities belonging to
+        the expert marked as 'deferrable' in their loading_policy are appended with defer_loading=True.
+        Ensures that if multiple capabilities declare the same tool, it is only registered once
+        (on the first capability encountered) to prevent tool name collision in Pydantic AI.
 
         Args:
-            capability_ids: Sequence of capability identifiers or legacy aliases.
-            defer_loading: Whether to defer loading (default False in Phase 1).
+            capability_ids: Sequence of capability identifiers.
+            defer_loading: Whether to inject additional deferrable capabilities (default False in Phase 1).
             expert: Optional expert name to validate that declared capabilities belong to it.
 
         Returns:
@@ -846,9 +706,12 @@ class CapabilityRegistry:
 
         capabilities: List[Capability] = []
         registered_tools: Set[str] = set()
+        canonical_eager_ids: List[str] = []
 
+        # 1. Hot start: Explicitly planned capabilities are ALWAYS eager (defer_loading=False)
         for cid in capability_ids:
             canonical_id = self.resolve_capability_id(cid)
+            canonical_eager_ids.append(canonical_id)
             spec = self.get(canonical_id)
 
             if expert is not None and expert not in spec.experts:
@@ -868,32 +731,34 @@ class CapabilityRegistry:
                 description=spec.description,
                 instructions=spec.instructions,
                 tools=tools_for_cap,
-                defer_loading=defer_loading,
+                defer_loading=False,
             )
             capabilities.append(cap)
 
+        # 2. Deferred capabilities: If enabled and expert given, append remaining deferrable capabilities
+        if defer_loading and expert is not None:
+            expert_specs = self.get_for_expert(expert)
+            for spec in expert_specs:
+                if (
+                    spec.id not in canonical_eager_ids
+                    and spec.loading_policy == "deferrable"
+                ):
+                    tools_for_cap = []
+                    for tool_name in spec.tools:
+                        if tool_name not in registered_tools:
+                            registered_tools.add(tool_name)
+                            tools_for_cap.append(get_canonical_tool(tool_name))
+
+                    cap = Capability(
+                        id=spec.id,
+                        description=spec.description,
+                        instructions=spec.instructions,
+                        tools=tools_for_cap,
+                        defer_loading=True,
+                    )
+                    capabilities.append(cap)
+
         return capabilities
-
-    def register(self, spec: CapabilitySpec, overwrite: bool = False) -> None:
-        """Registers a CapabilitySpec directly in memory.
-
-        Args:
-            spec: The CapabilitySpec to register.
-            overwrite: Whether to overwrite an existing spec with the same ID.
-
-        Raises:
-            CapabilityValidationError: If overwrite is False and ID already exists.
-        """
-        if not overwrite and spec.id in self._specs:
-            raise CapabilityValidationError(
-                f"Capability with ID '{spec.id}' is already registered."
-            )
-        self._specs[spec.id] = spec
-
-    def reload(self) -> None:
-        """Clears the cache and reloads all capabilities from disk."""
-        self._specs.clear()
-        self.load_all()
 
     def __contains__(self, capability_id: str) -> bool:
         """Checks if a capability ID exists in the registry."""
@@ -902,14 +767,6 @@ class CapabilityRegistry:
     def __len__(self) -> int:
         """Returns the number of registered capabilities."""
         return len(self._specs)
-
-    def __iter__(self):
-        """Iterates over all registered CapabilitySpec instances."""
-        return iter(self.list_all())
-
-    def __getitem__(self, capability_id: str) -> CapabilitySpec:
-        """Retrieves a capability by ID using dictionary indexing syntax."""
-        return self.get(capability_id)
 
     def __repr__(self) -> str:
         """String representation of the registry."""

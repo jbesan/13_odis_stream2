@@ -4,7 +4,6 @@ name: Extension de la Recherche d'Emploi
 description: Consignes pour effectuer de nouvelles recherches d'offres d'emploi en élargissant les critères (ROME ou communes additionnelles).
 experts:
 - job_hunter
-domain: job_hunter
 tools:
 - search_referentiels_batch_tool
 - search_job_offers_batch_tool

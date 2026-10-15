@@ -111,7 +111,7 @@ async def test_swarm_and_synthesis_flow(mock_deps):
             ExpertTask(
                 expert="housing_expert",
                 task_description="Vérifie le prix du logement",
-                skill_cards=["housing_full_analysis"],
+                capabilities=["housing_adequation_territoire"],
             )
         ],
     )

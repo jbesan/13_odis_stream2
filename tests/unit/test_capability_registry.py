@@ -91,29 +91,11 @@ def test_capability_spec_valid_with_experts():
     assert spec.name == "Test Capability"
     assert spec.description == "A test capability description."
     assert spec.experts == ["job_hunter", "housing_expert"]
-    assert spec.domain == "job_hunter"
     assert spec.tools == ["search_places_batch_tool"]
     assert spec.contexts == ["housing", "education"]
     assert spec.loading_policy == "eager_only"
     assert spec.version == "1.1.0"
     assert spec.instructions == "These are test instructions."
-
-
-def test_capability_spec_valid_with_domain_compatibility():
-    """Tests backwards compatibility where domain string populates experts."""
-    spec = CapabilitySpec(
-        id="legacy_housing",
-        name="Legacy Housing",
-        description="Legacy description",
-        domain="housing_expert",
-        instructions="Instructions here.",
-    )
-    assert spec.experts == ["housing_expert"]
-    assert spec.domain == "housing_expert"
-    assert spec.tools == []
-    assert spec.contexts == []
-    assert spec.loading_policy == "eager_only"
-    assert spec.version == "1.0.0"
 
 
 def test_capability_spec_rejects_unknown_tool():
@@ -222,7 +204,7 @@ def test_from_markdown_valid():
 id: custom_spec
 name: Custom Capability
 description: Description of custom capability
-domain: mobility_expert
+experts: mobility_expert
 tools:
   - compute_routes_tool
 version: 2.0.0
@@ -277,7 +259,7 @@ def test_from_file_id_mismatch(tmp_path: Path):
 id: declared_id
 name: Declared Spec
 description: Spec with mismatched filename
-domain: job_hunter
+experts: job_hunter
 ---
 Instructions
 """,
@@ -333,7 +315,6 @@ def test_registry_get_existing_capabilities():
     assert housing.id == "housing_adequation_territoire"
     assert housing.name == "Adéquation Territoriale - Logement"
     assert housing.experts == ["housing_expert"]
-    assert housing.domain == "housing_expert"
     assert set(housing.tools) == {
         "search_places_batch_tool",
         "compute_routes_tool",
@@ -342,14 +323,13 @@ def test_registry_get_existing_capabilities():
     assert housing.contexts == ["commune.housing"]
     assert housing.loading_policy == "eager_only"
     assert housing.version == "1.0.0"
-    assert "expert logement d'ODIS" in housing.instructions
+    assert "search_places_batch_tool" in housing.instructions
 
     # Healthcare (strict iso check: places + rna, no compute_routes)
     healthcare = registry.get("healthcare_adequation_territoire")
     assert healthcare.id == "healthcare_adequation_territoire"
     assert healthcare.name == "Adéquation Territoriale - Santé"
     assert healthcare.experts == ["healthcare_expert"]
-    assert healthcare.domain == "healthcare_expert"
     assert healthcare.tools == ["search_places_batch_tool", "search_rna_rag_batch_tool"]
     assert "compute_routes_tool" not in healthcare.tools
     assert "compute_routes_tool" not in healthcare.instructions
@@ -362,7 +342,6 @@ def test_registry_get_existing_capabilities():
     assert job.id == "job_adequation_territoire"
     assert job.name == "Adéquation Territoriale - Emploi"
     assert job.experts == ["job_hunter"]
-    assert job.domain == "job_hunter"
     assert job.tools == [
         "search_job_offers_batch_tool",
         "get_job_details_tool",
@@ -473,17 +452,21 @@ def test_registry_fail_closed_on_unknown_id():
 
 
 def test_registry_resolve_tools_production():
-    """Tests resolving tools for a capability against canonical tool functions."""
+    """Tests resolving tools for a capability against canonical tool functions via build_capabilities_for_expert."""
     registry = CapabilityRegistry()
-    resolved = registry.resolve_tools("housing_adequation_territoire")
-    assert set(resolved.keys()) == {
+    caps = registry.build_capabilities_for_expert(
+        ["housing_adequation_territoire"], expert="housing_expert"
+    )
+    assert len(caps) == 1
+    tool_names = {t.__name__ for t in caps[0].tools}
+    assert tool_names == {
         "search_places_batch_tool",
         "compute_routes_tool",
         "search_web_batch_tool",
     }
-    for tool_name, tool_fn in resolved.items():
+    for tool_fn in caps[0].tools:
         assert callable(tool_fn)
-        assert tool_fn == CANONICAL_TOOLS[tool_name]
+        assert tool_fn == CANONICAL_TOOLS[tool_fn.__name__]
 
 
 def test_registry_expert_tools_alignment_with_agents():
@@ -599,7 +582,7 @@ def test_registry_duplicate_id_fails_closed(tmp_path: Path):
 id: file1
 name: Cap One
 description: Desc 1
-domain: job_hunter
+experts: job_hunter
 ---
 Body 1
 """,
@@ -613,7 +596,7 @@ Body 1
 id: file1
 name: Cap Copy
 description: Desc Copy
-domain: job_hunter
+experts: job_hunter
 ---
 Body 2
 """,
@@ -623,37 +606,6 @@ Body 2
     with pytest.raises(CapabilityValidationError) as exc_info:
         CapabilityRegistry(capabilities_dir=caps_dir)
     assert "Duplicate capability ID 'file1'" in str(exc_info.value)
-
-
-def test_registry_in_memory_register():
-    """Tests in-memory registration and overwrite enforcement."""
-    registry = CapabilityRegistry(auto_load=False)
-    spec1 = CapabilitySpec(
-        id="mem_cap",
-        name="Memory Cap",
-        description="In-memory capability",
-        experts=["housing_expert"],
-        instructions="Instructions",
-    )
-    registry.register(spec1)
-    assert "mem_cap" in registry
-    assert registry.get("mem_cap").name == "Memory Cap"
-
-    # Attempt duplicate register without overwrite
-    spec2 = CapabilitySpec(
-        id="mem_cap",
-        name="Duplicate Cap",
-        description="Duplicate",
-        experts=["housing_expert"],
-        instructions="Instructions",
-    )
-    with pytest.raises(CapabilityValidationError) as exc_info:
-        registry.register(spec2, overwrite=False)
-    assert "already registered" in str(exc_info.value)
-
-    # Overwrite succeeds
-    registry.register(spec2, overwrite=True)
-    assert registry.get("mem_cap").name == "Duplicate Cap"
 
 
 def test_get_default_capability_registry_singleton():
@@ -728,12 +680,6 @@ def test_capability_spec_strips_whitespace_tools_and_contexts():
     assert spec.contexts == ["housing", "education"]
     assert spec.tags == ["tag1", "tag2"]
 
-    registry = CapabilityRegistry(auto_load=False)
-    registry.register(spec)
-    resolved = registry.resolve_tools("whitespace_spec")
-    assert "search_places_batch_tool" in resolved
-    assert "compute_routes_tool" in resolved
-
 
 def test_capability_spec_rejects_empty_tag():
     """Validates that empty tags are rejected with ValidationError."""
@@ -749,20 +695,6 @@ def test_capability_spec_rejects_empty_tag():
     assert "Tag must be a non-empty string" in str(exc_info.value)
 
 
-def test_capability_spec_rejects_conflicting_domain_and_experts():
-    """Validates that conflicting domain and experts fields raise ValidationError."""
-    with pytest.raises(ValidationError) as exc_info:
-        CapabilitySpec(
-            id="conflict_spec",
-            name="Conflict Spec",
-            description="Spec with conflicting domain",
-            domain="housing_expert",
-            experts=["job_hunter"],
-            instructions="Instructions.",
-        )
-    assert "Conflicting domain 'housing_expert'" in str(exc_info.value)
-
-
 def test_capability_spec_normalizes_scalar_experts_in_yaml():
     """Validates that a single string in experts (YAML scalar) is normalized to a list."""
     md = """---
@@ -775,7 +707,6 @@ Instructions.
 """
     spec = CapabilitySpec.from_markdown(md)
     assert spec.experts == ["job_hunter"]
-    assert spec.domain == "job_hunter"
 
 
 def test_capability_spec_deduplicates_experts():
@@ -828,37 +759,6 @@ def test_capability_spec_rejects_empty_version(empty_version: str):
         )
 
 
-def test_capability_spec_to_markdown_roundtrip():
-    """Validates serializing a CapabilitySpec to markdown and parsing it back intact."""
-    original = CapabilitySpec(
-        id="roundtrip_spec",
-        name="Roundtrip Spec",
-        description="Tests roundtrip serialization",
-        experts=["job_hunter", "mobility_expert"],
-        tools=["search_places_batch_tool", "compute_routes_tool"],
-        contexts=["housing", "education"],
-        loading_policy="deferrable",
-        version="2.1.0",
-        tags=["roundtrip", "test"],
-        instructions="### Step 1\nExecute step 1.\n### Step 2\nExecute step 2.",
-    )
-    md_text = original.to_markdown()
-    assert md_text.startswith("---\n")
-    assert "roundtrip_spec" in md_text
-
-    reconstructed = CapabilitySpec.from_markdown(md_text)
-    assert reconstructed.id == original.id
-    assert reconstructed.name == original.name
-    assert reconstructed.description == original.description
-    assert reconstructed.experts == original.experts
-    assert reconstructed.tools == original.tools
-    assert reconstructed.contexts == original.contexts
-    assert reconstructed.loading_policy == original.loading_policy
-    assert reconstructed.version == original.version
-    assert reconstructed.tags == original.tags
-    assert reconstructed.instructions == original.instructions
-
-
 def test_from_file_rejects_non_md_extension(tmp_path: Path):
     """Validates that from_file rejects non-.md files."""
     txt_file = tmp_path / "valid_cap.txt"
@@ -874,40 +774,12 @@ def test_from_file_rejects_directory(tmp_path: Path):
         CapabilitySpec.from_file(tmp_path)
 
 
-def test_registry_resolve_tools_for_expert():
-    """Validates resolving all canonical tools across an expert's capabilities."""
-    registry = CapabilityRegistry()
-    job_tools = registry.resolve_tools_for_expert("job_hunter")
-    assert "search_job_offers_batch_tool" in job_tools
-    assert "search_inclusion_jobs_batch_tool" in job_tools
-    assert "get_job_details_tool" in job_tools
-    assert "search_referentiels_batch_tool" in job_tools
-    for fn in job_tools.values():
-        assert callable(fn)
-
-
-def test_registry_resolve_tools_for_invalid_expert():
-    """Validates that resolve_tools_for_expert raises CapabilityValidationError on bad expert."""
-    registry = CapabilityRegistry()
-    with pytest.raises(CapabilityValidationError):
-        registry.resolve_tools_for_expert("unknown_expert")
-
-
 def test_registry_container_methods():
-    """Validates __iter__, __getitem__, and __repr__ on CapabilityRegistry."""
+    """Validates len, in, and __repr__ on CapabilityRegistry."""
     registry = CapabilityRegistry()
     assert len(registry) == 8
-
-    # __iter__
-    specs = list(registry)
-    assert len(specs) == 8
-    assert all(isinstance(s, CapabilitySpec) for s in specs)
-
-    # __getitem__
-    housing = registry["housing_adequation_territoire"]
-    assert housing.id == "housing_adequation_territoire"
-
-    # __repr__
+    assert "housing_adequation_territoire" in registry
+    assert "unknown_cap" not in registry
     repr_str = repr(registry)
     assert "CapabilityRegistry(8 capabilities" in repr_str
 
@@ -931,7 +803,7 @@ def test_capability_spec_normalizes_scalar_tools_contexts_tags():
 id: scalar_fields_spec
 name: Scalar Fields Spec
 description: Spec with scalar tools contexts and tags
-domain: housing_expert
+experts: housing_expert
 tools: search_places_batch_tool
 contexts: commune.housing
 tags: logement
@@ -956,20 +828,85 @@ def test_registry_raises_when_default_dir_missing(
         CapabilityRegistry(capabilities_dir=None)
 
 
-def test_build_capabilities_defer_loading():
-    """Validates that build_capabilities_for_expert correctly sets defer_loading on Capability."""
-    registry = CapabilityRegistry()
+def test_build_capabilities_defer_loading(tmp_path: Path):
+    """Validates S5: hot start capabilities are always eager, while additional deferrable capabilities are deferred."""
+    # 1. With standard capabilities (all currently eager_only)
+    registry = get_default_capability_registry()
     caps_eager = registry.build_capabilities_for_expert(
         ["housing_adequation_territoire"], defer_loading=False, expert="housing_expert"
     )
     assert len(caps_eager) == 1
     assert caps_eager[0].defer_loading is False
 
-    caps_deferred = registry.build_capabilities_for_expert(
+    caps_hot_start = registry.build_capabilities_for_expert(
         ["housing_adequation_territoire"], defer_loading=True, expert="housing_expert"
     )
-    assert len(caps_deferred) == 1
-    assert caps_deferred[0].defer_loading is True
+    assert len(caps_hot_start) == 1
+    # Hot start capabilities must remain eager even when defer_loading=True
+    assert caps_hot_start[0].defer_loading is False
+
+    # 2. With a dedicated directory having an eager hot start and a deferrable extra capability
+    caps_dir = tmp_path / "caps"
+    caps_dir.mkdir()
+    (caps_dir / "housing_adequation_territoire.md").write_text(
+        """---
+id: housing_adequation_territoire
+name: Logement Adéquation
+description: Base logement
+experts:
+  - housing_expert
+tools:
+  - search_places_batch_tool
+contexts:
+  - commune.housing
+loading_policy: eager_only
+---
+Instructions
+""",
+        encoding="utf-8",
+    )
+    (caps_dir / "housing_extra_deferrable.md").write_text(
+        """---
+id: housing_extra_deferrable
+name: Logement Extra
+description: Extra deferrable
+experts:
+  - housing_expert
+tools:
+  - search_places_batch_tool
+  - compute_routes_tool
+contexts:
+  - commune.housing
+loading_policy: deferrable
+---
+Instructions
+""",
+        encoding="utf-8",
+    )
+    custom_reg = CapabilityRegistry(capabilities_dir=caps_dir)
+
+    # When defer_loading is False: only requested hot-start capability is returned, eager
+    caps_off = custom_reg.build_capabilities_for_expert(
+        ["housing_adequation_territoire"], defer_loading=False, expert="housing_expert"
+    )
+    assert len(caps_off) == 1
+    assert caps_off[0].id == "housing_adequation_territoire"
+    assert caps_off[0].defer_loading is False
+    assert [t.__name__ for t in caps_off[0].tools] == ["search_places_batch_tool"]
+
+    # When defer_loading is True: hot-start is eager, extra deferrable capability is added as deferred
+    caps_on = custom_reg.build_capabilities_for_expert(
+        ["housing_adequation_territoire"], defer_loading=True, expert="housing_expert"
+    )
+    assert len(caps_on) == 2
+    # Hot-start capability
+    assert caps_on[0].id == "housing_adequation_territoire"
+    assert caps_on[0].defer_loading is False
+    assert [t.__name__ for t in caps_on[0].tools] == ["search_places_batch_tool"]
+    # Deferrable capability (tools deduplicated: search_places_batch_tool already registered on eager cap)
+    assert caps_on[1].id == "housing_extra_deferrable"
+    assert caps_on[1].defer_loading is True
+    assert [t.__name__ for t in caps_on[1].tools] == ["compute_routes_tool"]
 
 
 def test_registry_live_agent_toolsets_subset_of_capabilities():
@@ -1064,6 +1001,52 @@ def test_registry_build_capabilities_multi_capability_tool_deduplication():
     # Total unique tools across capabilities equals union of declared tools
     all_tools = cap1_tools + cap2_tools
     assert len(all_tools) == len(set(all_tools))
+
+
+def test_registry_rejects_unknown_context_block_on_load(tmp_path: Path):
+    """Validates that loading a capability with an unknown context block raises CapabilityValidationError."""
+    bad_cap_file = tmp_path / "bad_context_cap.md"
+    bad_cap_file.write_text(
+        """---
+id: bad_context_cap
+name: Bad Context
+description: Testing unknown context
+experts:
+  - housing_expert
+contexts:
+  - unknown.context.block
+loading_policy: eager_only
+---
+Instructions
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(CapabilityValidationError) as exc_info:
+        CapabilityRegistry(capabilities_dir=tmp_path)
+    assert "Unknown context block 'unknown.context.block'" in str(exc_info.value)
+
+
+def test_registry_accepts_valid_context_blocks_on_load(tmp_path: Path):
+    """Validates that loading a capability with valid context blocks succeeds."""
+    good_cap_file = tmp_path / "good_context_cap.md"
+    good_cap_file.write_text(
+        """---
+id: good_context_cap
+name: Good Context
+description: Testing valid context
+experts:
+  - housing_expert
+contexts:
+  - commune.housing
+loading_policy: eager_only
+---
+Instructions
+""",
+        encoding="utf-8",
+    )
+    registry = CapabilityRegistry(capabilities_dir=tmp_path)
+    assert "good_context_cap" in registry
+
 
 
 

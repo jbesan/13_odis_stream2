@@ -53,7 +53,7 @@ async def test_ts_agent_planning_offline(mock_deps):
                 {
                     "expert": "housing_expert",
                     "task_description": "Recherche logement urgent",
-                    "skill_cards": ["housing_full_analysis"],
+                    "capabilities": ["housing_adequation_territoire"],
                 }
             ],
         }

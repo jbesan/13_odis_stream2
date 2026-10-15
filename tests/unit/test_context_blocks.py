@@ -427,6 +427,41 @@ def test_expert_prompt_contexts_uses_blocks_seamlessly():
         assert len(ctxs.specific) > 2  # Not empty "{}"
 
 
+def test_expert_prompt_contexts_resolves_dynamically_from_capabilities():
+    state = _make_sample_state()
+    # Explicit capability ids passed
+    ctxs = ODISContextBuilder.expert_prompt_contexts(
+        state, "housing_expert", capability_ids=["housing_adequation_territoire"]
+    )
+    specific = json.loads(ctxs.specific)
+    assert "Données logement" in specific
+    assert "Données santé" not in specific
+
+    # Via state.expert_capabilities
+    state.expert_capabilities = {
+        "healthcare_expert": ["healthcare_adequation_territoire"]
+    }
+    ctxs_health = ODISContextBuilder.expert_prompt_contexts(
+        state, "healthcare_expert"
+    )
+    specific_health = json.loads(ctxs_health.specific)
+    assert "Données santé" in specific_health
+    assert "Données logement" not in specific_health
+
+
+def test_expert_prompt_contexts_deduplicates_overlapping_capability_contexts():
+    state = _make_sample_state()
+    # Both job_adequation_territoire and job_extend_job_search declare commune.employment
+    ctxs = ODISContextBuilder.expert_prompt_contexts(
+        state,
+        "job_hunter",
+        capability_ids=["job_adequation_territoire", "job_extend_job_search"],
+    )
+    specific = json.loads(ctxs.specific)
+    assert "Données emploi et formation" in specific
+    assert list(specific.keys()).count("Données emploi et formation") == 1
+
+
 def test_non_expert_agent_context_paths_intact():
     state = _make_sample_state()
     refiner_ctx = json.loads(ODISContextBuilder.agent_context(state, "refiner"))

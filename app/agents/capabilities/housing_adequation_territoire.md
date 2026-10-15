@@ -4,7 +4,6 @@ name: Adéquation Territoriale - Logement
 description: Consignes pour l'analyse des loyers moyens, du logement social et de l'hébergement d'urgence dans la commune.
 experts:
 - housing_expert
-domain: housing_expert
 tools:
 - search_places_batch_tool
 - compute_routes_tool

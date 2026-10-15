@@ -1,7 +1,7 @@
 """Unit tests for TS Agent SwarmPlan and ExpertTask validation (Phase 1).
 
 Tests validation of execution contracts, capabilities authorization via CapabilityRegistry,
-rejection of empty/unknown/unauthorized capabilities, and backward compatibility with skill_cards.
+and rejection of empty/unknown/unauthorized capabilities.
 """
 
 import pytest
@@ -27,26 +27,6 @@ def test_valid_expert_plan_with_capabilities_is_accepted():
     assert plan.swarm_mode == "specific_ask"
     assert len(plan.tasks) == 1
     assert plan.tasks[0].capabilities == ["housing_adequation_territoire"]
-    assert plan.tasks[0].skill_cards == ["housing_adequation_territoire"]
-
-
-def test_valid_expert_plan_with_legacy_skill_cards_normalized():
-    """Validates backward compatibility: legacy skill_cards are normalized to canonical capabilities."""
-    plan = SwarmPlan(
-        swarm_mode="specific_ask",
-        tasks=[
-            ExpertTask(
-                expert="housing_expert",
-                task_description="Vérifie le logement.",
-                skill_cards=["housing_full_analysis"],
-            )
-        ],
-    )
-
-    assert plan.swarm_mode == "specific_ask"
-    assert len(plan.tasks) == 1
-    assert plan.tasks[0].capabilities == ["housing_adequation_territoire"]
-    assert plan.tasks[0].skill_cards == ["housing_adequation_territoire"]
 
 
 def test_multi_capabilities_for_expert_accepted():
@@ -67,21 +47,13 @@ def test_multi_capabilities_for_expert_accepted():
     ]
 
 
-@pytest.mark.parametrize(
-    "empty_kwargs",
-    [
-        {"capabilities": []},
-        {"skill_cards": []},
-        {"capabilities": [], "skill_cards": []},
-    ],
-)
-def test_expert_task_rejects_empty_capabilities(empty_kwargs):
+def test_expert_task_rejects_empty_capabilities():
     """Validates that an ExpertTask rejects empty capabilities (min_length=1 rule)."""
     with pytest.raises(ValidationError):
         ExpertTask(
             expert="housing_expert",
             task_description="Tâche sans capability.",
-            **empty_kwargs,
+            capabilities=[],
         )
 
 
@@ -152,17 +124,6 @@ def test_expert_task_rejects_unauthorized_expert():
                 }
             ],
         },
-        # Unauthorized legacy skill for expert
-        {
-            "swarm_mode": "full_analysis",
-            "tasks": [
-                {
-                    "expert": "housing_expert",
-                    "task_description": "Mauvais domaine legacy.",
-                    "skill_cards": ["healthcare_full_analysis"],
-                }
-            ],
-        },
         # Unknown capability ID
         {
             "swarm_mode": "full_analysis",
@@ -174,17 +135,6 @@ def test_expert_task_rejects_unauthorized_expert():
                 }
             ],
         },
-        # Unknown legacy skill card
-        {
-            "swarm_mode": "full_analysis",
-            "tasks": [
-                {
-                    "expert": "housing_expert",
-                    "task_description": "Carte inconnue.",
-                    "skill_cards": ["does_not_exist"],
-                }
-            ],
-        },
         # Empty capabilities list
         {
             "swarm_mode": "full_analysis",
@@ -193,17 +143,6 @@ def test_expert_task_rejects_unauthorized_expert():
                     "expert": "housing_expert",
                     "task_description": "Sans capability.",
                     "capabilities": [],
-                }
-            ],
-        },
-        # Empty legacy skill_cards list
-        {
-            "swarm_mode": "full_analysis",
-            "tasks": [
-                {
-                    "expert": "housing_expert",
-                    "task_description": "Sans skill cards.",
-                    "skill_cards": [],
                 }
             ],
         },
@@ -229,20 +168,8 @@ def test_format_capabilities_catalog():
         assert spec.experts[0] in catalog_table
 
 
-def test_expert_task_fallback_when_empty_capabilities_and_skill_cards_provided():
-    """Validates that if capabilities is empty or None, skill_cards is used as fallback."""
-    task = ExpertTask(
-        expert="housing_expert",
-        task_description="Logement",
-        capabilities=[],
-        skill_cards=["housing_full_analysis"],
-    )
-    assert task.capabilities == ["housing_adequation_territoire"]
-    assert task.skill_cards == ["housing_adequation_territoire"]
-
-
 def test_expert_task_coerces_single_string_inputs():
-    """Validates that single string capability or skill_card is coerced into a list."""
+    """Validates that single string capability is coerced into a list."""
     task_cap = ExpertTask.model_validate(
         {
             "expert": "housing_expert",
@@ -252,15 +179,6 @@ def test_expert_task_coerces_single_string_inputs():
     )
     assert task_cap.capabilities == ["housing_adequation_territoire"]
 
-    task_skill = ExpertTask.model_validate(
-        {
-            "expert": "housing_expert",
-            "task_description": "Logement",
-            "skill_cards": "housing_full_analysis",
-        }
-    )
-    assert task_skill.capabilities == ["housing_adequation_territoire"]
-
 
 def test_expert_task_from_object_attributes():
     """Validates that an attribute-bearing object (non-dict) is supported via from_attributes."""
@@ -269,25 +187,11 @@ def test_expert_task_from_object_attributes():
     obj = SimpleNamespace(
         expert="housing_expert",
         task_description="Test object",
-        skill_cards=["housing_full_analysis"],
+        capabilities=["housing_adequation_territoire"],
     )
     task = ExpertTask.model_validate(obj, from_attributes=True)
     assert task.expert == "housing_expert"
     assert task.capabilities == ["housing_adequation_territoire"]
-
-
-def test_swarm_plan_normalizes_tasks_capabilities():
-    """Validates that SwarmPlan normalizes task capabilities to canonical IDs during plan validation."""
-    task = ExpertTask.model_construct(
-        expert="housing_expert",
-        task_description="Test construct",
-        capabilities=["housing_full_analysis"],
-    )
-    plan = SwarmPlan(
-        swarm_mode="specific_ask",
-        tasks=[task],
-    )
-    assert plan.tasks[0].capabilities == ["housing_adequation_territoire"]
 
 
 @pytest.mark.asyncio

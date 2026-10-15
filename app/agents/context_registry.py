@@ -7,7 +7,6 @@ from agents.context_blocks.
 from agents.context_blocks import (
     BUILTIN_BLOCKS,
     CORE_BLOCK_ORDER,
-    EXPERT_CONTEXT_MAP,
     ContextBlock,
     ContextBlockFamily,
     ContextBlockNotFoundError,
@@ -29,7 +28,6 @@ __all__ = [
     "ContextBlockValidationError",
     "BUILTIN_BLOCKS",
     "CORE_BLOCK_ORDER",
-    "EXPERT_CONTEXT_MAP",
     "get_default_context_registry",
     "reset_default_context_registry",
     "assemble_context_blocks",

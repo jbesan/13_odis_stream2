@@ -70,7 +70,10 @@ async def test_job_hunter_tool_registration(test_deps):
     assert list(job_hunter_agent._function_toolset.tools.keys()) == []
 
     registry = get_default_capability_registry()
-    job_tools = registry.resolve_tools_for_expert("job_hunter")
+    caps = registry.build_capabilities_for_expert(
+        ["job_adequation_territoire"], expert="job_hunter"
+    )
+    job_tools = {getattr(t, "__name__", str(t)) for cap in caps for t in cap.tools}
 
     assert "search_job_offers_batch_tool" in job_tools
     assert "search_job_offers_tool" not in job_tools

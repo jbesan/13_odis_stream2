@@ -4,7 +4,6 @@ name: Adéquation Territoriale - Santé
 description: Consignes pour évaluer l'indice d'accessibilité aux médecins et identifier les hôpitaux ou PMI de la commune.
 experts:
 - healthcare_expert
-domain: healthcare_expert
 tools:
 - search_places_batch_tool
 - search_rna_rag_batch_tool

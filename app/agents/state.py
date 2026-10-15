@@ -1,14 +1,12 @@
 import json
 import logging
-from typing import List, Dict, Any, Optional, Literal, NamedTuple
+from typing import List, Dict, Any, Optional, Literal, NamedTuple, Sequence
 from dataclasses import dataclass, field
 from pydantic import BaseModel, Field, ConfigDict, model_validator
-from pydantic_ai import Capability
 from google import genai
 from core.models import SearchCriterias, SearchResultsData, CommuneResult
 from core.evidence import DomainArtifact as EvidenceDomainArtifact, WebSearchBatchResult
 from agents.context_blocks import (
-    EXPERT_CONTEXT_MAP,
     assemble_context_blocks,
     get_default_context_registry,
 )
@@ -152,19 +150,12 @@ class GraphState:
     run_attempt: int = 1
     run_deadline_at: float | None = None
     usage: UsageStats = field(default_factory=UsageStats)
-    active_skills: List[str] = field(default_factory=list)
     expert_tasks: Dict[str, str] = field(
         default_factory=dict
     )  # Maps expert domain -> tailored task/mission
-    expert_capabilities: Dict[str, List[Capability]] = field(
+    expert_capabilities: Dict[str, List[str]] = field(
         default_factory=dict
-    )  # Maps expert domain -> compiled Pydantic AI Capability instances for run
-    expert_skill_instructions: Dict[str, str] = field(
-        default_factory=dict
-    )  # Maps expert domain -> skill cards instructions
-    expert_skill_tools: Dict[str, List[str]] = field(
-        default_factory=dict
-    )  # Maps expert domain -> tools allowed by active skill cards
+    )  # Maps expert domain -> list of capability IDs for run
 
     def __post_init__(self):
         # Sync briefing from criteria if not explicitly set
@@ -177,8 +168,6 @@ class GraphState:
 
         # Convert string focus_city to CommuneResult for robustness
         if isinstance(self.focus_city, str):
-            from core.models import CommuneResult
-
             self.focus_city = CommuneResult(name=self.focus_city, codgeo="")
 
 
@@ -282,15 +271,18 @@ class ODISContextBuilder:
 
     @classmethod
     def expert_prompt_contexts(
-        cls, state: "GraphState", agent_name: str
+        cls,
+        state: "GraphState",
+        agent_name: str,
+        capability_ids: Optional[Sequence[str]] = None,
     ) -> ExpertPromptContexts:
         """Return the stable shared prefix components and the expert-specific context.
 
         The shared components (briefing narrative, criteria JSON, and commune identity JSON)
-        are assembled identically for every legacy expert so Gemini can recognize the same
-        prompt prefix across the parallel expert runs. The expert-specific block is kept
-        after it; the current mission remains the final user message and is deliberately
-        absent here.
+        are assembled identically for every expert so Gemini can recognize the same
+        prompt prefix across parallel expert runs. The expert-specific block is resolved
+        dynamically from the contexts declared in active capabilities, deduplicated
+        in stable order.
         """
         if agent_name not in cls.DOMAIN_EXPERTS:
             raise ValueError(f"{agent_name!r} is not a domain expert")
@@ -308,9 +300,38 @@ class ODISContextBuilder:
         )
         commune_json = cls._dump_context(commune_dict, compact=True)
 
-        expert_contexts = EXPERT_CONTEXT_MAP.get(agent_name, [])
+        from agents.capability_registry import (
+            VALID_EXPERTS,
+            get_default_capability_registry,
+        )
+
+        cap_registry = get_default_capability_registry()
+
+        # Resolve active capability identifiers for this expert run
+        active_caps: Sequence[Any] = capability_ids or ()
+        if not active_caps and hasattr(state, "expert_capabilities"):
+            active_caps = state.expert_capabilities.get(agent_name, ())
+
+        resolved_cap_ids: List[str] = []
+        for item in active_caps:
+            if isinstance(item, str):
+                resolved_cap_ids.append(item)
+            elif hasattr(item, "id") and getattr(item, "id"):
+                resolved_cap_ids.append(str(item.id))
+
+        if not resolved_cap_ids and agent_name in VALID_EXPERTS:
+            resolved_cap_ids = [cap_registry.get_base_capability_id(agent_name)]
+
+        # Collect and deduplicate context blocks declared by active capabilities
+        context_ids: List[str] = []
+        for cid in resolved_cap_ids:
+            spec = cap_registry.get(cid)
+            for ctx_block in spec.contexts:
+                if ctx_block not in context_ids:
+                    context_ids.append(ctx_block)
+
         specific_dict = assemble_context_blocks(
-            expert_contexts, state, focus_city=focus_city, registry=registry
+            context_ids, state, focus_city=focus_city, registry=registry
         )
         specific_json = cls._dump_context(specific_dict, compact=True)
 

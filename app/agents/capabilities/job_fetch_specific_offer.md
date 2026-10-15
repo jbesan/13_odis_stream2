@@ -4,7 +4,6 @@ name: Consultation d'une Offre d'Emploi
 description: Consignes pour consulter le détail d'une offre d'emploi spécifique à partir de son identifiant (ID).
 experts:
 - job_hunter
-domain: job_hunter
 tools:
 - get_job_details_tool
 contexts:
