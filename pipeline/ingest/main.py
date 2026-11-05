@@ -9,6 +9,7 @@ from typing import Sequence
 from pipeline.common import PipelineLogger, load_config
 from pipeline.ingest.cleaners import (
     clean_associations,
+    clean_bassins_de_vie,
     clean_bpe,
     clean_caf,
     clean_codes_postaux,
@@ -92,6 +93,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "school_effectifs": clean_school_effectifs,
         "bpe": clean_bpe,
         "codes_postaux": clean_codes_postaux,
+        "bassins_de_vie": clean_bassins_de_vie,
         "formations": clean_formations,
         "gares": clean_odace_gares,
         "odace_rent": clean_odace_rent,

@@ -418,3 +418,97 @@ def clean_codes_postaux(config: Dict[str, Any], logger: PipelineLogger) -> None:
 def clean_odace_gares(config: Dict[str, Any], logger: PipelineLogger) -> None:
     """Fetches and cleans Gare data from Odace API (Bypassed in favor of BPE25)."""
     logger.log_step("clean_odace_gares", "SKIPPED")
+
+
+def clean_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger) -> None:
+    """Cleans Bassins de Vie referential and saves to parquet.
+
+    Args:
+        config: Pipeline configuration dictionary.
+        logger: Pipeline logger instance.
+
+    Raises:
+        PipelineRunError: If Odace fetch or cleaning fails.
+    """
+    import pipeline.ingest as ingest
+
+    logger.log_step("clean_bassins_de_vie", "STARTED")
+    source = config["sources"]["bassins_de_vie"]
+    output_path = context.CLEAN_DIR / "bassins_de_vie.parquet"
+
+    if source.get("use_odace", False):
+        try:
+            client = ingest.get_odace_client(logger)
+            df_odace = client.fetch_table(
+                source.get("odace_table", "ref_bassin_vie"),
+                ttl_days=source.get("ttl_days", 365),
+            )
+            if not df_odace.empty:
+                cols_dict = {
+                    "codgeo": ingest.normalize_code(df_odace["commune_insee_code"], 5),
+                    "bassin_de_vie": ingest.normalize_code(df_odace["code_bassin_vie"], 5),
+                    "libelle_bassin_de_vie": df_odace["libelle_bassin_vie"].astype(str).str.strip(),
+                }
+                if "commune_sk" in df_odace.columns:
+                    cols_dict["commune_sk"] = df_odace["commune_sk"]
+
+                df_out = pd.DataFrame(cols_dict).dropna(subset=["codgeo", "bassin_de_vie"]).drop_duplicates(subset=["codgeo"])
+
+                if df_out.empty:
+                    raise PipelineRunError("Cleaned bassins_de_vie dataset is empty")
+
+                df_out.to_parquet(output_path)
+                logger.log_step(
+                    "clean_bassins_de_vie",
+                    "COMPLETED",
+                    {"path": str(output_path), "rows": len(df_out), "source": "odace"},
+                )
+                return
+            else:
+                logging.warning("Odace fetch returned empty data for ref_bassin_vie.")
+        except Exception as e:
+            logging.error(f"Failed to fetch ref_bassin_vie from Odace: {e}")
+            raise PipelineRunError(f"clean_bassins_de_vie failed with Odace: {e}") from e
+
+    # Legacy raw fallback
+    archive_file = source.get("archive_file")
+    raw_path = context.CACHE_DIR / archive_file if archive_file else None
+    if raw_path and raw_path.exists():
+        try:
+            df_raw = ingest.load_dataset(raw_path, source)
+            df_raw = df_raw.rename(
+                columns={
+                    "Code géographique": "codgeo",
+                    "Bassin de vie 2022": "bassin_de_vie",
+                    "Libellé géographique du bassin de vie 2022": "libelle_bassin_de_vie",
+                }
+            )
+            if "codgeo" in df_raw.columns and "bassin_de_vie" in df_raw.columns:
+                df_out = pd.DataFrame(
+                    {
+                        "codgeo": ingest.normalize_code(df_raw["codgeo"], 5),
+                        "bassin_de_vie": ingest.normalize_code(df_raw["bassin_de_vie"], 5),
+                        "libelle_bassin_de_vie": df_raw.get(
+                            "libelle_bassin_de_vie", pd.Series("", index=df_raw.index)
+                        )
+                        .astype(str)
+                        .str.strip(),
+                    }
+                ).dropna(subset=["codgeo", "bassin_de_vie"]).drop_duplicates(subset=["codgeo"])
+
+                if df_out.empty:
+                    raise PipelineRunError("Raw bassins_de_vie produced no valid rows")
+
+                df_out.to_parquet(output_path)
+                logger.log_step(
+                    "clean_bassins_de_vie",
+                    "COMPLETED",
+                    {"path": str(output_path), "rows": len(df_out), "source": "raw"},
+                )
+                return
+        except Exception as e:
+            logging.error(f"Failed to clean raw bassins_de_vie: {e}")
+            raise PipelineRunError(f"clean_bassins_de_vie raw fallback failed: {e}") from e
+
+    logging.warning("Bassins de vie source file not found and Odace disabled.")
+    logger.log_step("clean_bassins_de_vie", "SKIPPED", {"reason": "Source not found"})

@@ -187,25 +187,36 @@ def clean_refugee_associations(config: Dict[str, Any], logger: PipelineLogger) -
     df_refug["codgeo"] = df_refug["codgeo"].astype(str).str.zfill(5)
 
     mapping_source = config["sources"]["bassins_de_vie"]
-    mapping_path = context.CACHE_DIR / mapping_source["archive_file"]
-    if mapping_path.exists():
-        df_mapping = load_dataset(mapping_path, mapping_source)
-        df_mapping = df_mapping.rename(
-            columns={
-                "Code géographique": "codgeo",
-                "Bassin de vie 2022": "bassin_de_vie",
-            }
-        )
+    cleaned_bv_path = context.CLEAN_DIR / "bassins_de_vie.parquet"
+    if cleaned_bv_path.exists():
+        df_mapping = pd.read_parquet(cleaned_bv_path)
         if "codgeo" in df_mapping.columns and "bassin_de_vie" in df_mapping.columns:
-            df_mapping["codgeo"] = df_mapping["codgeo"].astype(str).str.zfill(5)
-            df_mapping["bassin_de_vie"] = (
-                df_mapping["bassin_de_vie"]
-                .astype(str)
-                .str.replace(r"\.0$", "", regex=True)
-            )
             df_refug = df_refug.merge(
                 df_mapping[["codgeo", "bassin_de_vie"]], on="codgeo", how="left"
             )
+    else:
+        archive_file = mapping_source.get("archive_file")
+        mapping_path = (
+            context.CACHE_DIR / archive_file if archive_file else None
+        )
+        if mapping_path and mapping_path.exists():
+            df_mapping = load_dataset(mapping_path, mapping_source)
+            df_mapping = df_mapping.rename(
+                columns={
+                    "Code géographique": "codgeo",
+                    "Bassin de vie 2022": "bassin_de_vie",
+                }
+            )
+            if "codgeo" in df_mapping.columns and "bassin_de_vie" in df_mapping.columns:
+                df_mapping["codgeo"] = df_mapping["codgeo"].astype(str).str.zfill(5)
+                df_mapping["bassin_de_vie"] = (
+                    df_mapping["bassin_de_vie"]
+                    .astype(str)
+                    .str.replace(r"\.0$", "", regex=True)
+                )
+                df_refug = df_refug.merge(
+                    df_mapping[["codgeo", "bassin_de_vie"]], on="codgeo", how="left"
+                )
 
     useful_cols = [
         "id",

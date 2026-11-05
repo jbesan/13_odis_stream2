@@ -29,7 +29,8 @@ def test_domain_contracts_load_and_validate():
     assert "Transports en commun" in contracts.mobility.sustainable_modes
     assert "ccas" in contracts.inclusion.ccas_keywords
     assert contracts.rna_rag.output_dimensionality == 128
-    assert len(contracts.runner.cleaned_sources) == 29
+    assert len(contracts.runner.cleaned_sources) == 30
+    assert "bassins_de_vie" in contracts.runner.cleaned_sources
     assert "salesforce_jaccueille" in contracts.runner.cleaned_sources
     assert len(contracts.geography.plm_communes) == 3
     assert "75056" in contracts.geography.plm_communes

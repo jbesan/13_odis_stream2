@@ -283,11 +283,67 @@ def clean_housing_occupation(config: Dict[str, Any], logger: PipelineLogger) -> 
 
 
 def clean_loyers(config: Dict[str, Any], logger: PipelineLogger) -> None:
-    """Cleans Loyers data (Appartements) and saves to parquet."""
-    logger.log_step("clean_loyers", "STARTED")
-    source = config["sources"]["loyers_apparts"]
-    path = context.CACHE_DIR / source["local_name"]
+    """Cleans Loyers data (Appartements) and saves to parquet.
 
+    Args:
+        config: Pipeline configuration dictionary.
+        logger: Pipeline logger instance.
+
+    Raises:
+        PipelineRunError: If ODAS fetch fails or returns unusable data.
+    """
+    import pipeline.ingest as ingest
+
+    logger.log_step("clean_loyers", "STARTED")
+    source = config.get("sources", {}).get("loyers_apparts", {})
+
+    if source.get("use_odace", False):
+        try:
+            client = ingest.get_odace_client(logger)
+            df_odace = client.fetch_table(
+                source.get("odace_table", "fact_loyer_appartement")
+            )
+            if (
+                not df_odace.empty
+                and "commune_insee_code" in df_odace.columns
+                and "loyer_predit_m2" in df_odace.columns
+            ):
+                df_out = pd.DataFrame()
+                df_out["codgeo"] = ingest.normalize_code(
+                    df_odace["commune_insee_code"], 5
+                )
+                df_out["loyer_app_m2"] = pd.to_numeric(
+                    df_odace["loyer_predit_m2"], errors="coerce"
+                )
+                df_out = df_out.dropna(subset=["codgeo", "loyer_app_m2"])
+                df_out = (
+                    df_out.groupby("codgeo")["loyer_app_m2"]
+                    .mean()
+                    .reset_index()
+                )
+
+                if not df_out.empty:
+                    output_path = context.CLEAN_DIR / "loyers.parquet"
+                    df_out.to_parquet(output_path)
+                    logger.log_step(
+                        "clean_loyers",
+                        "COMPLETED",
+                        {
+                            "path": str(output_path),
+                            "rows": len(df_out),
+                            "source": "odace",
+                        },
+                    )
+                    return
+            else:
+                logging.warning(
+                    "Odace fetch returned empty or invalid data for fact_loyer_appartement."
+                )
+        except Exception as e:
+            logging.error(f"Failed to fetch fact_loyer_appartement from Odace: {e}")
+        raise PipelineRunError("Odace loyers did not produce a usable dataset")
+
+    path = context.CACHE_DIR / source.get("local_name", "loyers_apparts_2023.csv")
     if not path.exists():
         return
 

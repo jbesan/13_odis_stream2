@@ -19,6 +19,8 @@ sources:
     description: "Population municipale 2024"
 
   bassins_de_vie:
+    use_odace: true
+    odace_table: "ref_bassin_vie"
     url: "https://www.insee.fr/fr/statistiques/fichier/6676988/BV2022_au_01-01-2025.zip"
     format: "zip"
     local_name: "bassins_de_vie.zip"
@@ -33,6 +35,8 @@ sources:
       - Libellé géographique du bassin de vie 2022
 
   services_inclusion:
+    use_odace: true
+    odace_table: "dim_service_inclusion"
     datagouv_resource_id: "de4856b8-bb67-4b79-83bd-038e846a1774"
     format: "parquet"
     local_name: "services_inclusion.parquet"
@@ -145,6 +149,8 @@ sources:
     description: "Taux de couverture petite enfance (CAF)"
 
   education_effectifs:
+    use_odace: true
+    odace_table: "fact_effectif_scolaire"
     url: "https://data.education.gouv.fr/explore/dataset/fr-en-ecoles-effectifs-nb_classes/download?format=csv&timezone=Europe/Berlin&use_labels_for_header=false"
     format: "csv"
     local_name: "education_effectifs.csv"
@@ -175,6 +181,8 @@ sources:
       - Code_commune_INSEE
 
   formations_annuaire:
+    use_odace: true
+    odace_table: "dim_organisme_formation"
     datagouv_resource_id: "ac59a0f5-fa83-4b82-bf12-3c5806d4f19f"
     format: "csv"
     local_name: "formations_annuaire.csv"
@@ -189,6 +197,8 @@ sources:
       - informationsDeclarees.specialitesDeFormation.codeSpecialite3
 
   formations_referentiel:
+    use_odace: true
+    odace_table: "ref_formation"
     datagouv_resource_id: "803121dd-1acf-423d-b7d8-8511f1c607c1"
     format: "xlsx"
     local_name: "formations_referentiel.xlsx"
@@ -199,6 +209,8 @@ sources:
       - label
 
   rome:
+    use_odace: true
+    odace_table: "ref_rome"
     datagouv_resource_id: "1c893376-8476-4262-9a0e-8df519883e1e"
     format: "zip"
     archive_file: "unix_referentiel_code_rome_v460.json"
@@ -222,17 +234,21 @@ sources:
     description: "Population active et chômage (INSEE)"
 
   referentiel_services_inclusion:
+    use_odace: true
+    odace_table: "ref_service_inclusion"
     url: "file://pipeline/local/referentiel_services_inclusion.csv"
     format: "csv"
     local_name: "referentiel_services_inclusion.csv"
     ttl_days: 365
-    description: "Référentiel des services d'inclusion (fichier local portable)"
+    description: "Référentiel des services d'inclusion (Data Inclusion via ODAS)"
     used_columns:
       - code
       - libelle
       - thematique
 
   loyers_apparts:
+    use_odace: true
+    odace_table: "fact_loyer_appartement"
     datagouv_resource_id: "43618998-3b37-4a69-bb25-f321f1a93ed1"
     format: "csv"
     local_name: "loyers_apparts_2023.csv"
@@ -250,6 +266,8 @@ sources:
       - loypredm2
 
   structures_inclusion:
+    use_odace: true
+    odace_table: "dim_structure_inclusion"
     datagouv_resource_id: "915c05e8-77ea-44f6-9837-0f1eff897a54"
     format: "parquet"
     local_name: "structures_inclusion.parquet"
@@ -264,6 +282,12 @@ sources:
       - telephone
       - site_web
       - adresse
+
+  siae_structures:
+    use_odace: true
+    odace_table: "dim_siae_structure"
+    ttl_days: 30
+    description: "Structures de l'insertion par l'activité économique (SIAE)"
 
   population_details:
     use_odace: true

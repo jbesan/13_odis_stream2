@@ -82,7 +82,7 @@
     },
     "generate_referentiels": {
       "status": "CREATED",
-      "timestamp": "2026-07-31T19:29:48.914158",
+      "timestamp": "2026-11-05T12:38:24.221338+00:00",
       "details": {
         "path": "pipeline/cache/output/odis_referentiels.parquet"
       }
@@ -96,7 +96,7 @@
     },
     "ingest_all": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-05T10:20:15.576271+00:00",
+      "timestamp": "2026-11-05T12:38:02.927116+00:00",
       "details": {}
     },
     "clean_communes": {
@@ -237,18 +237,18 @@
     },
     "clean_school_effectifs": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:01:29.123758",
+      "timestamp": "2026-11-05T11:22:09.858371+00:00",
       "details": {
-        "rows": 21102,
+        "rows": 21075,
         "path": "pipeline/cache/clean/school_effectifs.parquet"
       }
     },
     "clean_formations": {
-      "status": "ANNUAIRE",
-      "timestamp": "2026-09-10T13:35:47.477650+00:00",
+      "status": "COMPLETED",
+      "timestamp": "2026-11-05T11:22:10.014560+00:00",
       "details": {
-        "path": "pipeline/cache/clean/formations_annuaire.parquet",
-        "rows": 223905
+        "rows": 197868,
+        "path": "pipeline/cache/clean/formations_annuaire.parquet"
       }
     },
     "apply_prescoring": {
@@ -300,25 +300,25 @@
     },
     "clean_loyers": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:01:30.472391",
+      "timestamp": "2026-11-05T11:22:09.464724+00:00",
       "details": {
-        "rows": 34970,
+        "rows": 34928,
         "path": "pipeline/cache/clean/loyers.parquet"
       }
     },
     "clean_services_inclusion": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:01:01.505266",
+      "timestamp": "2026-11-05T11:22:10.611813+00:00",
       "details": {
-        "rows": 283416,
+        "rows": 277617,
         "path": "pipeline/cache/clean/services_inclusion.parquet"
       }
     },
     "clean_structures_inclusion": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:01:01.914614",
+      "timestamp": "2026-11-05T11:22:10.932529+00:00",
       "details": {
-        "rows": 12752,
+        "rows": 12560,
         "path": "pipeline/cache/clean/structures_inclusion.parquet"
       }
     },
@@ -511,6 +511,14 @@
         "path": "pipeline/cache/output/salesforce_jaccueille_bdv.parquet",
         "rows": 0
       }
+    },
+    "clean_bassins_de_vie": {
+      "status": "COMPLETED",
+      "timestamp": "2026-11-05T12:38:02.926536+00:00",
+      "details": {
+        "rows": 34876,
+        "path": "pipeline/cache/clean/bassins_de_vie.parquet"
+      }
     }
   },
   "sources": {
@@ -530,14 +538,14 @@
       "file": "pipeline/cache/raw/voisins.csv"
     },
     "bassins_de_vie": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.507446",
-      "file": "pipeline/cache/raw/bassins_de_vie.zip"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-05T12:38:00.792014+00:00",
+      "file": "managed by Odace"
     },
     "services_inclusion": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.508010",
-      "file": "pipeline/cache/raw/services_inclusion.parquet"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-05T11:22:09.401449+00:00",
+      "file": "managed by Odace"
     },
     "associations": {
       "status": "CACHED",
@@ -570,9 +578,9 @@
       "file": "pipeline/cache/raw/staging_caf_taux_couverture.json"
     },
     "education_effectifs": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.511852",
-      "file": "pipeline/cache/raw/education_effectifs.csv"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-05T11:22:09.401869+00:00",
+      "file": "managed by Odace"
     },
     "education_annuaire": {
       "status": "FAILED",
@@ -590,9 +598,9 @@
       "file": "Source file not found: /Users/jacques/dev/13_odis_stream2/csv/annuaire_sante_finess.parquet"
     },
     "rome": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.513908",
-      "file": "pipeline/cache/raw/rome.zip"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-05T11:17:59.486843+00:00",
+      "file": "managed by Odace"
     },
     "population_active": {
       "status": "CACHED",
@@ -630,9 +638,9 @@
       "file": "managed by Odace"
     },
     "formations_annuaire": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.512881",
-      "file": "pipeline/cache/raw/formations_annuaire.csv"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-05T11:22:09.402272+00:00",
+      "file": "managed by Odace"
     },
     "formations_referentiel": {
       "status": "CACHED",
@@ -660,14 +668,14 @@
       "file": "Failed to fetch dim_accueillant: 403 Client Error: Forbidden for url: https://odace-pipeline-588398598428.europe-west1.run.app/api/data/preview/silver/dim_accueillant"
     },
     "loyers_apparts": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.514944",
-      "file": "pipeline/cache/raw/loyers_apparts_2023.csv"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-05T11:22:09.402665+00:00",
+      "file": "managed by Odace"
     },
     "structures_inclusion": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.515450",
-      "file": "pipeline/cache/raw/structures_inclusion.parquet"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-05T11:22:09.403060+00:00",
+      "file": "managed by Odace"
     },
     "population_details": {
       "status": "CACHED",
@@ -695,8 +703,8 @@
       "file": "pipeline/cache/raw/Dares_Table_passage_ROME_Qualif_to_FAP2021_pour_programme.csv"
     },
     "rome_referential": {
-      "status": "FETCHED",
-      "timestamp": "2026-06-11T09:34:20.041903",
+      "status": "fetched",
+      "timestamp": "2026-11-05T11:00:16.687627+00:00",
       "file": "pipeline/cache/raw/rome_referential_api.parquet"
     },
     "odace_fact_loyer_annonce": {

@@ -7,15 +7,22 @@ from unittest.mock import patch, MagicMock
 
 from pipeline.odace_client import OdaceClient, OdasClient, get_odas_client
 from pipeline.ingest import (
+    clean_bassins_de_vie,
     clean_bpe,
     clean_caf,
     clean_codes_postaux,
     clean_communes,
     clean_departements,
+    clean_formations,
     clean_housing_occupation,
+    clean_loyers,
     clean_nomenclature_waldec,
     clean_political,
     clean_regions,
+    clean_school_effectifs,
+    clean_services_inclusion,
+    clean_structures_inclusion,
+    fetch_rome_referential,
     transform_housing_occupation_odace,
     PipelineLogger,
 )
@@ -1278,6 +1285,1139 @@ def test_main_cli_step_to_source_resolution():
         assert "departements_ref" in sources_seen
         assert "political_nuance" not in sources_seen
         assert "caf" not in sources_seen
+
+
+# =====================================================================
+# 5. Palier 2: Loyers Migration Tests
+# =====================================================================
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_loyers_odace_success(mock_get_client, temp_cache_dirs):
+    """Tests clean_loyers maps Odace fact_loyer_appartement columns and aggregates mean rent."""
+    _, clean_dir = temp_cache_dirs
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.return_value = pd.DataFrame(
+        [
+            {"commune_insee_code": "01001", "loyer_predit_m2": 10.5},
+            {"commune_insee_code": "01001", "loyer_predit_m2": 11.5},
+            {"commune_insee_code": "75001", "loyer_predit_m2": 32.0},
+        ]
+    )
+
+    config = {
+        "sources": {
+            "loyers_apparts": {
+                "use_odace": True,
+                "odace_table": "fact_loyer_appartement",
+            }
+        }
+    }
+
+    clean_loyers(config, MagicMock(spec=PipelineLogger))
+
+    out_file = clean_dir / "loyers.parquet"
+    assert out_file.exists()
+    res = pd.read_parquet(out_file)
+    assert len(res) == 2
+    assert set(res.columns) == {"codgeo", "loyer_app_m2"}
+    assert res.loc[res["codgeo"] == "01001", "loyer_app_m2"].iloc[0] == 11.0
+    assert res.loc[res["codgeo"] == "75001", "loyer_app_m2"].iloc[0] == 32.0
+    mock_client.fetch_table.assert_called_once_with("fact_loyer_appartement")
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_loyers_odace_failure(mock_get_client, temp_cache_dirs):
+    """Tests clean_loyers fail-closed when ODAS fetch fails."""
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.side_effect = Exception("Network error")
+
+    config = {
+        "sources": {
+            "loyers_apparts": {
+                "use_odace": True,
+                "odace_table": "fact_loyer_appartement",
+            }
+        }
+    }
+
+    with pytest.raises(PipelineRunError, match="Odace loyers"):
+        clean_loyers(config, MagicMock(spec=PipelineLogger))
+
+
+def test_clean_loyers_legacy_fallback(temp_cache_dirs):
+    """Tests clean_loyers fallback when use_odace is false."""
+    raw_dir, clean_dir = temp_cache_dirs
+    csv_file = raw_dir / "loyers_apparts_2023.csv"
+    csv_file.write_text("INSEE_C;loypredm2\n01001;12,5\n75001;35,0\n", encoding="utf-8")
+
+    config = {
+        "sources": {
+            "loyers_apparts": {
+                "use_odace": False,
+                "local_name": "loyers_apparts_2023.csv",
+                "sep": ";",
+                "encoding": "utf-8",
+            }
+        }
+    }
+
+    clean_loyers(config, MagicMock(spec=PipelineLogger))
+    out_file = clean_dir / "loyers.parquet"
+    assert out_file.exists()
+    res = pd.read_parquet(out_file)
+    assert len(res) == 2
+    assert res.loc[res["codgeo"] == "01001", "loyer_app_m2"].iloc[0] == 12.5
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_loyers_edge_cases(mock_get_client, temp_cache_dirs):
+    """Tests clean_loyers handles float INSEE codes, nulls, and multiple observations."""
+    _, clean_dir = temp_cache_dirs
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.return_value = pd.DataFrame(
+        [
+            {"commune_insee_code": 1001.0, "loyer_predit_m2": "10.0"},
+            {"commune_insee_code": "2A004", "loyer_predit_m2": 15.0},
+            {"commune_insee_code": None, "loyer_predit_m2": 20.0},
+            {"commune_insee_code": "75001", "loyer_predit_m2": np.nan},
+        ]
+    )
+
+    config = {
+        "sources": {
+            "loyers_apparts": {
+                "use_odace": True,
+                "odace_table": "fact_loyer_appartement",
+            }
+        }
+    }
+
+    clean_loyers(config, MagicMock(spec=PipelineLogger))
+    out_file = clean_dir / "loyers.parquet"
+    assert out_file.exists()
+    res = pd.read_parquet(out_file)
+    assert len(res) == 2
+    assert set(res["codgeo"]) == {"01001", "2A004"}
+
+
+# =====================================================================
+# 6. Palier 2: Services Inclusion Migration Tests
+# =====================================================================
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_services_inclusion_odace_success(mock_get_client, temp_cache_dirs):
+    """Tests clean_services_inclusion parses thematiques, cleans slugs, and writes parquet."""
+    _, clean_dir = temp_cache_dirs
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.return_value = pd.DataFrame(
+        [
+            {
+                "service_id": "srv1",
+                "service_nom": "Service Logement",
+                "thematiques": "['logement' 'insertion']",
+                "latitude": 48.85,
+                "longitude": 2.35,
+                "commune_insee_code": "75001",
+            },
+            {
+                "service_id": "srv2",
+                "service_nom": "Service Santé",
+                "thematiques": "['sante']",
+                "latitude": 45.75,
+                "longitude": 4.85,
+                "commune_insee_code": "69123",
+            },
+        ]
+    )
+
+    config = {
+        "sources": {
+            "services_inclusion": {
+                "use_odace": True,
+                "odace_table": "dim_service_inclusion",
+            }
+        }
+    }
+
+    clean_services_inclusion(config, MagicMock(spec=PipelineLogger))
+
+    out_file = clean_dir / "services_inclusion.parquet"
+    assert out_file.exists()
+    res = pd.read_parquet(out_file)
+    assert len(res) == 3  # srv1 exploded into 2 rows, srv2 into 1 row
+    assert set(res.columns) == {
+        "id_structure",
+        "nom",
+        "service_slug",
+        "latitude",
+        "longitude",
+        "codgeo",
+    }
+    assert set(res.loc[res["id_structure"] == "srv1", "service_slug"]) == {
+        "logement",
+        "insertion",
+    }
+    assert res.loc[res["id_structure"] == "srv2", "service_slug"].iloc[0] == "sante"
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_services_inclusion_odace_failure(mock_get_client, temp_cache_dirs):
+    """Tests clean_services_inclusion fail-closed when ODAS fetch fails."""
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.side_effect = Exception("ODAS timeout")
+
+    config = {
+        "sources": {
+            "services_inclusion": {
+                "use_odace": True,
+                "odace_table": "dim_service_inclusion",
+            }
+        }
+    }
+
+    with pytest.raises(PipelineRunError, match="Odace services_inclusion"):
+        clean_services_inclusion(config, MagicMock(spec=PipelineLogger))
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_services_inclusion_edge_cases(mock_get_client, temp_cache_dirs):
+    """Tests clean_services_inclusion with newline-separated arrays, null coords, and empty inputs."""
+    _, clean_dir = temp_cache_dirs
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.return_value = pd.DataFrame(
+        [
+            # Newline separated stringified array from ODAS
+            {
+                "service_id": "srv_nl",
+                "service_nom": "Service Multi",
+                "thematiques": "['thematique-1'\n 'thematique-2']",
+                "latitude": 48.8,
+                "longitude": 2.3,
+                "commune_insee_code": 75001.0,
+            },
+            # Missing coordinates -> dropped
+            {
+                "service_id": "srv_nocoord",
+                "service_nom": "Service Sans Coord",
+                "thematiques": "['thematique-3']",
+                "latitude": None,
+                "longitude": 2.3,
+                "commune_insee_code": "75001",
+            },
+        ]
+    )
+
+    config = {
+        "sources": {
+            "services_inclusion": {
+                "use_odace": True,
+                "odace_table": "dim_service_inclusion",
+            }
+        }
+    }
+
+    clean_services_inclusion(config, MagicMock(spec=PipelineLogger))
+    out_file = clean_dir / "services_inclusion.parquet"
+    assert out_file.exists()
+    res = pd.read_parquet(out_file)
+    assert len(res) == 2
+    assert set(res["service_slug"]) == {"thematique-1", "thematique-2"}
+    assert res["codgeo"].iloc[0] == "75001"
+
+
+# =====================================================================
+# 7. Palier 2: Structures Inclusion Migration Tests
+# =====================================================================
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_structures_inclusion_odace_success(mock_get_client, temp_cache_dirs):
+    """Tests clean_structures_inclusion filters CCAS and contacts, writing both parquet files."""
+    _, clean_dir = temp_cache_dirs
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.return_value = pd.DataFrame(
+        [
+            # CCAS match with contact -> kept
+            {
+                "structure_id": "struct_ccas_1",
+                "structure_nom": "CCAS DE LYON",
+                "reseaux_porteurs": "['ccas']",
+                "adresse": "1 Place de la Comédie",
+                "commune_label": "Lyon",
+                "courriel": "contact@ccas-lyon.fr",
+                "telephone": "0472000000",
+                "site_web": "https://ccas-lyon.fr",
+                "commune_insee_code": "69123",
+            },
+            # Non-CCAS -> filtered out
+            {
+                "structure_id": "struct_other",
+                "structure_nom": "Autre Structure",
+                "reseaux_porteurs": "['autre_reseau']",
+                "adresse": "10 Rue Test",
+                "commune_label": "Paris",
+                "courriel": "test@test.fr",
+                "telephone": "0100000000",
+                "site_web": None,
+                "commune_insee_code": "75001",
+            },
+            # CCAS without any contact info -> dropped by contact filter
+            {
+                "structure_id": "struct_nocontact",
+                "structure_nom": "CCAS SANS CONTACT",
+                "reseaux_porteurs": "['ccas']",
+                "adresse": "Route Inconnue",
+                "commune_label": "Nulle Part",
+                "courriel": "",
+                "telephone": "",
+                "site_web": "",
+                "commune_insee_code": "01001",
+            },
+        ]
+    )
+
+    config = {
+        "sources": {
+            "structures_inclusion": {
+                "use_odace": True,
+                "odace_table": "dim_structure_inclusion",
+            }
+        }
+    }
+
+    clean_structures_inclusion(config, MagicMock(spec=PipelineLogger))
+
+    # Verify both structures_inclusion.parquet and odis_ccas.parquet are written
+    struct_file = clean_dir / "structures_inclusion.parquet"
+    ccas_file = clean_dir / "odis_ccas.parquet"
+    assert struct_file.exists()
+    assert ccas_file.exists()
+
+    res = pd.read_parquet(struct_file)
+    assert len(res) == 1
+    assert res.iloc[0]["id"] == "struct_ccas_1"
+    assert res.iloc[0]["nom"] == "CCAS DE LYON"
+    assert res.iloc[0]["codgeo"] == "69123"
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_structures_inclusion_odace_failure(mock_get_client, temp_cache_dirs):
+    """Tests clean_structures_inclusion fail-closed when ODAS fetch fails."""
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.side_effect = Exception("API connection dropped")
+
+    config = {
+        "sources": {
+            "structures_inclusion": {
+                "use_odace": True,
+                "odace_table": "dim_structure_inclusion",
+            }
+        }
+    }
+
+    with pytest.raises(PipelineRunError, match="Odace structures_inclusion"):
+        clean_structures_inclusion(config, MagicMock(spec=PipelineLogger))
+
+
+# =====================================================================
+# 8. Palier 2: School Effectifs Migration Tests
+# =====================================================================
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_school_effectifs_odace_success(mock_get_client, temp_cache_dirs):
+    """Tests clean_school_effectifs filters latest school year and aggregates metrics."""
+    _, clean_dir = temp_cache_dirs
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+
+    def fake_fetch_table(table_name, **kwargs):
+        if table_name == "fact_effectif_scolaire":
+            return pd.DataFrame(
+                [
+                    # Older year (should be ignored)
+                    {
+                        "numero_ecole": "UAI001",
+                        "annee_rentree_scolaire": "2023-01-01",
+                        "nombre_total_eleves": 100,
+                        "nombre_total_classes": 5,
+                    },
+                    # Latest year: school 1 in 01001 (15 students, 1 class -> <20 -> risky)
+                    {
+                        "numero_ecole": "UAI001",
+                        "annee_rentree_scolaire": "2024-01-01",
+                        "nombre_total_eleves": 15,
+                        "nombre_total_classes": 1,
+                    },
+                    # Latest year: school 2 in 01001 (25 students, 1 class -> >=20 -> not risky)
+                    {
+                        "numero_ecole": "UAI002",
+                        "annee_rentree_scolaire": "2024-01-01",
+                        "nombre_total_eleves": 25,
+                        "nombre_total_classes": 1,
+                    },
+                ]
+            )
+        elif table_name == "dim_etablissement_scolaire":
+            return pd.DataFrame(
+                [
+                    {"uai_code": "UAI001", "commune_insee_code": "01001"},
+                    {"uai_code": "UAI002", "commune_insee_code": "01001"},
+                ]
+            )
+        raise ValueError(f"Unexpected table: {table_name}")
+
+    mock_client.fetch_table.side_effect = fake_fetch_table
+
+    config = {
+        "sources": {
+            "education_effectifs": {
+                "use_odace": True,
+                "odace_table": "fact_effectif_scolaire",
+            },
+            "education_annuaire": {
+                "use_odace": True,
+                "odace_table": "dim_etablissement_scolaire",
+            },
+        }
+    }
+
+    clean_school_effectifs(config, MagicMock(spec=PipelineLogger))
+
+    out_file = clean_dir / "school_effectifs.parquet"
+    bpe_file = clean_dir / "bpe_education_effectifs.parquet"
+    assert out_file.exists()
+    assert bpe_file.exists()
+
+    res = pd.read_parquet(out_file)
+    assert len(res) == 1
+    assert res.iloc[0]["codgeo"] == "01001"
+    assert res.iloc[0]["total_eleves"] == 40
+    assert res.iloc[0]["total_classes"] == 2
+    assert res.iloc[0]["risky_schools_count"] == 1
+    assert res.iloc[0]["ecoles_count"] == 2
+    assert res.iloc[0]["avg_students_per_class_commune"] == 20.0
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_school_effectifs_odace_failure(mock_get_client, temp_cache_dirs):
+    """Tests clean_school_effectifs fail-closed when ODAS fetch fails."""
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.side_effect = Exception("ODAS effectif error")
+
+    config = {
+        "sources": {
+            "education_effectifs": {
+                "use_odace": True,
+                "odace_table": "fact_effectif_scolaire",
+            },
+            "education_annuaire": {
+                "use_odace": True,
+                "odace_table": "dim_etablissement_scolaire",
+            },
+        }
+    }
+
+    with pytest.raises(PipelineRunError, match="Odace education_effectifs"):
+        clean_school_effectifs(config, MagicMock(spec=PipelineLogger))
+
+
+# =====================================================================
+# 9. Palier 2: Formations Referentiel & Annuaire Migration Tests
+# =====================================================================
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_formations_referentiel_odace_success(mock_get_client, temp_cache_dirs):
+    """Tests clean_formations with ODAS ref_formation."""
+    _, clean_dir = temp_cache_dirs
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.return_value = pd.DataFrame(
+        [
+            {"code_formation": "100", "libelle_formation": " Formations générales "},
+            {"code_formation": "12", "libelle_formation": "Informatique"},
+        ]
+    )
+
+    # Need dummy codes_postaux to avoid early skip in clean_formations
+    pd.DataFrame({"code_postal": ["75001"], "codgeo": ["75001"]}).to_parquet(
+        clean_dir / "codes_postaux.parquet"
+    )
+
+    config = {
+        "sources": {
+            "formations_referentiel": {
+                "use_odace": True,
+                "odace_table": "ref_formation",
+            },
+            "formations_annuaire": {"use_odace": False, "local_name": "absent.csv"},
+        }
+    }
+
+    clean_formations(config, MagicMock(spec=PipelineLogger))
+
+    ref_file = clean_dir / "formations_referentiel.parquet"
+    assert ref_file.exists()
+    res = pd.read_parquet(ref_file)
+    assert len(res) == 2
+    assert set(res.columns) == {"code", "label"}
+    assert res.loc[res["code"] == "100", "label"].iloc[0] == "Formations générales"
+    assert res.loc[res["code"] == "012", "label"].iloc[0] == "Informatique"
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_formations_annuaire_odace_success(mock_get_client, temp_cache_dirs):
+    """Tests clean_formations with ODAS dim_organisme_formation melting specialities."""
+    _, clean_dir = temp_cache_dirs
+
+    # Prepare codes_postaux.parquet
+    pd.DataFrame(
+        [
+            {"code_postal": "01000", "codgeo": "01001"},
+            {"code_postal": "75001", "codgeo": "75001"},
+        ]
+    ).to_parquet(clean_dir / "codes_postaux.parquet")
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+
+    def fake_fetch_table(table_name, **kwargs):
+        if table_name == "ref_formation":
+            return pd.DataFrame(
+                [{"code_formation": "100", "libelle_formation": "Général"}]
+            )
+        elif table_name == "dim_organisme_formation":
+            return pd.DataFrame(
+                [
+                    {
+                        "code_postal": 1000.0,
+                        "code_specialite_1": "100",
+                        "code_specialite_2": "110",
+                        "code_specialite_3": "nan",
+                    },
+                    {
+                        "code_postal": "75001",
+                        "code_specialite_1": "100",
+                        "code_specialite_2": "nan",
+                        "code_specialite_3": "nan",
+                    },
+                ]
+            )
+        raise ValueError(table_name)
+
+    mock_client.fetch_table.side_effect = fake_fetch_table
+
+    config = {
+        "sources": {
+            "formations_referentiel": {
+                "use_odace": True,
+                "odace_table": "ref_formation",
+            },
+            "formations_annuaire": {
+                "use_odace": True,
+                "odace_table": "dim_organisme_formation",
+            },
+        }
+    }
+
+    clean_formations(config, MagicMock(spec=PipelineLogger))
+
+    annuaire_file = clean_dir / "formations_annuaire.parquet"
+    assert annuaire_file.exists()
+    res = pd.read_parquet(annuaire_file)
+    assert len(res) == 3
+    assert set(res.columns) == {"codgeo", "formation_code"}
+    # 01001 has 100 and 110, 75001 has 100
+    assert set(res.loc[res["codgeo"] == "01001", "formation_code"]) == {"100", "110"}
+    assert set(res.loc[res["codgeo"] == "75001", "formation_code"]) == {"100"}
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_formations_odace_failure(mock_get_client, temp_cache_dirs):
+    """Tests clean_formations fail-closed on ODAS errors."""
+    _, clean_dir = temp_cache_dirs
+    pd.DataFrame({"code_postal": ["75001"], "codgeo": ["75001"]}).to_parquet(
+        clean_dir / "codes_postaux.parquet"
+    )
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.side_effect = Exception("ODAS formation error")
+
+    config = {
+        "sources": {
+            "formations_referentiel": {
+                "use_odace": True,
+                "odace_table": "ref_formation",
+            },
+            "formations_annuaire": {"use_odace": False},
+        }
+    }
+
+    with pytest.raises(PipelineRunError, match="Odace formations_referentiel"):
+        clean_formations(config, MagicMock(spec=PipelineLogger))
+
+
+# =====================================================================
+# 10. Palier 2: ROME Referentiel Migration Tests
+# =====================================================================
+
+
+@patch("pipeline.ingest.fetcher.get_odace_client")
+def test_fetch_rome_referential_odace_success(mock_get_client, temp_cache_dirs):
+    """Tests fetch_rome_referential with ODAS ref_rome."""
+    raw_dir, _ = temp_cache_dirs
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.return_value = pd.DataFrame(
+        [
+            {"code_rome": "M1805", "libelle_rome": " Études et développement informatique "},
+            {"code_rome": "K1101", "libelle_rome": "Accompagnement médicosocial"},
+        ]
+    )
+
+    config = {
+        "sources": {
+            "rome": {
+                "use_odace": True,
+                "odace_table": "ref_rome",
+                "ttl_days": 365,
+            }
+        }
+    }
+
+    path = fetch_rome_referential(config, MagicMock(spec=PipelineLogger))
+    assert path is not None
+    assert path.exists()
+
+    res = pd.read_parquet(path)
+    assert len(res) == 2
+    assert set(res.columns) == {"code", "label"}
+    assert res.loc[res["code"] == "M1805", "label"].iloc[0] == "Études et développement informatique"
+    assert res.loc[res["code"] == "K1101", "label"].iloc[0] == "Accompagnement médicosocial"
+    mock_client.fetch_table.assert_called_once_with("ref_rome", ttl_days=365)
+
+
+@patch("pipeline.ingest.fetcher.get_odace_client")
+def test_fetch_rome_referential_odace_failure(mock_get_client, temp_cache_dirs):
+    """Tests fetch_rome_referential fail-closed when ODAS fetch fails."""
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.side_effect = Exception("ODAS ROME error")
+
+    config = {
+        "sources": {
+            "rome": {
+                "use_odace": True,
+                "odace_table": "ref_rome",
+                "ttl_days": 365,
+            }
+        }
+    }
+
+    with pytest.raises(PipelineRunError, match="Odace rome"):
+        fetch_rome_referential(config, MagicMock(spec=PipelineLogger))
+
+
+# =====================================================================
+# 11. Palier 2: Build Integration & SIAE Tests
+# =====================================================================
+
+
+def test_build_generate_referentiels_uses_odas_ref_service_inclusion(
+    tmp_path, monkeypatch
+):
+    """Verify generate_referentiels loads ref_service_inclusion from ODAS cache."""
+    import pipeline.build as build_module
+
+    clean_dir = tmp_path / "clean"
+    raw_dir = tmp_path / "raw"
+    output_dir = tmp_path / "output"
+    clean_dir.mkdir(parents=True)
+    raw_dir.mkdir(parents=True)
+    output_dir.mkdir(parents=True)
+
+    pd.DataFrame({"codgeo": ["75056"], "nom": ["Paris"]}).to_parquet(
+        clean_dir / "communes.parquet"
+    )
+    pd.DataFrame({"code": ["75"], "label": ["Paris"], "reg_code": ["11"]}).to_parquet(
+        clean_dir / "departements.parquet"
+    )
+    pd.DataFrame({"code": ["11"], "label": ["Île-de-France"]}).to_parquet(
+        clean_dir / "regions.parquet"
+    )
+    pd.DataFrame(
+        {"geo_level": ["commune"], "region_code": ["11"], "departement_code": ["75"]}
+    ).to_parquet(raw_dir / "odace_dim_geo.parquet")
+
+    # ODAS cache for ref_service_inclusion
+    pd.DataFrame(
+        [
+            {
+                "service_id": "srv_incl_1",
+                "nom_service": "Aide au logement",
+                "type_service": "accompagnement",
+            }
+        ]
+    ).to_parquet(raw_dir / "odace_ref_service_inclusion.parquet")
+
+    monkeypatch.setattr(build_module, "CLEAN_DIR", clean_dir)
+    monkeypatch.setattr(build_module, "CACHE_DIR", raw_dir)
+    monkeypatch.setattr(build_module, "OUTPUT_DIR", output_dir)
+
+    config = {
+        "sources": {
+            "referentiel_services_inclusion": {
+                "use_odace": True,
+                "odace_table": "ref_service_inclusion",
+            }
+        }
+    }
+
+    build_module.generate_referentiels(config, MagicMock())
+
+    refs = pd.read_parquet(output_dir / "odis_referentiels.parquet")
+    incl_refs = refs[refs["key"] == "inclusion_services"]
+    assert len(incl_refs) == 1
+    assert incl_refs.iloc[0]["code"] == "srv_incl_1"
+    assert incl_refs.iloc[0]["label"] == "Aide au logement"
+
+
+def test_build_siae_structures_from_odas_with_cached_geo(tmp_path, monkeypatch):
+    """Verify merge_siae_structures resolves commune_sk via cached dim_geo and merges inc_siae_count."""
+    import pipeline.build as build_module
+
+    raw_dir = tmp_path / "raw"
+    clean_dir = tmp_path / "clean"
+    output_dir = tmp_path / "output"
+    raw_dir.mkdir(parents=True)
+    clean_dir.mkdir(parents=True)
+    output_dir.mkdir(parents=True)
+
+    # ODAS cache for dim_siae_structure with commune_sk (real ODAS schema)
+    pd.DataFrame(
+        [
+            {"siae_structure_sk": "s1", "commune_sk": "c_01001", "code_postal": "01000"},
+            {"siae_structure_sk": "s2", "commune_sk": "c_01001", "code_postal": "01000"},
+            {"siae_structure_sk": "s3", "commune_sk": "c_75001", "code_postal": "75001"},
+            {"siae_structure_sk": "s4", "commune_sk": None, "code_postal": "01000"},
+        ]
+    ).to_parquet(raw_dir / "odace_dim_siae_structure.parquet")
+
+    # Cached dim_geo
+    pd.DataFrame(
+        [
+            {"geo_level": "commune", "commune_sk": "c_01001", "commune_insee_code": "01001"},
+            {"geo_level": "commune", "commune_sk": "c_75001", "commune_insee_code": "75001"},
+        ]
+    ).to_parquet(raw_dir / "odace_dim_geo.parquet")
+
+    # Clean codes_postaux for postal code recovery
+    pd.DataFrame(
+        [
+            {"code_postal": "01000", "codgeo": "01001"},
+        ]
+    ).to_parquet(clean_dir / "codes_postaux.parquet")
+
+    monkeypatch.setattr(build_module, "CACHE_DIR", raw_dir)
+    monkeypatch.setattr(build_module, "CLEAN_DIR", clean_dir)
+    monkeypatch.setattr(build_module, "OUTPUT_DIR", output_dir)
+
+    config = {
+        "sources": {
+            "siae_structures": {
+                "use_odace": True,
+                "odace_table": "dim_siae_structure",
+            }
+        }
+    }
+
+    communes_df = pd.DataFrame({"codgeo": ["01001", "75001", "99999"]})
+    res = build_module.merge_siae_structures(communes_df, config, MagicMock())
+
+    # s1, s2 resolved via commune_sk + s4 recovered via code_postal = 3 for 01001
+    assert res.loc[res["codgeo"] == "01001", "inc_siae_count"].iloc[0] == 3
+    # s3 resolved via commune_sk = 1 for 75001
+    assert res.loc[res["codgeo"] == "75001", "inc_siae_count"].iloc[0] == 1
+    # 99999 has no SIAE structures -> NaN
+    assert np.isnan(res.loc[res["codgeo"] == "99999", "inc_siae_count"].iloc[0])
+
+
+@patch("pipeline.odace_client.get_odace_client")
+def test_build_siae_structures_cold_cache_fetches_dim_geo(
+    mock_get_client, tmp_path, monkeypatch
+):
+    """Verify merge_siae_structures fetches dim_geo from ODAS when not cached."""
+    import pipeline.build as build_module
+
+    raw_dir = tmp_path / "raw"
+    clean_dir = tmp_path / "clean"
+    raw_dir.mkdir(parents=True)
+    clean_dir.mkdir(parents=True)
+
+    # dim_siae_structure with commune_sk
+    pd.DataFrame(
+        [
+            {"siae_structure_sk": "s1", "commune_sk": "c_33001"},
+        ]
+    ).to_parquet(raw_dir / "odace_dim_siae_structure.parquet")
+
+    # Note: odace_dim_geo.parquet is NOT in raw_dir (cold cache)
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.return_value = pd.DataFrame(
+        [
+            {"geo_level": "commune", "commune_sk": "c_33001", "commune_insee_code": "33001"},
+        ]
+    )
+
+    monkeypatch.setattr(build_module, "CACHE_DIR", raw_dir)
+    monkeypatch.setattr(build_module, "CLEAN_DIR", clean_dir)
+
+    config = {
+        "sources": {
+            "siae_structures": {
+                "use_odace": True,
+                "odace_table": "dim_siae_structure",
+            }
+        }
+    }
+
+    communes_df = pd.DataFrame({"codgeo": ["33001", "75056"]})
+    res = build_module.merge_siae_structures(communes_df, config, MagicMock())
+
+    assert res.loc[res["codgeo"] == "33001", "inc_siae_count"].iloc[0] == 1
+    assert np.isnan(res.loc[res["codgeo"] == "75056", "inc_siae_count"].iloc[0])
+    mock_client.fetch_table.assert_called_once_with("dim_geo", ttl_days=365)
+
+
+def test_build_siae_structures_fallback_to_structures_inclusion(tmp_path, monkeypatch):
+    """Verify merge_siae_structures falls back to clean structures_inclusion when ODAS has no valid codgeo."""
+    import pipeline.build as build_module
+
+    raw_dir = tmp_path / "raw"
+    clean_dir = tmp_path / "clean"
+    raw_dir.mkdir(parents=True)
+    clean_dir.mkdir(parents=True)
+
+    # Empty/unresolvable ODAS siae
+    pd.DataFrame(
+        [
+            {"siae_structure_sk": "s1", "commune_sk": "unknown_sk"},
+        ]
+    ).to_parquet(raw_dir / "odace_dim_siae_structure.parquet")
+
+    # Ingest clean structures_inclusion (fallback CCAS/structures)
+    pd.DataFrame(
+        [
+            {"id": "c1", "codgeo": "01001"},
+            {"id": "c2", "codgeo": "01001"},
+        ]
+    ).to_parquet(clean_dir / "structures_inclusion.parquet")
+
+    monkeypatch.setattr(build_module, "CACHE_DIR", raw_dir)
+    monkeypatch.setattr(build_module, "CLEAN_DIR", clean_dir)
+
+    config = {
+        "sources": {
+            "siae_structures": {
+                "use_odace": True,
+                "odace_table": "dim_siae_structure",
+            }
+        }
+    }
+
+    communes_df = pd.DataFrame({"codgeo": ["01001", "75001"]})
+    res = build_module.merge_siae_structures(communes_df, config, MagicMock())
+
+    assert res.loc[res["codgeo"] == "01001", "inc_siae_count"].iloc[0] == 2
+    assert np.isnan(res.loc[res["codgeo"] == "75001", "inc_siae_count"].iloc[0])
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_formations_referentiel_without_codes_postaux(mock_get_client, temp_cache_dirs):
+    """Verify clean_formations succeeds for formations_referentiel even when codes_postaux is missing."""
+    _, clean_dir = temp_cache_dirs
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.return_value = pd.DataFrame(
+        [
+            {"code_formation": "110", "libelle_formation": "Spécialités pluriscientifiques"},
+            {"code_formation": "200", "libelle_formation": "Technologies industrielles"},
+        ]
+    )
+
+    config = {
+        "sources": {
+            "formations_referentiel": {
+                "use_odace": True,
+                "odace_table": "ref_formation",
+            },
+            "formations_annuaire": {
+                "use_odace": True,
+                "odace_table": "dim_organisme_formation",
+            },
+        }
+    }
+
+    clean_formations(config, MagicMock(spec=PipelineLogger))
+
+    ref_file = clean_dir / "formations_referentiel.parquet"
+    assert ref_file.exists()
+    df_ref = pd.read_parquet(ref_file)
+    assert len(df_ref) == 2
+    assert set(df_ref.columns) == {"code", "label"}
+    assert df_ref.iloc[0]["code"] == "110"
+
+
+# =====================================================================
+# 4. Bassins de Vie Tests (Palier 1 Addendum)
+# =====================================================================
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_bassins_de_vie_odace_success(mock_get_client, temp_cache_dirs):
+    """Verify clean_bassins_de_vie fetches from ODAS ref_bassin_vie and saves parquet."""
+    _, clean_dir = temp_cache_dirs
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.return_value = pd.DataFrame(
+        [
+            {
+                "commune_sk": "sk_01001",
+                "commune_insee_code": "01001",
+                "code_bassin_vie": "01053",
+                "libelle_bassin_vie": "Bourg-en-Bresse",
+            },
+            {
+                "commune_sk": "sk_75056",
+                "commune_insee_code": "75056",
+                "code_bassin_vie": "75056",
+                "libelle_bassin_vie": "Paris",
+            },
+        ]
+    )
+
+    config = {
+        "sources": {
+            "bassins_de_vie": {
+                "use_odace": True,
+                "odace_table": "ref_bassin_vie",
+                "ttl_days": 365,
+            }
+        }
+    }
+
+    clean_bassins_de_vie(config, MagicMock(spec=PipelineLogger))
+
+    out_file = clean_dir / "bassins_de_vie.parquet"
+    assert out_file.exists()
+    df = pd.read_parquet(out_file)
+    assert len(df) == 2
+    assert "codgeo" in df.columns
+    assert "bassin_de_vie" in df.columns
+    assert "libelle_bassin_de_vie" in df.columns
+    assert "commune_sk" in df.columns
+    assert df.loc[df["codgeo"] == "01001", "bassin_de_vie"].iloc[0] == "01053"
+    assert df.loc[df["codgeo"] == "75056", "libelle_bassin_de_vie"].iloc[0] == "Paris"
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_bassins_de_vie_odace_failure(mock_get_client, temp_cache_dirs):
+    """Verify clean_bassins_de_vie raises PipelineRunError on ODAS failure."""
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.side_effect = RuntimeError("Network error")
+
+    config = {
+        "sources": {
+            "bassins_de_vie": {
+                "use_odace": True,
+                "odace_table": "ref_bassin_vie",
+            }
+        }
+    }
+
+    with pytest.raises(PipelineRunError, match="clean_bassins_de_vie failed with Odace"):
+        clean_bassins_de_vie(config, MagicMock(spec=PipelineLogger))
+
+
+def test_clean_bassins_de_vie_legacy_fallback(temp_cache_dirs):
+    """Verify clean_bassins_de_vie falls back to raw file when use_odace is false."""
+    raw_dir, clean_dir = temp_cache_dirs
+
+    df_raw = pd.DataFrame(
+        [
+            {
+                "Code géographique": "01001",
+                "Bassin de vie 2022": "01053",
+                "Libellé géographique du bassin de vie 2022": "Bourg-en-Bresse",
+            }
+        ]
+    )
+
+    with patch("pipeline.ingest.load_dataset", return_value=df_raw):
+        config = {
+            "sources": {
+                "bassins_de_vie": {
+                    "use_odace": False,
+                    "archive_file": "BV2022.xlsx",
+                }
+            }
+        }
+        (raw_dir / "BV2022.xlsx").touch()
+
+        clean_bassins_de_vie(config, MagicMock(spec=PipelineLogger))
+
+        out_file = clean_dir / "bassins_de_vie.parquet"
+        assert out_file.exists()
+        df = pd.read_parquet(out_file)
+        assert len(df) == 1
+        assert df.iloc[0]["codgeo"] == "01001"
+        assert df.iloc[0]["bassin_de_vie"] == "01053"
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_bassins_de_vie_edge_cases(mock_get_client, temp_cache_dirs):
+    """Verify clean_bassins_de_vie handles duplicates, nulls, and padding correctly."""
+    _, clean_dir = temp_cache_dirs
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.return_value = pd.DataFrame(
+        [
+            {
+                "commune_sk": "sk_1",
+                "commune_insee_code": "1001",  # 4 chars -> pads to 01001
+                "code_bassin_vie": "1053",   # 4 chars -> pads to 01053
+                "libelle_bassin_vie": " Bourg-en-Bresse  ",
+            },
+            {
+                "commune_sk": "sk_dup",
+                "commune_insee_code": "01001",  # duplicate
+                "code_bassin_vie": "01053",
+                "libelle_bassin_vie": "Bourg-en-Bresse",
+            },
+            {
+                "commune_sk": "sk_null",
+                "commune_insee_code": None,  # should be dropped
+                "code_bassin_vie": "01053",
+                "libelle_bassin_vie": "Unknown",
+            },
+        ]
+    )
+
+    config = {
+        "sources": {
+            "bassins_de_vie": {
+                "use_odace": True,
+                "odace_table": "ref_bassin_vie",
+            }
+        }
+    }
+
+    clean_bassins_de_vie(config, MagicMock(spec=PipelineLogger))
+
+    out_file = clean_dir / "bassins_de_vie.parquet"
+    df = pd.read_parquet(out_file)
+    assert len(df) == 1
+    assert df.iloc[0]["codgeo"] == "01001"
+    assert df.iloc[0]["bassin_de_vie"] == "01053"
+    assert df.iloc[0]["libelle_bassin_de_vie"] == "Bourg-en-Bresse"
+
+
+def test_build_communes_uses_clean_bassins_de_vie(tmp_path, monkeypatch):
+    """Verify build_communes loads clean bassins_de_vie.parquet and patches PLM arrondissements."""
+    import pipeline.build as build_mod
+
+    clean_dir = tmp_path / "clean"
+    output_dir = tmp_path / "output"
+    cache_dir = tmp_path / "cache"
+    clean_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(build_mod, "CLEAN_DIR", clean_dir)
+    monkeypatch.setattr(build_mod, "OUTPUT_DIR", output_dir)
+    monkeypatch.setattr(build_mod, "CACHE_DIR", cache_dir)
+
+    # Write required referential files to satisfy generate_referentiels contract
+    pd.DataFrame({"codgeo": ["75056"], "nom": ["Paris"]}).to_parquet(
+        clean_dir / "communes.parquet"
+    )
+    pd.DataFrame(
+        {"code": ["75"], "label": ["Paris"], "reg_code": ["11"]}
+    ).to_parquet(clean_dir / "departements.parquet")
+    pd.DataFrame(
+        {"code": ["11"], "label": ["Île-de-France"]}
+    ).to_parquet(clean_dir / "regions.parquet")
+
+    # Write clean bassins_de_vie.parquet
+    pd.DataFrame(
+        [
+            {"codgeo": "01001", "bassin_de_vie": "01053", "libelle_bassin_de_vie": "Bourg"},
+            {"codgeo": "75056", "bassin_de_vie": "75056", "libelle_bassin_de_vie": "Paris"},
+            {"codgeo": "69123", "bassin_de_vie": "69123", "libelle_bassin_de_vie": "Lyon"},
+            {"codgeo": "13055", "bassin_de_vie": "13055", "libelle_bassin_de_vie": "Marseille"},
+        ]
+    ).to_parquet(clean_dir / "bassins_de_vie.parquet")
+
+    config = {
+        "sources": {
+            "bassins_de_vie": {
+                "use_odace": True,
+                "odace_table": "ref_bassin_vie",
+            }
+        }
+    }
+
+    # Test generate_referentiels loading bassins_de_vie
+    build_mod.generate_referentiels(
+        config=config,
+        logger=MagicMock(spec=PipelineLogger),
+    )
+    ref_file = output_dir / "odis_referentiels.parquet"
+    assert ref_file.exists()
+    refs = pd.read_parquet(ref_file)
+    bv_refs = refs[refs["key"] == "bassins_de_vie"]
+    assert len(bv_refs) == 4
+    assert "01053" in bv_refs["code"].values
+    assert "75056" in bv_refs["code"].values
+
+
+def test_main_cli_bassins_de_vie_step_registered():
+    """Verify that main CLI registers bassins_de_vie in steps_map and step_to_source_map."""
+    from pipeline.ingest.config import get_domain_contracts
+
+    contracts = get_domain_contracts()
+    assert "bassins_de_vie" in contracts.runner.step_to_source_map
+    assert contracts.runner.step_to_source_map["bassins_de_vie"] == "bassins_de_vie"
+    assert "bassins_de_vie" in contracts.runner.clean_filenames
+    assert contracts.runner.clean_filenames["bassins_de_vie"] == "bassins_de_vie.parquet"
+
+
 
 
 

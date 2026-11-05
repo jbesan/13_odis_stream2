@@ -20,6 +20,8 @@ from pipeline.common import (
 from pipeline.ft_live_ingest import get_token as get_ft_token
 from pipeline.ingest.config import get_domain_contracts
 from pipeline.ingest import context
+from pipeline.odace_client import get_odace_client
+from pipeline.run_context import PipelineRunError
 
 
 def fetch_source(
@@ -176,7 +178,8 @@ def fetch_rome_referential(
 ) -> Optional[Path]:
     """Fetches the ROME referential using its configured TTL."""
     local_path = context.CACHE_DIR / "rome_referential_api.parquet"
-    ttl_days = config["sources"]["rome"]["ttl_days"]
+    source_cfg = config.get("sources", {}).get("rome", {})
+    ttl_days = source_cfg.get("ttl_days", 365)
 
     if local_path.exists():
         mtime = datetime.fromtimestamp(local_path.stat().st_mtime)
@@ -187,6 +190,40 @@ def fetch_rome_referential(
             )
             return local_path
         logging.info(f"[ROME] Referential is {age_days} days old. Refreshing...")
+
+    if source_cfg.get("use_odace", False):
+        odace_table = source_cfg.get("odace_table", "ref_rome")
+        try:
+            client = get_odace_client(logger)
+            df = client.fetch_table(odace_table, ttl_days=ttl_days)
+            code_col = next((c for c in ["code_rome", "code"] if c in df.columns), None)
+            label_col = next(
+                (c for c in ["libelle_rome", "label", "libelle"] if c in df.columns),
+                None,
+            )
+
+            if not df.empty and code_col and label_col:
+                df_out = pd.DataFrame(
+                    {
+                        "code": df[code_col].astype(str).str.strip(),
+                        "label": df[label_col].astype(str).str.strip(),
+                    }
+                ).dropna().drop_duplicates()
+                df_out.to_parquet(local_path)
+                logging.info(
+                    f"✅ [ROME] Saved {len(df_out)} métiers to {local_path} from ODAS {odace_table}"
+                )
+                logger.log_source("rome_referential", "FETCHED", str(local_path))
+                return local_path
+            else:
+                raise ValueError(
+                    f"Unexpected columns or empty data in ODAS {odace_table}: {df.columns}"
+                )
+        except Exception as e:
+            logging.error(f"❌ [ROME] Failed to fetch referential from ODAS: {e}")
+            raise PipelineRunError(
+                f"Odace rome did not produce a usable dataset: {e}"
+            ) from e
 
     try:
         token = get_ft_token()

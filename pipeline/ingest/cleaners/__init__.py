@@ -17,6 +17,7 @@ from pipeline.ingest.cleaners.electoral import (
     clean_political,
 )
 from pipeline.ingest.cleaners.geography import (
+    clean_bassins_de_vie,
     clean_codes_postaux,
     clean_communes,
     clean_departements,
@@ -63,6 +64,7 @@ from pipeline.ingest.cleaners.salesforce import clean_salesforce_jaccueille
 
 __all__ = [
     "clean_associations",
+    "clean_bassins_de_vie",
     "clean_bpe",
     "clean_caf",
     "clean_codes_postaux",

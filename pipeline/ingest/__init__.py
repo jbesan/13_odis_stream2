@@ -26,6 +26,7 @@ from pipeline.emplois_inclusion_ingest import run_ingestion as run_inclusion_ing
 from pipeline.ft_live_ingest import get_token as get_ft_token, run_etl
 from pipeline.ingest.cleaners import (
     clean_associations,
+    clean_bassins_de_vie,
     clean_bpe,
     clean_caf,
     clean_codes_postaux,
@@ -171,6 +172,7 @@ __all__ = [
     "_save_rag_cache",
     "bigquery",
     "clean_associations",
+    "clean_bassins_de_vie",
     "clean_bpe",
     "clean_caf",
     "clean_codes_postaux",

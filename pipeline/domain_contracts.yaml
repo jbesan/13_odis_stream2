@@ -379,6 +379,7 @@ runner:
     - "education_effectifs"
     - "bpe"
     - "codes_postaux"
+    - "bassins_de_vie"
     - "formations_annuaire"
     - "loyers_apparts"
     - "population_details"
@@ -410,6 +411,7 @@ runner:
     formations: "formations_annuaire"
     electoral_history: "electoral_history"
     salesforce_jaccueille: "salesforce_jaccueille"
+    bassins_de_vie: "bassins_de_vie"
   clean_filenames:
     associations: "associations_vertical.parquet"
     nomenclature_waldec: "referentiel_waldec.parquet"
@@ -421,6 +423,7 @@ runner:
     inclusion_jobs: "odis_inclusion_jobs.parquet"
     salesforce_jaccueille: "salesforce_jaccueille.parquet"
     regions: "regions.parquet"
+    bassins_de_vie: "bassins_de_vie.parquet"
   output_dir_steps:
     - "live_jobs"
     - "inclusion_jobs"

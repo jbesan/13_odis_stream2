@@ -9,11 +9,7 @@ from typing import Any, Dict
 from pipeline.common import PipelineLogger
 from pipeline.ingest import context
 from pipeline.ingest.helpers import _artifact_observed_at
-from pipeline.salesforce_ingest import (
-    OUTPUT_PATH as SHARED_OUTPUT_PATH,
-    fetch_and_aggregate_salesforce,
-    get_salesforce_status,
-)
+import pipeline.salesforce_ingest as sf_ingest
 
 
 def clean_salesforce_jaccueille(config: Dict[str, Any], logger: PipelineLogger) -> None:
@@ -21,17 +17,16 @@ def clean_salesforce_jaccueille(config: Dict[str, Any], logger: PipelineLogger) 
     logger.log_step("clean_salesforce_jaccueille", "STARTED")
     try:
         output_path = context.CLEAN_DIR / "salesforce_jaccueille.parquet"
-        cached_source = get_salesforce_status(output_path)
+        cached_source = sf_ingest.get_salesforce_status(output_path)
         if not cached_source.get("within_ttl"):
-            cached_source = get_salesforce_status(SHARED_OUTPUT_PATH)
+            cached_source = sf_ingest.get_salesforce_status(sf_ingest.OUTPUT_PATH)
 
-        fetch_and_aggregate_salesforce(
+        sf_ingest.fetch_and_aggregate_salesforce(
             force=False,
             output_path=output_path,
         )
 
-
-        source_status = get_salesforce_status(output_path)
+        source_status = sf_ingest.get_salesforce_status(output_path)
         source_path = (
             Path(source_status["path"]) if source_status.get("path") else output_path
         )
