@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 from unittest.mock import patch, MagicMock
 
-from pipeline.odace_client import OdaceClient
+from pipeline.odace_client import OdaceClient, OdasClient, get_odas_client
 from pipeline.ingest import (
     clean_caf,
     clean_bpe,
@@ -36,13 +36,13 @@ def temp_cache_dirs(tmp_path):
 
 
 # =====================================================================
-# 1. OdaceClient Tests
+# 1. OdasClient Tests & Cold Start Warmup
 # =====================================================================
 
 
 @patch("requests.get")
 def test_odace_client_fetch_table_success(mock_get, temp_cache_dirs):
-    """Tests that OdaceClient.fetch_table correctly requests and parses API response."""
+    """Tests that OdasClient.fetch_table correctly requests and parses API response."""
     import io
 
     # Mock response data
@@ -68,9 +68,11 @@ def test_odace_client_fetch_table_success(mock_get, temp_cache_dirs):
     mock_get.return_value = mock_resp
 
     with patch.dict(
-        os.environ, {"ODACE_API_KEY": "test-key", "ODACE_API_URL": "https://api-test"}
+        os.environ,
+        {"ODAS_API_KEY": "test-key", "ODAS_API_URL": "https://api-test"},
+        clear=True,
     ):
-        client = OdaceClient()
+        client = OdasClient(warmup=False)
         df = client.fetch_table("dim_etablissement_sante", ttl_days=30)
 
         assert not df.empty
@@ -87,6 +89,111 @@ def test_odace_client_fetch_table_success(mock_get, temp_cache_dirs):
             stream=True,
             timeout=300,
         )
+
+
+def test_odas_client_missing_env_vars():
+    """Tests that OdasClient fails immediately when ODAS_API_KEY or ODAS_API_URL is missing."""
+    with patch.dict(os.environ, {}, clear=True):
+        with pytest.raises(ValueError, match="ODAS_API_KEY and ODAS_API_URL"):
+            OdasClient()
+
+
+@patch("requests.get")
+def test_odas_client_warmup_instant_success(mock_get):
+    """Tests that wait_for_ready marks client as warm when /health responds 200 immediately."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_get.return_value = mock_resp
+
+    with patch.dict(
+        os.environ,
+        {"ODAS_API_KEY": "test-key", "ODAS_API_URL": "https://api-test"},
+        clear=True,
+    ):
+        client = OdasClient(warmup=True)
+        assert client._is_warm is False
+
+        is_ready = client.wait_for_ready()
+        assert is_ready is True
+        assert client._is_warm is True
+        mock_get.assert_called_once_with("https://api-test/health", timeout=5)
+
+        # Subsequent call should be a no-op
+        assert client.wait_for_ready() is True
+        assert mock_get.call_count == 1
+
+
+@patch("time.sleep")
+@patch("requests.get")
+def test_odas_client_warmup_cold_start_retry(mock_get, mock_sleep):
+    """Tests that wait_for_ready retries on cold start errors (503 / timeout) until healthy."""
+    resp_503 = MagicMock()
+    resp_503.status_code = 503
+
+    resp_200 = MagicMock()
+    resp_200.status_code = 200
+
+    # First call: 503, second call: RequestException, third call: 200 OK
+    import requests
+
+    mock_get.side_effect = [
+        resp_503,
+        requests.RequestException("Container starting"),
+        resp_200,
+    ]
+
+    with patch.dict(
+        os.environ,
+        {"ODAS_API_KEY": "test-key", "ODAS_API_URL": "https://api-test"},
+        clear=True,
+    ):
+        client = OdasClient(warmup=True, max_warmup_seconds=30)
+        is_ready = client.wait_for_ready(poll_interval=1.0)
+
+        assert is_ready is True
+        assert client._is_warm is True
+        assert mock_get.call_count == 3
+        assert mock_sleep.call_count == 2
+
+
+@patch("time.sleep")
+@patch("requests.get")
+def test_odas_client_warmup_timeout(mock_get, mock_sleep):
+    """Tests that wait_for_ready raises TimeoutError when the max warmup limit is exceeded."""
+    resp_503 = MagicMock()
+    resp_503.status_code = 503
+    mock_get.return_value = resp_503
+
+    with patch.dict(
+        os.environ,
+        {"ODAS_API_KEY": "test-key", "ODAS_API_URL": "https://api-test"},
+        clear=True,
+    ):
+        client = OdasClient(warmup=True, max_warmup_seconds=5)
+        # Force timeout after iterations
+        with patch("time.time", side_effect=[0.0, 1.0, 2.0, 6.0, 7.0]):
+            with pytest.raises(TimeoutError, match="failed to respond healthy"):
+                client.wait_for_ready(max_wait_seconds=5, poll_interval=1.0)
+
+
+def test_odas_client_aliases():
+    """Tests backward-compatibility aliases OdaceClient and get_odace_client."""
+    from pipeline.odace_client import get_odace_client
+
+    with patch.dict(
+        os.environ,
+        {"ODAS_API_KEY": "test-key", "ODAS_API_URL": "https://api-test"},
+        clear=True,
+    ):
+        c1 = OdaceClient(warmup=False)
+        assert isinstance(c1, OdasClient)
+        assert c1.api_key == "test-key"
+
+        c2 = get_odas_client(warmup=False)
+        assert isinstance(c2, OdasClient)
+
+        c3 = get_odace_client(warmup=False)
+        assert isinstance(c3, OdasClient)
 
 
 # =====================================================================
@@ -211,7 +318,9 @@ def housing_occupation_contract():
 def housing_occupation_odace_data(housing_occupation_contract):
     rows = []
     for commune, base in [("01001", 1.0), ("2B002", 10.0)]:
-        for offset, indicator in enumerate(housing_occupation_contract["required_indicators"]):
+        for offset, indicator in enumerate(
+            housing_occupation_contract["required_indicators"]
+        ):
             rows.append(
                 {
                     "commune_insee_code": commune,
@@ -290,7 +399,8 @@ def test_clean_housing_occupation_uses_odace_only(
     }
 
     with patch(
-        "pipeline.ingest._load_source_contract", return_value=housing_occupation_contract
+        "pipeline.ingest._load_source_contract",
+        return_value=housing_occupation_contract,
     ):
         clean_housing_occupation(config, MagicMock(spec=PipelineLogger))
 
@@ -315,9 +425,13 @@ def test_clean_housing_occupation_fails_without_odace_data(
         }
     }
 
-    with patch(
-        "pipeline.ingest._load_source_contract", return_value=housing_occupation_contract
-    ), pytest.raises(PipelineRunError, match="Odace housing_occupation"):
+    with (
+        patch(
+            "pipeline.ingest._load_source_contract",
+            return_value=housing_occupation_contract,
+        ),
+        pytest.raises(PipelineRunError, match="Odace housing_occupation"),
+    ):
         clean_housing_occupation(config, MagicMock(spec=PipelineLogger))
 
 
