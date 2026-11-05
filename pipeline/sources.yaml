@@ -47,6 +47,8 @@ sources:
       - code_insee
 
   political_nuance:
+    use_odace: true
+    odace_table: "fact_nuance_politique"
     datagouv_resource_id: "ea5d6bc3-37d0-4884-a437-155a90c3e05f"
     format: "csv"
     local_name: "political_nuance.csv"
@@ -118,6 +120,8 @@ sources:
       - xmet
 
   nomenclature_waldec:
+    use_odace: true
+    odace_table: "ref_waldec"
     datagouv_resource_id: "d65d5cae-399f-4150-804f-493026645fd5"
     format: "json"
     local_name: "nomenclature_waldec.json"
@@ -159,6 +163,8 @@ sources:
     description: "Annuaire de l'éducation (Premier et Second degré)"
 
   codes_postaux:
+    use_odace: true
+    odace_table: "ref_code_postal"
     url: "https://object.files.data.gouv.fr/hydra-parquet/hydra-parquet/008a2dda-2c60-4b63-b910-998f6f818089.parquet"
     format: "parquet"
     local_name: "codes_postaux.parquet"
@@ -266,6 +272,8 @@ sources:
     description: "Population détaillée 2022 (Historique 2011, 2016)"
 
   regions_ref:
+    use_odace: true
+    odace_table: "ref_region"
     url: "https://tabular-api.data.gouv.fr/api/resources/2486b351-5d85-4e1a-8d12-5df082c75104/data/json/"
     format: "json"
     local_name: "referentiel_regions.json"
@@ -276,6 +284,8 @@ sources:
       - LIBELLE
 
   departements_ref:
+    use_odace: true
+    odace_table: "ref_departement"
     url: "https://tabular-api.data.gouv.fr/api/resources/54a8263d-6e2d-48d5-b214-aa17cc13f7a0/data/json/"
     format: "json"
     local_name: "referentiel_departements.json"

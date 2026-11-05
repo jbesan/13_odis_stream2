@@ -1221,8 +1221,8 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
         geo_df = pd.read_parquet(geo_path)
 
     try:
-        # Regions. Run-scoped candidates do not materialize the legacy
-        # ``clean/regions.parquet`` file, so use the canonical raw COG source.
+        # Regions. Materialized in clean/regions.parquet via clean_regions (ODAS ref_region),
+        # falling back to the raw COG source if absent.
         regions_path = CLEAN_DIR / "regions.parquet"
         regions_df = None
         if regions_path.exists():

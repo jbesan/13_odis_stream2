@@ -7,10 +7,15 @@ from unittest.mock import patch, MagicMock
 
 from pipeline.odace_client import OdaceClient, OdasClient, get_odas_client
 from pipeline.ingest import (
-    clean_caf,
     clean_bpe,
+    clean_caf,
+    clean_codes_postaux,
     clean_communes,
+    clean_departements,
     clean_housing_occupation,
+    clean_nomenclature_waldec,
+    clean_political,
+    clean_regions,
     transform_housing_occupation_odace,
     PipelineLogger,
 )
@@ -637,3 +642,642 @@ def test_clean_bpe_odace_failure_does_not_use_legacy_raw(
     with pytest.raises(PipelineRunError, match="Odace bpe"):
         clean_bpe(config, logger)
     assert not (clean_dir / "bpe_pois.parquet").exists()
+
+
+# =====================================================================
+# 4. Palier 1: Static Referentials Migration Tests
+# =====================================================================
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_codes_postaux_odace_success(mock_get_client, temp_cache_dirs):
+    """Tests clean_codes_postaux with OdasClient."""
+    _, clean_dir = temp_cache_dirs
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.return_value = pd.DataFrame(
+        [
+            {"commune_insee_code": "1001", "code_postal": "1000"},
+            {"commune_insee_code": "75001", "code_postal": "75001"},
+            {"commune_insee_code": "75001", "code_postal": "75001"},  # duplicate
+        ]
+    )
+
+    config = {
+        "sources": {
+            "codes_postaux": {
+                "use_odace": True,
+                "odace_table": "ref_code_postal",
+            }
+        }
+    }
+
+    clean_codes_postaux(config, MagicMock(spec=PipelineLogger))
+
+    out_file = clean_dir / "codes_postaux.parquet"
+    assert out_file.exists()
+    res = pd.read_parquet(out_file)
+    assert len(res) == 2
+    assert set(res.columns) == {"code_postal", "codgeo"}
+    assert res.loc[res["codgeo"] == "01001", "code_postal"].iloc[0] == "01000"
+    assert res.loc[res["codgeo"] == "75001", "code_postal"].iloc[0] == "75001"
+    mock_client.fetch_table.assert_called_once_with("ref_code_postal")
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_codes_postaux_odace_failure(mock_get_client, temp_cache_dirs):
+    """Tests clean_codes_postaux fail-closed on Odace error."""
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.side_effect = Exception("API error")
+
+    config = {
+        "sources": {
+            "codes_postaux": {
+                "use_odace": True,
+                "odace_table": "ref_code_postal",
+            }
+        }
+    }
+
+    with pytest.raises(PipelineRunError, match="Odace codes_postaux"):
+        clean_codes_postaux(config, MagicMock(spec=PipelineLogger))
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_departements_odace_success(mock_get_client, temp_cache_dirs):
+    """Tests clean_departements with OdasClient."""
+    _, clean_dir = temp_cache_dirs
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.return_value = pd.DataFrame(
+        [
+            {
+                "code_departement": "1",
+                "libelle_departement": " Ain ",
+                "code_region": "84",
+            },
+            {
+                "code_departement": "75",
+                "libelle_departement": "Paris",
+                "code_region": "11",
+            },
+        ]
+    )
+
+    config = {
+        "sources": {
+            "departements_ref": {
+                "use_odace": True,
+                "odace_table": "ref_departement",
+            }
+        }
+    }
+
+    clean_departements(config, MagicMock(spec=PipelineLogger))
+
+    out_file = clean_dir / "departements.parquet"
+    assert out_file.exists()
+    res = pd.read_parquet(out_file)
+    assert len(res) == 2
+    assert set(res.columns) == {"code", "label", "reg_code"}
+    assert res.loc[res["code"] == "01", "label"].iloc[0] == "Ain"
+    assert res.loc[res["code"] == "01", "reg_code"].iloc[0] == "84"
+    assert res.loc[res["code"] == "75", "label"].iloc[0] == "Paris"
+    mock_client.fetch_table.assert_called_once_with("ref_departement")
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_departements_odace_failure(mock_get_client, temp_cache_dirs):
+    """Tests clean_departements fail-closed on Odace error."""
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.side_effect = Exception("API error")
+
+    config = {
+        "sources": {
+            "departements_ref": {
+                "use_odace": True,
+                "odace_table": "ref_departement",
+            }
+        }
+    }
+
+    with pytest.raises(PipelineRunError, match="Odace departements"):
+        clean_departements(config, MagicMock(spec=PipelineLogger))
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_regions_odace_success(mock_get_client, temp_cache_dirs):
+    """Tests clean_regions with OdasClient."""
+    _, clean_dir = temp_cache_dirs
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.return_value = pd.DataFrame(
+        [
+            {"code_region": "1", "libelle_region": " Guadeloupe "},
+            {"code_region": "11", "libelle_region": " Île-de-France "},
+            {"code_region": "84", "libelle_region": "Auvergne-Rhône-Alpes"},
+        ]
+    )
+
+    config = {
+        "sources": {
+            "regions_ref": {
+                "use_odace": True,
+                "odace_table": "ref_region",
+            }
+        }
+    }
+
+    clean_regions(config, MagicMock(spec=PipelineLogger))
+
+    out_file = clean_dir / "regions.parquet"
+    assert out_file.exists()
+    res = pd.read_parquet(out_file)
+    assert len(res) == 3
+    assert set(res.columns) == {"code", "label"}
+    assert res.loc[res["code"] == "01", "label"].iloc[0] == "Guadeloupe"
+    assert res.loc[res["code"] == "11", "label"].iloc[0] == "Île-de-France"
+    assert res.loc[res["code"] == "84", "label"].iloc[0] == "Auvergne-Rhône-Alpes"
+    mock_client.fetch_table.assert_called_once_with("ref_region")
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_regions_odace_failure(mock_get_client, temp_cache_dirs):
+    """Tests clean_regions fail-closed on Odace error."""
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.side_effect = Exception("API error")
+
+    config = {
+        "sources": {
+            "regions_ref": {
+                "use_odace": True,
+                "odace_table": "ref_region",
+            }
+        }
+    }
+
+    with pytest.raises(PipelineRunError, match="Odace regions"):
+        clean_regions(config, MagicMock(spec=PipelineLogger))
+
+
+def test_clean_regions_legacy_fallback(temp_cache_dirs):
+    """Tests clean_regions fallback when use_odace is false."""
+    raw_dir, clean_dir = temp_cache_dirs
+
+    legacy_file = raw_dir / "referentiel_regions.json"
+    legacy_file.write_text(
+        json.dumps(
+            [
+                {"REG": "01", "LIBELLE": "Guadeloupe"},
+                {"REG": "11", "LIBELLE": "Île-de-France"},
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    config = {
+        "sources": {
+            "regions_ref": {
+                "use_odace": False,
+                "format": "json",
+                "local_name": "referentiel_regions.json",
+            }
+        }
+    }
+
+    clean_regions(config, MagicMock(spec=PipelineLogger))
+
+    out_file = clean_dir / "regions.parquet"
+    assert out_file.exists()
+    res = pd.read_parquet(out_file)
+    assert len(res) == 2
+    assert set(res.columns) == {"code", "label"}
+    assert res.loc[res["code"] == "01", "label"].iloc[0] == "Guadeloupe"
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_nomenclature_waldec_odace_success(mock_get_client, temp_cache_dirs):
+    """Tests clean_nomenclature_waldec with OdasClient."""
+    _, clean_dir = temp_cache_dirs
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.return_value = pd.DataFrame(
+        [
+            {"code_waldec": "100", "libelle": " Culture "},
+            {"code_waldec": "012345", "libelle": "Santé"},
+        ]
+    )
+
+    config = {
+        "sources": {
+            "nomenclature_waldec": {
+                "use_odace": True,
+                "odace_table": "ref_waldec",
+            }
+        }
+    }
+
+    clean_nomenclature_waldec(config, MagicMock(spec=PipelineLogger))
+
+    out_file = clean_dir / "referentiel_waldec.parquet"
+    assert out_file.exists()
+    res = pd.read_parquet(out_file)
+    assert len(res) == 2
+    assert set(res.columns) == {"code", "label"}
+    assert res.loc[res["code"] == "000100", "label"].iloc[0] == "Culture"
+    assert res.loc[res["code"] == "012345", "label"].iloc[0] == "Santé"
+    mock_client.fetch_table.assert_called_once_with("ref_waldec")
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_nomenclature_waldec_odace_failure(mock_get_client, temp_cache_dirs):
+    """Tests clean_nomenclature_waldec fail-closed on Odace error."""
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.side_effect = Exception("API error")
+
+    config = {
+        "sources": {
+            "nomenclature_waldec": {
+                "use_odace": True,
+                "odace_table": "ref_waldec",
+            }
+        }
+    }
+
+    with pytest.raises(PipelineRunError, match="Odace nomenclature_waldec"):
+        clean_nomenclature_waldec(config, MagicMock(spec=PipelineLogger))
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_political_odace_success(mock_get_client, temp_cache_dirs):
+    """Tests clean_political with OdasClient and domain contracts."""
+    _, clean_dir = temp_cache_dirs
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.return_value = pd.DataFrame(
+        [
+            {
+                "commune_insee_code": "1001",
+                "code_nuance_politique": "RN",
+                "famille_nuance_politique": "Extrême droite",
+            },
+            {
+                "commune_insee_code": "1002",
+                "code_nuance_politique": "SOC",
+                "famille_nuance_politique": "Gauche",
+            },
+            {
+                "commune_insee_code": "1003",
+                "code_nuance_politique": "REC",
+                "famille_nuance_politique": "Autre",
+            },
+        ]
+    )
+
+    config = {
+        "sources": {
+            "political_nuance": {
+                "use_odace": True,
+                "odace_table": "fact_nuance_politique",
+            }
+        }
+    }
+
+    clean_political(config, MagicMock(spec=PipelineLogger))
+
+    out_file = clean_dir / "political.parquet"
+    assert out_file.exists()
+    res = pd.read_parquet(out_file)
+    assert len(res) == 3
+    assert set(res.columns) == {"codgeo", "pol_num", "maire_extreme_droite"}
+    # RN -> far right -> pol_num 0.0
+    rn_row = res.loc[res["codgeo"] == "01001"]
+    assert rn_row["maire_extreme_droite"].iloc[0] is True or rn_row["maire_extreme_droite"].iloc[0] == 1
+    assert rn_row["pol_num"].iloc[0] == 0.0
+    # SOC -> not far right -> pol_num 1.0
+    soc_row = res.loc[res["codgeo"] == "01002"]
+    assert soc_row["maire_extreme_droite"].iloc[0] is False or soc_row["maire_extreme_droite"].iloc[0] == 0
+    assert soc_row["pol_num"].iloc[0] == 1.0
+    # REC -> far right nuance -> pol_num 0.0
+    rec_row = res.loc[res["codgeo"] == "01003"]
+    assert rec_row["maire_extreme_droite"].iloc[0] is True or rec_row["maire_extreme_droite"].iloc[0] == 1
+    assert rec_row["pol_num"].iloc[0] == 0.0
+    mock_client.fetch_table.assert_called_once_with("fact_nuance_politique")
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_political_odace_failure(mock_get_client, temp_cache_dirs):
+    """Tests clean_political fail-closed on Odace error."""
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.side_effect = Exception("API error")
+
+    config = {
+        "sources": {
+            "political_nuance": {
+                "use_odace": True,
+                "odace_table": "fact_nuance_politique",
+            }
+        }
+    }
+
+    with pytest.raises(PipelineRunError, match="Odace political"):
+        clean_political(config, MagicMock(spec=PipelineLogger))
+
+
+def test_main_cli_regions_step_registered():
+    """Verify that main.py registers clean_regions and can trigger it via --steps regions."""
+    from unittest.mock import patch
+    from pipeline.ingest.main import main
+
+    with (
+        patch("pipeline.ingest.main.run_clean_step_safely") as mock_run,
+        patch("pipeline.ingest.main.load_config", return_value={"sources": {}}),
+        patch("pipeline.ingest.main.PipelineLogger"),
+    ):
+        main(["--steps", "regions"])
+        assert mock_run.called
+        assert mock_run.call_args[0][0] == "regions"
+
+
+def test_build_generate_referentiels_uses_clean_regions(tmp_path, monkeypatch):
+    """Verify that generate_referentiels uses regions.parquet from CLEAN_DIR."""
+    import pipeline.build as build_module
+
+    clean_dir = tmp_path / "clean"
+    raw_dir = tmp_path / "raw"
+    output_dir = tmp_path / "output"
+    clean_dir.mkdir(parents=True)
+    raw_dir.mkdir(parents=True)
+    output_dir.mkdir(parents=True)
+
+    pd.DataFrame({"codgeo": ["75056"], "nom": ["Paris"]}).to_parquet(
+        clean_dir / "communes.parquet"
+    )
+    pd.DataFrame(
+        {
+            "code": ["75"],
+            "label": ["Paris"],
+            "reg_code": ["11"],
+        }
+    ).to_parquet(clean_dir / "departements.parquet")
+    pd.DataFrame(
+        {
+            "code": ["11"],
+            "label": ["Île-de-France"],
+        }
+    ).to_parquet(clean_dir / "regions.parquet")
+    pd.DataFrame(
+        {
+            "geo_level": ["commune"],
+            "region_code": ["11"],
+            "departement_code": ["75"],
+        }
+    ).to_parquet(raw_dir / "odace_dim_geo.parquet")
+    pd.DataFrame(
+        {
+            "code": ["M1805"],
+            "label": ["Développement informatique"],
+        }
+    ).to_parquet(raw_dir / "rome_referential_api.parquet")
+
+    monkeypatch.setattr(build_module, "CLEAN_DIR", clean_dir)
+    monkeypatch.setattr(build_module, "CACHE_DIR", raw_dir)
+    monkeypatch.setattr(build_module, "OUTPUT_DIR", output_dir)
+
+    build_module.generate_referentiels(
+        {"sources": {"regions_ref": {}}},
+        MagicMock(),
+    )
+
+    refs = pd.read_parquet(output_dir / "odis_referentiels.parquet")
+    regions = refs.loc[refs["key"] == "regions"].set_index("code")["label"].to_dict()
+    assert regions == {"11": "Île-de-France"}
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_codes_postaux_edge_cases(mock_get_client, temp_cache_dirs):
+    """Verify float INSEE codes, null rows, and duplicates in codes_postaux."""
+    _, clean_dir = temp_cache_dirs
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.return_value = pd.DataFrame(
+        [
+            {"commune_insee_code": 1001.0, "code_postal": 1000.0},
+            {"commune_insee_code": "2A004", "code_postal": "20000"},
+            {"commune_insee_code": None, "code_postal": "75001"},
+            {"commune_insee_code": "75001", "code_postal": np.nan},
+            {"commune_insee_code": "75001", "code_postal": "75001"},
+            {"commune_insee_code": "75001", "code_postal": "75001"},  # duplicate
+        ]
+    )
+
+    config = {
+        "sources": {
+            "codes_postaux": {
+                "use_odace": True,
+                "odace_table": "ref_code_postal",
+            }
+        }
+    }
+
+    clean_codes_postaux(config, MagicMock(spec=PipelineLogger))
+    out_file = clean_dir / "codes_postaux.parquet"
+    assert out_file.exists()
+    res = pd.read_parquet(out_file)
+    assert len(res) == 3
+    # Verify no NaN or '00nan' produced
+    assert not res["codgeo"].str.contains("nan", case=False).any()
+    assert not res["code_postal"].str.contains("nan", case=False).any()
+    # Check normalized codes
+    assert res.loc[res["codgeo"] == "01001", "code_postal"].iloc[0] == "01000"
+    assert res.loc[res["codgeo"] == "2A004", "code_postal"].iloc[0] == "20000"
+    assert res.loc[res["codgeo"] == "75001", "code_postal"].iloc[0] == "75001"
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_departements_edge_cases(mock_get_client, temp_cache_dirs):
+    """Verify numeric float codes, Corsica 2A/2B, DOM 971, duplicates, and null handling."""
+    _, clean_dir = temp_cache_dirs
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.return_value = pd.DataFrame(
+        [
+            {"code_departement": 1.0, "libelle_departement": " Ain ", "code_region": 84.0},
+            {"code_departement": "2A", "libelle_departement": "Corse-du-Sud", "code_region": "94"},
+            {"code_departement": 971, "libelle_departement": "Guadeloupe", "code_region": 1.0},
+            {"code_departement": None, "libelle_departement": "Unknown", "code_region": "00"},
+            {"code_departement": "01", "libelle_departement": "Ain Duplicate", "code_region": "84"},
+        ]
+    )
+
+    config = {
+        "sources": {
+            "departements_ref": {
+                "use_odace": True,
+                "odace_table": "ref_departement",
+            }
+        }
+    }
+
+    clean_departements(config, MagicMock(spec=PipelineLogger))
+    out_file = clean_dir / "departements.parquet"
+    assert out_file.exists()
+    res = pd.read_parquet(out_file)
+    assert len(res) == 3
+    assert set(res["code"]) == {"01", "2A", "971"}
+    assert res.loc[res["code"] == "01", "reg_code"].iloc[0] == "84"
+    assert res.loc[res["code"] == "971", "reg_code"].iloc[0] == "01"
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_regions_edge_cases(mock_get_client, temp_cache_dirs):
+    """Verify numeric float codes, duplicate deduplication, and null handling in regions."""
+    _, clean_dir = temp_cache_dirs
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.return_value = pd.DataFrame(
+        [
+            {"code_region": 1.0, "libelle_region": " Guadeloupe "},
+            {"code_region": "11", "libelle_region": " Île-de-France "},
+            {"code_region": 11.0, "libelle_region": "Île-de-France Dup"},
+            {"code_region": None, "libelle_region": "Null Region"},
+        ]
+    )
+
+    config = {
+        "sources": {
+            "regions_ref": {
+                "use_odace": True,
+                "odace_table": "ref_region",
+            }
+        }
+    }
+
+    clean_regions(config, MagicMock(spec=PipelineLogger))
+    out_file = clean_dir / "regions.parquet"
+    assert out_file.exists()
+    res = pd.read_parquet(out_file)
+    assert len(res) == 2
+    assert set(res["code"]) == {"01", "11"}
+    assert res.loc[res["code"] == "01", "label"].iloc[0] == "Guadeloupe"
+    assert res.loc[res["code"] == "11", "label"].iloc[0] == "Île-de-France"
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_nomenclature_waldec_edge_cases(mock_get_client, temp_cache_dirs):
+    """Verify 6-digit padding with float/numeric inputs, duplicates, and null handling."""
+    _, clean_dir = temp_cache_dirs
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.return_value = pd.DataFrame(
+        [
+            {"code_waldec": 100.0, "libelle": " Culture "},
+            {"code_waldec": "012345", "libelle": "Santé"},
+            {"code_waldec": "100", "libelle": "Culture duplicate"},
+            {"code_waldec": None, "libelle": "Missing"},
+        ]
+    )
+
+    config = {
+        "sources": {
+            "nomenclature_waldec": {
+                "use_odace": True,
+                "odace_table": "ref_waldec",
+            }
+        }
+    }
+
+    clean_nomenclature_waldec(config, MagicMock(spec=PipelineLogger))
+    out_file = clean_dir / "referentiel_waldec.parquet"
+    assert out_file.exists()
+    res = pd.read_parquet(out_file)
+    assert len(res) == 2
+    assert set(res["code"]) == {"000100", "012345"}
+    assert res.loc[res["code"] == "000100", "label"].iloc[0] == "Culture"
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_political_edge_cases(mock_get_client, temp_cache_dirs):
+    """Verify float codgeo, duplicates with far-right precedence, and null handling."""
+    _, clean_dir = temp_cache_dirs
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.return_value = pd.DataFrame(
+        [
+            # Float code 1001.0 -> 01001
+            {"commune_insee_code": 1001.0, "code_nuance_politique": "RN", "famille_nuance_politique": "Extrême droite"},
+            # Duplicate for 01002: one non-far-right, one far-right -> far-right wins
+            {"commune_insee_code": "01002", "code_nuance_politique": "SOC", "famille_nuance_politique": "Gauche"},
+            {"commune_insee_code": "01002", "code_nuance_politique": "EXD", "famille_nuance_politique": "Extrême droite"},
+            # Null codgeo row
+            {"commune_insee_code": None, "code_nuance_politique": "RN", "famille_nuance_politique": "Extrême droite"},
+        ]
+    )
+
+    config = {
+        "sources": {
+            "political_nuance": {
+                "use_odace": True,
+                "odace_table": "fact_nuance_politique",
+            }
+        }
+    }
+
+    clean_political(config, MagicMock(spec=PipelineLogger))
+    out_file = clean_dir / "political.parquet"
+    assert out_file.exists()
+    res = pd.read_parquet(out_file)
+    assert len(res) == 2
+    assert set(res["codgeo"]) == {"01001", "01002"}
+    # 01001 -> far-right -> pol_num 0.0
+    assert res.loc[res["codgeo"] == "01001", "maire_extreme_droite"].iloc[0] is True or res.loc[res["codgeo"] == "01001", "maire_extreme_droite"].iloc[0] == 1
+    assert res.loc[res["codgeo"] == "01001", "pol_num"].iloc[0] == 0.0
+    # 01002 -> far-right took precedence -> pol_num 0.0
+    assert res.loc[res["codgeo"] == "01002", "maire_extreme_droite"].iloc[0] is True or res.loc[res["codgeo"] == "01002", "maire_extreme_droite"].iloc[0] == 1
+    assert res.loc[res["codgeo"] == "01002", "pol_num"].iloc[0] == 0.0
+
+
+def test_main_cli_step_to_source_resolution():
+    """Verify that main CLI with --steps regions,departements invokes fetch_source with proper source keys."""
+    from unittest.mock import patch
+    from pipeline.ingest.main import main
+
+    sources_seen = []
+
+    def fake_fetch_source(name, cfg, logger):
+        sources_seen.append(name)
+        return None
+
+    config = {
+        "sources": {
+            "departements_ref": {"use_odace": True},
+            "regions_ref": {"use_odace": True},
+            "political_nuance": {"use_odace": True},
+            "caf": {"use_odace": True},
+        }
+    }
+
+    with (
+        patch("pipeline.ingest.main.run_clean_step_safely"),
+        patch("pipeline.ingest.main.load_config", return_value=config),
+        patch("pipeline.ingest.main.PipelineLogger"),
+        patch("pipeline.ingest.main.fetch_source", side_effect=fake_fetch_source),
+    ):
+        main(["--steps", "regions,departements"])
+        assert "regions_ref" in sources_seen
+        assert "departements_ref" in sources_seen
+        assert "political_nuance" not in sources_seen
+        assert "caf" not in sources_seen
+
+
+

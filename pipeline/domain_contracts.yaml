@@ -400,6 +400,7 @@ runner:
     school_effectifs: "education_effectifs"
     loyers: "loyers_apparts"
     departements: "departements_ref"
+    regions: "regions_ref"
     mob_durable: "mob_durable_share"
     log_soc_delay: "logement_social_delay"
     live_jobs: "france_travail_live"
@@ -419,6 +420,7 @@ runner:
     live_jobs: "odis_ft_jobs_agg.parquet"
     inclusion_jobs: "odis_inclusion_jobs.parquet"
     salesforce_jaccueille: "salesforce_jaccueille.parquet"
+    regions: "regions.parquet"
   output_dir_steps:
     - "live_jobs"
     - "inclusion_jobs"

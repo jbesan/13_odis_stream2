@@ -13,20 +13,105 @@ import pandas as pd
 from pipeline.common import PipelineLogger
 from pipeline.ingest.config import get_domain_contracts
 from pipeline.ingest import context
+from pipeline.run_context import PipelineRunError
 
 
 def clean_political(config: Dict[str, Any], logger: PipelineLogger) -> None:
-    """Cleans Political Nuance and saves to parquet."""
-    logger.log_step("clean_political", "STARTED")
-    source = config["sources"]["political_nuance"]
-    path = context.CACHE_DIR / source["local_name"]
-    if not path.exists():
-        return
+    """Cleans Political Nuance and saves to parquet.
 
+    Args:
+        config: Pipeline configuration dictionary.
+        logger: Pipeline logger instance.
+
+    Raises:
+        PipelineRunError: If ODAS fetch or cleaning fails.
+    """
+    import pipeline.ingest as ingest
+
+    logger.log_step("clean_political", "STARTED")
+    source = config.get("sources", {}).get("political_nuance") or config.get(
+        "sources", {}
+    ).get("political", {})
     domain_cfg = get_domain_contracts()
     electoral_cfg = domain_cfg.electoral
 
-    import pipeline.ingest as ingest
+    if source.get("use_odace", False):
+        try:
+            client = ingest.get_odace_client(logger)
+            df_odace = client.fetch_table(
+                source.get("odace_table", "fact_nuance_politique")
+            )
+            if not df_odace.empty:
+                nuance_col = (
+                    "code_nuance_politique"
+                    if "code_nuance_politique" in df_odace.columns
+                    else "nuance"
+                )
+                famille_col = (
+                    "famille_nuance_politique"
+                    if "famille_nuance_politique" in df_odace.columns
+                    else "famille"
+                )
+                codgeo_col = (
+                    "commune_insee_code"
+                    if "commune_insee_code" in df_odace.columns
+                    else "codgeo"
+                )
+
+                if codgeo_col in df_odace.columns:
+                    nuance_val = (
+                        df_odace[nuance_col].astype(str).str.strip().str.upper()
+                        if nuance_col in df_odace.columns
+                        else pd.Series("", index=df_odace.index)
+                    )
+                    famille_val = (
+                        df_odace[famille_col].astype(str).str.strip()
+                        if famille_col in df_odace.columns
+                        else pd.Series("", index=df_odace.index)
+                    )
+
+                    far_right_nuances = set(electoral_cfg.far_right_nuances)
+                    far_right_family = electoral_cfg.far_right_family
+
+                    df_out = pd.DataFrame()
+                    df_out["codgeo"] = ingest.normalize_code(df_odace[codgeo_col], 5)
+                    df_out["maire_extreme_droite"] = (
+                        famille_val == far_right_family
+                    ) | (nuance_val.isin(far_right_nuances))
+                    df_out["pol_num"] = np.where(
+                        df_out["maire_extreme_droite"], 0.0, 1.0
+                    )
+                    df_out = (
+                        df_out.dropna(subset=["codgeo"])
+                        .sort_values(by="maire_extreme_droite", ascending=False)
+                        .drop_duplicates(subset=["codgeo"], keep="first")
+                    )
+                    df_out = df_out[["codgeo", "pol_num", "maire_extreme_droite"]]
+
+                    if not df_out.empty:
+                        output_path = context.CLEAN_DIR / "political.parquet"
+                        df_out.to_parquet(output_path)
+                        logger.log_step(
+                            "clean_political",
+                            "COMPLETED",
+                            {
+                                "path": str(output_path),
+                                "rows": len(df_out),
+                                "source": "odace",
+                            },
+                        )
+                        return
+            else:
+                logging.warning(
+                    "Odace fetch returned empty data for fact_nuance_politique."
+                )
+        except Exception as e:
+            logging.error(f"Failed to fetch fact_nuance_politique from Odace: {e}")
+        raise PipelineRunError("Odace political did not produce a usable dataset")
+
+    path = context.CACHE_DIR / source["local_name"]
+    if not path.exists():
+        return
 
     df = ingest.load_dataset(path, source)
     df.columns = [c.strip() for c in df.columns]
@@ -61,13 +146,19 @@ def clean_political(config: Dict[str, Any], logger: PipelineLogger) -> None:
         far_right_nuances = set(electoral_cfg.far_right_nuances)
         far_right_family = electoral_cfg.far_right_family
 
-        df["maire_extreme_droite"] = (famille_val == far_right_family) | (
+        df_out = pd.DataFrame()
+        df_out["codgeo"] = ingest.normalize_code(df[codgeo_col], 5)
+        df_out["maire_extreme_droite"] = (famille_val == far_right_family) | (
             nuance_val.isin(far_right_nuances)
         )
-        df["pol_num"] = np.where(df["maire_extreme_droite"], 0.0, 1.0)
-        df["codgeo"] = df[codgeo_col].astype(str).str.zfill(5)
+        df_out["pol_num"] = np.where(df_out["maire_extreme_droite"], 0.0, 1.0)
+        df_out = (
+            df_out.dropna(subset=["codgeo"])
+            .sort_values(by="maire_extreme_droite", ascending=False)
+            .drop_duplicates(subset=["codgeo"], keep="first")
+        )
+        df_out = df_out[["codgeo", "pol_num", "maire_extreme_droite"]]
 
-        df_out = df[["codgeo", "pol_num", "maire_extreme_droite"]]
         output_path = context.CLEAN_DIR / "political.parquet"
         df_out.to_parquet(output_path)
         logger.log_step("clean_political", "COMPLETED", {"path": str(output_path)})

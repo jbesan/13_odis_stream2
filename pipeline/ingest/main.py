@@ -33,6 +33,7 @@ from pipeline.ingest.cleaners import (
     clean_population_active,
     clean_population_details,
     clean_refugee_associations,
+    clean_regions,
     clean_rpls,
     clean_salesforce_jaccueille,
     clean_sante_apl,
@@ -42,6 +43,7 @@ from pipeline.ingest.cleaners import (
     clean_ter_insecurite,
 )
 from pipeline.ingest import context
+from pipeline.ingest.config import get_domain_contracts
 from pipeline.ingest.fetcher import fetch_rome_referential, fetch_source
 from pipeline.ingest.cleaners.rna_rag import fetch_rna_rag_stats
 from pipeline.ingest.runner import run_clean_step_safely
@@ -97,6 +99,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "population_details": clean_population_details,
         "nomenclature_waldec": clean_nomenclature_waldec,
         "departements": clean_departements,
+        "regions": clean_regions,
         "live_jobs": clean_live_jobs,
         "inclusion_jobs": clean_inclusion_jobs,
         "mob_transports_pub": clean_mob_transports_pub,
@@ -118,8 +121,16 @@ def main(argv: Sequence[str] | None = None) -> None:
     ):
         fetch_rna_rag_stats(logger, config)
 
+    domain_cfg = get_domain_contracts()
+    step_to_source_map = domain_cfg.runner.step_to_source_map
+    selected_sources = (
+        {step_to_source_map.get(s, s) for s in selected_steps} | set(selected_steps)
+        if args.steps
+        else None
+    )
+
     for name, source_cfg in config["sources"].items():
-        if args.steps and name not in selected_steps:
+        if selected_sources and name not in selected_sources:
             continue
         if name == "rna_rag":
             continue

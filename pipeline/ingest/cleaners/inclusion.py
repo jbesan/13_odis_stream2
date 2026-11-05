@@ -315,9 +315,57 @@ def clean_associations(config: Dict[str, Any], logger: PipelineLogger) -> None:
 
 
 def clean_nomenclature_waldec(config: Dict[str, Any], logger: PipelineLogger) -> None:
-    """Cleans WALDEC Nomenclature and saves to parquet."""
+    """Cleans WALDEC Nomenclature and saves to parquet.
+
+    Args:
+        config: Pipeline configuration dictionary.
+        logger: Pipeline logger instance.
+
+    Raises:
+        PipelineRunError: If ODAS fetch or cleaning fails.
+    """
+    import pipeline.ingest as ingest
+
     logger.log_step("clean_nomenclature_waldec", "STARTED")
-    source = config["sources"]["nomenclature_waldec"]
+    source = config.get("sources", {}).get("nomenclature_waldec", {})
+
+    if source.get("use_odace", False):
+        try:
+            client = ingest.get_odace_client(logger)
+            df_odace = client.fetch_table(
+                source.get("odace_table", "ref_waldec")
+            )
+            if not df_odace.empty and "code_waldec" in df_odace.columns:
+                df_out = pd.DataFrame()
+                df_out["code"] = ingest.normalize_code(df_odace["code_waldec"], 6)
+                df_out["label"] = (
+                    df_odace["libelle"].astype(str).str.strip()
+                    if "libelle" in df_odace.columns
+                    else pd.Series("", index=df_odace.index)
+                )
+
+                df_out = df_out.dropna(subset=["code", "label"]).drop_duplicates(
+                    subset=["code"]
+                )
+                if not df_out.empty:
+                    output_path = context.CLEAN_DIR / "referentiel_waldec.parquet"
+                    df_out.to_parquet(output_path)
+                    logger.log_step(
+                        "clean_nomenclature_waldec",
+                        "COMPLETED",
+                        {
+                            "path": str(output_path),
+                            "rows": len(df_out),
+                            "source": "odace",
+                        },
+                    )
+                    return
+            else:
+                logging.warning("Odace fetch returned empty or invalid data for ref_waldec.")
+        except Exception as e:
+            logging.error(f"Failed to fetch ref_waldec from Odace: {e}")
+        raise PipelineRunError("Odace nomenclature_waldec did not produce a usable dataset")
+
     path = context.CACHE_DIR / source["local_name"]
 
     if not path.exists():
@@ -346,11 +394,12 @@ def clean_nomenclature_waldec(config: Dict[str, Any], logger: PipelineLogger) ->
         )
 
         if code_col and label_col:
-            df_out = df[[code_col, label_col]].rename(
-                columns={code_col: "code", label_col: "label"}
+            df_out = pd.DataFrame()
+            df_out["code"] = ingest.normalize_code(df[code_col], 6)
+            df_out["label"] = df[label_col].astype(str).str.strip()
+            df_out = df_out.dropna(subset=["code", "label"]).drop_duplicates(
+                subset=["code"]
             )
-            df_out["code"] = df_out["code"].astype(str).str.zfill(6)
-            df_out["label"] = df_out["label"].astype(str)
 
             output_path = context.CLEAN_DIR / "referentiel_waldec.parquet"
             df_out.to_parquet(output_path)
@@ -366,6 +415,7 @@ def clean_nomenclature_waldec(config: Dict[str, Any], logger: PipelineLogger) ->
             logger.log_step(
                 "clean_nomenclature_waldec", "FAILED", {"reason": "Columns not found"}
             )
+            raise PipelineRunError("WALDEC: required columns not found in raw dataset")
 
     except Exception as e:
         logger.log_step("clean_nomenclature_waldec", "ERROR", {"error": str(e)})

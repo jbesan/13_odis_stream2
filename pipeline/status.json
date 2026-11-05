@@ -96,7 +96,7 @@
     },
     "ingest_all": {
       "status": "COMPLETED",
-      "timestamp": "2026-10-05T10:55:57.600105+00:00",
+      "timestamp": "2026-11-05T10:20:15.576271+00:00",
       "details": {}
     },
     "clean_communes": {
@@ -221,7 +221,7 @@
     },
     "clean_political": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:01:05.197961",
+      "timestamp": "2026-11-05T10:20:15.575469+00:00",
       "details": {
         "rows": 34844,
         "path": "pipeline/cache/clean/political.parquet"
@@ -262,7 +262,7 @@
     },
     "clean_codes_postaux": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:01:29.197768",
+      "timestamp": "2026-11-05T10:20:11.249998+00:00",
       "details": {
         "rows": 35511,
         "path": "pipeline/cache/clean/codes_postaux.parquet"
@@ -344,7 +344,7 @@
     },
     "clean_nomenclature_waldec": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:01:31.437824",
+      "timestamp": "2026-11-05T10:20:14.240461+00:00",
       "details": {
         "rows": 297,
         "path": "pipeline/cache/clean/referentiel_waldec.parquet"
@@ -357,15 +357,15 @@
     },
     "clean_regions": {
       "status": "COMPLETED",
-      "timestamp": "2026-01-15T12:23:51.866549",
+      "timestamp": "2026-11-05T10:20:13.256131+00:00",
       "details": {
-        "path": "pipeline/cache/clean/regions.parquet",
-        "rows": 18
+        "rows": 18,
+        "path": "pipeline/cache/clean/regions.parquet"
       }
     },
     "clean_departements": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:01:31.443663",
+      "timestamp": "2026-11-05T10:20:12.251215+00:00",
       "details": {
         "rows": 101,
         "path": "pipeline/cache/clean/departements.parquet"
@@ -615,9 +615,9 @@
       "file": "pipeline/cache/raw/referentiel_fap_2021.csv"
     },
     "political_nuance": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.508557",
-      "file": "pipeline/cache/raw/political_nuance.csv"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-05T10:20:09.219036+00:00",
+      "file": "managed by Odace"
     },
     "housing_occupation": {
       "status": "CACHED",
@@ -625,9 +625,9 @@
       "file": "pipeline/cache/raw/housing_occupation.zip"
     },
     "codes_postaux": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.512374",
-      "file": "pipeline/cache/raw/codes_postaux.parquet"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-05T10:20:09.219881+00:00",
+      "file": "managed by Odace"
     },
     "formations_annuaire": {
       "status": "CACHED",
@@ -675,19 +675,19 @@
       "file": "pipeline/cache/raw/population_details.zip"
     },
     "nomenclature_waldec": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.511305",
-      "file": "pipeline/cache/raw/nomenclature_waldec.json"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-05T10:20:09.219467+00:00",
+      "file": "managed by Odace"
     },
     "regions_ref": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.515966",
-      "file": "pipeline/cache/raw/referentiel_regions.json"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-05T10:20:09.220285+00:00",
+      "file": "managed by Odace"
     },
     "departements_ref": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.516478",
-      "file": "pipeline/cache/raw/referentiel_departements.json"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-05T10:20:09.220683+00:00",
+      "file": "managed by Odace"
     },
     "fap_rome_mapping": {
       "status": "CACHED",

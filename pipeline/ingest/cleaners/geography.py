@@ -7,6 +7,7 @@ import logging
 from typing import Any, Dict
 
 import numpy as np
+import pandas as pd
 import shapely
 from shapely.geometry import shape
 
@@ -138,11 +139,65 @@ def clean_communes(config: Dict[str, Any], logger: PipelineLogger) -> None:
 
 
 def clean_departements(config: Dict[str, Any], logger: PipelineLogger) -> None:
-    """Cleans Departements referential and saves to parquet."""
+    """Cleans Departements referential and saves to parquet.
+
+    Args:
+        config: Pipeline configuration dictionary.
+        logger: Pipeline logger instance.
+
+    Raises:
+        PipelineRunError: If ODAS fetch or legacy clean fails.
+    """
     import pipeline.ingest as ingest
 
     logger.log_step("clean_departements", "STARTED")
-    source = config["sources"]["departements_ref"]
+    source = config.get("sources", {}).get("departements_ref") or config.get(
+        "sources", {}
+    ).get("departements", {})
+
+    if source.get("use_odace", False):
+        try:
+            client = ingest.get_odace_client(logger)
+            df_odace = client.fetch_table(
+                source.get("odace_table", "ref_departement")
+            )
+            if not df_odace.empty and "code_departement" in df_odace.columns:
+                df_out = pd.DataFrame()
+                df_out["code"] = ingest.normalize_code(
+                    df_odace["code_departement"], 2
+                )
+                df_out["label"] = (
+                    df_odace["libelle_departement"].astype(str).str.strip()
+                    if "libelle_departement" in df_odace.columns
+                    else pd.Series("", index=df_odace.index)
+                )
+                if "code_region" in df_odace.columns:
+                    df_out["reg_code"] = ingest.normalize_code(
+                        df_odace["code_region"], 2
+                    )
+
+                df_out = df_out.dropna(subset=["code", "label"]).drop_duplicates(
+                    subset=["code"]
+                )
+                if not df_out.empty:
+                    output_path = context.CLEAN_DIR / "departements.parquet"
+                    df_out.to_parquet(output_path)
+                    logger.log_step(
+                        "clean_departements",
+                        "COMPLETED",
+                        {
+                            "path": str(output_path),
+                            "rows": len(df_out),
+                            "source": "odace",
+                        },
+                    )
+                    return
+            else:
+                logging.warning("Odace fetch returned empty or invalid data for ref_departement.")
+        except Exception as e:
+            logging.error(f"Failed to fetch ref_departement from Odace: {e}")
+        raise PipelineRunError("Odace departements did not produce a usable dataset")
+
     path = context.CACHE_DIR / source["local_name"]
     if not path.exists():
         return
@@ -157,10 +212,12 @@ def clean_departements(config: Dict[str, Any], logger: PipelineLogger) -> None:
         df_out = df[cols_to_keep].rename(
             columns={"DEP": "code", "LIBELLE": "label", "REG": "reg_code"}
         )
-        df_out["code"] = df_out["code"].astype(str).str.zfill(2)
+        df_out["code"] = ingest.normalize_code(df_out["code"], 2)
+        df_out["label"] = df_out["label"].astype(str).str.strip()
         if "reg_code" in df_out.columns:
-            df_out["reg_code"] = df_out["reg_code"].astype(str).str.zfill(2)
+            df_out["reg_code"] = ingest.normalize_code(df_out["reg_code"], 2)
 
+        df_out = df_out.dropna(subset=["code", "label"]).drop_duplicates(subset=["code"])
         output_path = context.CLEAN_DIR / "departements.parquet"
         df_out.to_parquet(output_path)
         logger.log_step(
@@ -170,15 +227,152 @@ def clean_departements(config: Dict[str, Any], logger: PipelineLogger) -> None:
         )
     else:
         logging.warning(f"Departements: Columns not found. Found: {df.columns}")
+        logger.log_step("clean_departements", "FAILED", {"reason": "Columns not found"})
+
+
+def clean_regions(config: Dict[str, Any], logger: PipelineLogger) -> None:
+    """Cleans Regions referential and saves to parquet.
+
+    Args:
+        config: Pipeline configuration dictionary.
+        logger: Pipeline logger instance.
+
+    Raises:
+        PipelineRunError: If ODAS fetch or legacy clean fails.
+    """
+    import pipeline.ingest as ingest
+
+    logger.log_step("clean_regions", "STARTED")
+    source = config.get("sources", {}).get("regions_ref") or config.get(
+        "sources", {}
+    ).get("regions", {})
+
+    if source.get("use_odace", False):
+        try:
+            client = ingest.get_odace_client(logger)
+            df_odace = client.fetch_table(
+                source.get("odace_table", "ref_region")
+            )
+            if not df_odace.empty and "code_region" in df_odace.columns:
+                df_out = pd.DataFrame()
+                df_out["code"] = ingest.normalize_code(df_odace["code_region"], 2)
+                df_out["label"] = (
+                    df_odace["libelle_region"].astype(str).str.strip()
+                    if "libelle_region" in df_odace.columns
+                    else pd.Series("", index=df_odace.index)
+                )
+
+                df_out = df_out.dropna(subset=["code", "label"]).drop_duplicates(
+                    subset=["code"]
+                )
+                if not df_out.empty:
+                    output_path = context.CLEAN_DIR / "regions.parquet"
+                    df_out.to_parquet(output_path)
+                    logger.log_step(
+                        "clean_regions",
+                        "COMPLETED",
+                        {
+                            "path": str(output_path),
+                            "rows": len(df_out),
+                            "source": "odace",
+                        },
+                    )
+                    return
+            else:
+                logging.warning("Odace fetch returned empty or invalid data for ref_region.")
+        except Exception as e:
+            logging.error(f"Failed to fetch ref_region from Odace: {e}")
+        raise PipelineRunError("Odace regions did not produce a usable dataset")
+
+    path = context.CACHE_DIR / source.get("local_name", "referentiel_regions.json")
+    if not path.exists():
+        return
+
+    try:
+        df = ingest.load_dataset(path, source)
+        code_col = "REG" if "REG" in df.columns else "code"
+        label_col = "LIBELLE" if "LIBELLE" in df.columns else "label"
+
+        if code_col in df.columns and label_col in df.columns:
+            df_out = pd.DataFrame()
+            df_out["code"] = ingest.normalize_code(df[code_col], 2)
+            df_out["label"] = df[label_col].astype(str).str.strip()
+            df_out = df_out.dropna(subset=["code", "label"]).drop_duplicates(
+                subset=["code"]
+            )
+
+            output_path = context.CLEAN_DIR / "regions.parquet"
+            df_out.to_parquet(output_path)
+            logger.log_step(
+                "clean_regions",
+                "COMPLETED",
+                {"path": str(output_path), "rows": len(df_out)},
+            )
+        else:
+            logging.warning(f"Regions: Columns not found. Found: {df.columns}")
+            logger.log_step("clean_regions", "FAILED", {"reason": "Columns not found"})
+            raise PipelineRunError("Regions: required columns not found in raw dataset")
+    except Exception as e:
+        logger.log_step("clean_regions", "ERROR", {"error": str(e)})
+        logging.error(f"Regions clean failed: {e}")
+        raise PipelineRunError(f"clean_regions failed: {e}") from e
 
 
 def clean_codes_postaux(config: Dict[str, Any], logger: PipelineLogger) -> None:
-    """Cleans Codes Postaux and saves to parquet."""
+    """Cleans Codes Postaux and saves to parquet.
+
+    Args:
+        config: Pipeline configuration dictionary.
+        logger: Pipeline logger instance.
+
+    Raises:
+        PipelineRunError: If ODAS fetch or legacy clean fails.
+    """
     import pipeline.ingest as ingest
 
     logger.log_step("clean_codes_postaux", "STARTED")
+    source = config.get("sources", {}).get("codes_postaux", {})
+
+    if source.get("use_odace", False):
+        try:
+            client = ingest.get_odace_client(logger)
+            df_odace = client.fetch_table(
+                source.get("odace_table", "ref_code_postal")
+            )
+            if (
+                not df_odace.empty
+                and "code_postal" in df_odace.columns
+                and "commune_insee_code" in df_odace.columns
+            ):
+                df_out = pd.DataFrame()
+                df_out["code_postal"] = ingest.normalize_code(
+                    df_odace["code_postal"], 5
+                )
+                df_out["codgeo"] = ingest.normalize_code(
+                    df_odace["commune_insee_code"], 5
+                )
+                df_out = df_out.dropna(subset=["code_postal", "codgeo"]).drop_duplicates()
+
+                if not df_out.empty:
+                    output_path = context.CLEAN_DIR / "codes_postaux.parquet"
+                    df_out.to_parquet(output_path)
+                    logger.log_step(
+                        "clean_codes_postaux",
+                        "COMPLETED",
+                        {
+                            "path": str(output_path),
+                            "rows": len(df_out),
+                            "source": "odace",
+                        },
+                    )
+                    return
+            else:
+                logging.warning("Odace fetch returned empty or invalid data for ref_code_postal.")
+        except Exception as e:
+            logging.error(f"Failed to fetch ref_code_postal from Odace: {e}")
+        raise PipelineRunError("Odace codes_postaux did not produce a usable dataset")
+
     try:
-        source = config["sources"]["codes_postaux"]
         path = context.CACHE_DIR / source["local_name"]
         if not path.exists():
             return
@@ -199,11 +393,10 @@ def clean_codes_postaux(config: Dict[str, Any], logger: PipelineLogger) -> None:
         )
 
         if cp_col and insee_col:
-            df = df[[cp_col, insee_col]].copy()
-            df["code_postal"] = df[cp_col].astype(str).str.zfill(5)
-            df["codgeo"] = df[insee_col].astype(str).str.zfill(5)
-
-            df_out = df[["code_postal", "codgeo"]].drop_duplicates()
+            df_out = pd.DataFrame()
+            df_out["code_postal"] = ingest.normalize_code(df[cp_col], 5)
+            df_out["codgeo"] = ingest.normalize_code(df[insee_col], 5)
+            df_out = df_out.dropna(subset=["code_postal", "codgeo"]).drop_duplicates()
 
             output_path = context.CLEAN_DIR / "codes_postaux.parquet"
             df_out.to_parquet(output_path)
@@ -212,6 +405,9 @@ def clean_codes_postaux(config: Dict[str, Any], logger: PipelineLogger) -> None:
             )
         else:
             logging.warning(f"Codes Postaux: Columns not found. Found: {df.columns}")
+            logger.log_step(
+                "clean_codes_postaux", "FAILED", {"reason": "Columns not found"}
+            )
 
     except Exception as e:
         logging.error(f"Failed to clean codes_postaux: {e}")

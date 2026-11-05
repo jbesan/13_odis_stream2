@@ -50,6 +50,7 @@ from pipeline.ingest.cleaners import (
     clean_population_active,
     clean_population_details,
     clean_refugee_associations,
+    clean_regions,
     clean_rpls,
     clean_salesforce_jaccueille,
     clean_sante_apl,
@@ -79,6 +80,7 @@ from pipeline.ingest.helpers import (
     _materialize_rag_cache,
     _rna_rag_table_id,
     _save_rag_cache,
+    normalize_code,
     resolve_codgeo,
 )
 from pipeline.ingest.runner import MutedPipelineLogger, run_clean_step_safely
@@ -193,6 +195,7 @@ __all__ = [
     "clean_population_active",
     "clean_population_details",
     "clean_refugee_associations",
+    "clean_regions",
     "clean_rpls",
     "clean_salesforce_jaccueille",
     "clean_sante_apl",
@@ -218,6 +221,7 @@ __all__ = [
     "load_dataset",
     "load_domain_contracts_yaml",
     "main",
+    "normalize_code",
     "resolve_codgeo",
     "run_clean_step_safely",
     "run_etl",
