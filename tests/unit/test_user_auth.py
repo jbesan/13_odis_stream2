@@ -1,4 +1,5 @@
 import os
+from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
 from utils.auth import check_password, logout
 from core.models import User, Org
@@ -27,7 +28,10 @@ def test_check_password_local_dev_autologin_with_org():
     mock_session = {}
     with (
         patch("utils.auth.st.session_state", mock_session),
-        patch("config.ORGANIZATION_PROFILES", {"test_org": Org(id="test_org", name="Test Org")}),
+        patch(
+            "config.ORGANIZATION_PROFILES",
+            {"test_org": Org(id="test_org", name="Test Org")},
+        ),
         patch("config.OIDC_EMAIL_ORG_MAPPING", {"jacques-local": "test_org"}),
         patch.dict(os.environ, {}, clear=True),
     ):
@@ -136,3 +140,250 @@ def test_logout_oidc():
         logout()
         mock_session.clear.assert_called_once()
         mock_st_logout.assert_called_once()
+
+
+def test_check_password_cloudflare_staging_success():
+    """In staging, valid Cloudflare Access headers authenticate user and resolve org."""
+    mock_session = {}
+    mock_ctx = SimpleNamespace(
+        headers={
+            "cf-access-authenticated-user-email": "test@groupe-sos.org",
+            "cf-access-jwt-assertion": "valid-jwt-token",
+        }
+    )
+    mock_org = Org(id="agir33", name="AGIR 33")
+
+    with (
+        patch("utils.auth.st.session_state", mock_session),
+        patch("utils.auth.st.context", mock_ctx, create=True),
+        patch("utils.auth.st.user", None, create=True),
+        patch("config.ODIS_DEPLOYMENT_ENV", "staging"),
+        patch("config.OIDC_ALLOWED_DOMAINS", {"groupe-sos.org"}),
+        patch("config.OIDC_DOMAIN_ORG_MAPPING", {"groupe-sos.org": "agir33"}),
+        patch("config.OIDC_ALLOWED_EMAILS", set()),
+        patch("config.OIDC_EMAIL_ORG_MAPPING", {}),
+        patch("config.ORGANIZATION_PROFILES", {"agir33": mock_org}),
+        patch.dict(
+            os.environ,
+            {
+                "K_SERVICE": "odis-app-staging",
+                "ODIS_FORCE_AUTH": "True",
+                "ODIS_DEPLOYMENT_ENV": "staging",
+            },
+            clear=True,
+        ),
+    ):
+        res = check_password()
+        assert res is True
+        assert mock_session["password_correct"] is True
+        assert mock_session["auth_method"] == "cloudflare"
+        assert mock_session["username"] == "test@groupe-sos.org"
+        assert isinstance(mock_session["user"], User)
+        assert mock_session["user"].username == "test@groupe-sos.org"
+        assert mock_session["user"].org_id == "agir33"
+        assert mock_session["org"] == mock_org
+        assert "login_session_id" in mock_session
+
+
+def test_check_password_cloudflare_staging_unauthorized_email():
+    """In staging, Cloudflare headers with unauthorized email render denial and clear session."""
+    mock_session = {}
+    mock_ctx = SimpleNamespace(
+        headers={
+            "cf-access-authenticated-user-email": "intruder@unauthorized.com",
+            "cf-access-jwt-assertion": "valid-jwt-token",
+        }
+    )
+
+    with (
+        patch("utils.auth.st.session_state", mock_session),
+        patch("utils.auth.st.context", mock_ctx, create=True),
+        patch("utils.auth.st.user", None, create=True),
+        patch("utils.auth._render_oidc_denied") as mock_denied,
+        patch("config.ODIS_DEPLOYMENT_ENV", "staging"),
+        patch("config.OIDC_ALLOWED_DOMAINS", {"groupe-sos.org"}),
+        patch("config.OIDC_DOMAIN_ORG_MAPPING", {"groupe-sos.org": "agir33"}),
+        patch.dict(
+            os.environ,
+            {
+                "K_SERVICE": "odis-app-staging",
+                "ODIS_FORCE_AUTH": "True",
+                "ODIS_DEPLOYMENT_ENV": "staging",
+            },
+            clear=True,
+        ),
+    ):
+        res = check_password()
+        assert res is False
+        mock_denied.assert_called_once()
+        assert mock_session.get("password_correct") is not True
+
+
+def test_check_password_cloudflare_staging_missing_jwt():
+    """In staging, missing cf-access-jwt-assertion must NOT trigger Cloudflare auth."""
+    mock_session = {}
+    mock_ctx = SimpleNamespace(
+        headers={
+            "cf-access-authenticated-user-email": "test@groupe-sos.org",
+            # No cf-access-jwt-assertion
+        }
+    )
+
+    with (
+        patch("utils.auth.st.session_state", mock_session),
+        patch("utils.auth.st.context", mock_ctx, create=True),
+        patch("utils.auth.st.user", None, create=True),
+        patch("utils.auth.st.container"),
+        patch("utils.auth.st.subheader"),
+        patch("utils.auth.st.info"),
+        patch("utils.auth.st.button", return_value=False),
+        patch("config.ODIS_DEPLOYMENT_ENV", "staging"),
+        patch("config.OIDC_ALLOWED_DOMAINS", {"groupe-sos.org"}),
+        patch.dict(
+            os.environ,
+            {
+                "K_SERVICE": "odis-app-staging",
+                "ODIS_FORCE_AUTH": "True",
+                "ODIS_DEPLOYMENT_ENV": "staging",
+            },
+            clear=True,
+        ),
+    ):
+        res = check_password()
+        # Falls through to Google login card
+        assert res is False
+        assert mock_session.get("auth_method") != "cloudflare"
+
+
+def test_check_password_cloudflare_production_ignored():
+    """In production, Cloudflare headers are strictly ignored and Google OIDC is required."""
+    mock_session = {}
+    mock_ctx = SimpleNamespace(
+        headers={
+            "cf-access-authenticated-user-email": "test@groupe-sos.org",
+            "cf-access-jwt-assertion": "valid-jwt-token",
+        }
+    )
+
+    with (
+        patch("utils.auth.st.session_state", mock_session),
+        patch("utils.auth.st.context", mock_ctx, create=True),
+        patch("utils.auth.st.user", None, create=True),
+        patch("utils.auth.st.container"),
+        patch("utils.auth.st.subheader"),
+        patch("utils.auth.st.info"),
+        patch("utils.auth.st.button", return_value=False),
+        patch("config.ODIS_DEPLOYMENT_ENV", "production"),
+        patch("config.OIDC_ALLOWED_DOMAINS", {"groupe-sos.org"}),
+        patch.dict(
+            os.environ,
+            {
+                "K_SERVICE": "odis-app",
+                "ODIS_FORCE_AUTH": "True",
+                "ODIS_DEPLOYMENT_ENV": "production",
+            },
+            clear=True,
+        ),
+    ):
+        res = check_password()
+        # Must ignore headers in production and show Google login card
+        assert res is False
+        assert mock_session.get("auth_method") != "cloudflare"
+
+
+def test_check_password_cloudflare_session_reverification():
+    """Active Cloudflare session is re-authorized per page entry and rejected if header changes."""
+    mock_session = {
+        "password_correct": True,
+        "auth_method": "cloudflare",
+        "username": "test@groupe-sos.org",
+        "user": User(username="test@groupe-sos.org", org_id="agir33"),
+        "org": Org(id="agir33", name="AGIR 33"),
+    }
+    # Case 1: Headers still present and matching
+    matching_ctx = SimpleNamespace(
+        headers={
+            "cf-access-authenticated-user-email": "test@groupe-sos.org",
+            "cf-access-jwt-assertion": "valid-jwt",
+        }
+    )
+    with (
+        patch("utils.auth.st.session_state", mock_session),
+        patch("utils.auth.st.context", matching_ctx, create=True),
+        patch("config.ODIS_DEPLOYMENT_ENV", "staging"),
+        patch("config.OIDC_ALLOWED_DOMAINS", {"groupe-sos.org"}),
+        patch.dict(
+            os.environ,
+            {"K_SERVICE": "odis-app-staging", "ODIS_DEPLOYMENT_ENV": "staging"},
+            clear=True,
+        ),
+    ):
+        assert check_password() is True
+
+    # Case 2: Header missing -> existing session invalidated and cleared
+    missing_ctx = SimpleNamespace(headers={})
+    with (
+        patch("utils.auth.st.session_state", mock_session),
+        patch("utils.auth.st.context", missing_ctx, create=True),
+        patch("utils.auth.st.user", None, create=True),
+        patch("utils.auth.st.container"),
+        patch("utils.auth.st.subheader"),
+        patch("utils.auth.st.info"),
+        patch("utils.auth.st.button", return_value=False),
+        patch("config.ODIS_DEPLOYMENT_ENV", "staging"),
+        patch("config.OIDC_ALLOWED_DOMAINS", {"groupe-sos.org"}),
+        patch.dict(
+            os.environ,
+            {"K_SERVICE": "odis-app-staging", "ODIS_DEPLOYMENT_ENV": "staging"},
+            clear=True,
+        ),
+    ):
+        res = check_password()
+        assert res is False
+        assert "user" not in mock_session
+
+    # Case 3: Header changed to an unauthorized user -> session cleared and access denied
+    unauthorized_session = {
+        "password_correct": True,
+        "auth_method": "cloudflare",
+        "username": "test@groupe-sos.org",
+        "user": User(username="test@groupe-sos.org", org_id="agir33"),
+        "org": Org(id="agir33", name="AGIR 33"),
+    }
+    unauthorized_ctx = SimpleNamespace(
+        headers={
+            "cf-access-authenticated-user-email": "intruder@unauthorized.com",
+            "cf-access-jwt-assertion": "valid-jwt",
+        }
+    )
+    with (
+        patch("utils.auth.st.session_state", unauthorized_session),
+        patch("utils.auth.st.context", unauthorized_ctx, create=True),
+        patch("utils.auth.st.user", None, create=True),
+        patch("utils.auth._render_oidc_denied") as mock_denied,
+        patch("config.ODIS_DEPLOYMENT_ENV", "staging"),
+        patch("config.OIDC_ALLOWED_DOMAINS", {"groupe-sos.org"}),
+        patch.dict(
+            os.environ,
+            {"K_SERVICE": "odis-app-staging", "ODIS_DEPLOYMENT_ENV": "staging"},
+            clear=True,
+        ),
+    ):
+        res = check_password()
+        assert res is False
+        mock_denied.assert_called_once()
+        assert "user" not in unauthorized_session
+
+
+def test_logout_cloudflare():
+    """Verify that logout clears session_state and switches page for Cloudflare sessions."""
+    mock_session = MagicMock()
+
+    with (
+        patch("utils.auth.st.session_state", mock_session),
+        patch("utils.auth.st.user", None, create=True),
+        patch("utils.auth.st.switch_page") as mock_switch,
+    ):
+        logout()
+        mock_session.clear.assert_called_once()
+        mock_switch.assert_called_once_with("pages/1_Accueil.py")
