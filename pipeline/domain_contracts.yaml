@@ -304,11 +304,8 @@ demographics:
       Y_LT15: "jeune"
       Y25T39: "active"
       Y40T54: "active"
-    expected_columns:
-      - "pop_jeune_2016"
-      - "pop_active_2016"
-      - "pop_jeune_2022"
-      - "pop_active_2022"
+    min_communes_per_year: 30000
+    min_years: 2
 
 education:
   risky_school_class_threshold: 20.0
@@ -379,6 +376,7 @@ runner:
     - "education_effectifs"
     - "bpe"
     - "codes_postaux"
+    - "bassins_de_vie"
     - "formations_annuaire"
     - "loyers_apparts"
     - "population_details"
@@ -400,6 +398,7 @@ runner:
     school_effectifs: "education_effectifs"
     loyers: "loyers_apparts"
     departements: "departements_ref"
+    regions: "regions_ref"
     mob_durable: "mob_durable_share"
     log_soc_delay: "logement_social_delay"
     live_jobs: "france_travail_live"
@@ -409,6 +408,7 @@ runner:
     formations: "formations_annuaire"
     electoral_history: "electoral_history"
     salesforce_jaccueille: "salesforce_jaccueille"
+    bassins_de_vie: "bassins_de_vie"
   clean_filenames:
     associations: "associations_vertical.parquet"
     nomenclature_waldec: "referentiel_waldec.parquet"
@@ -419,6 +419,8 @@ runner:
     live_jobs: "odis_ft_jobs_agg.parquet"
     inclusion_jobs: "odis_inclusion_jobs.parquet"
     salesforce_jaccueille: "salesforce_jaccueille.parquet"
+    regions: "regions.parquet"
+    bassins_de_vie: "bassins_de_vie.parquet"
   output_dir_steps:
     - "live_jobs"
     - "inclusion_jobs"

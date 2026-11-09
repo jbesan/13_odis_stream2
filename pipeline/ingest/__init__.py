@@ -26,6 +26,7 @@ from pipeline.emplois_inclusion_ingest import run_ingestion as run_inclusion_ing
 from pipeline.ft_live_ingest import get_token as get_ft_token, run_etl
 from pipeline.ingest.cleaners import (
     clean_associations,
+    clean_bassins_de_vie,
     clean_bpe,
     clean_caf,
     clean_codes_postaux,
@@ -50,6 +51,7 @@ from pipeline.ingest.cleaners import (
     clean_population_active,
     clean_population_details,
     clean_refugee_associations,
+    clean_regions,
     clean_rpls,
     clean_salesforce_jaccueille,
     clean_sante_apl,
@@ -79,6 +81,7 @@ from pipeline.ingest.helpers import (
     _materialize_rag_cache,
     _rna_rag_table_id,
     _save_rag_cache,
+    normalize_code,
     resolve_codgeo,
 )
 from pipeline.ingest.runner import MutedPipelineLogger, run_clean_step_safely
@@ -169,6 +172,7 @@ __all__ = [
     "_save_rag_cache",
     "bigquery",
     "clean_associations",
+    "clean_bassins_de_vie",
     "clean_bpe",
     "clean_caf",
     "clean_codes_postaux",
@@ -193,6 +197,7 @@ __all__ = [
     "clean_population_active",
     "clean_population_details",
     "clean_refugee_associations",
+    "clean_regions",
     "clean_rpls",
     "clean_salesforce_jaccueille",
     "clean_sante_apl",
@@ -218,6 +223,7 @@ __all__ = [
     "load_dataset",
     "load_domain_contracts_yaml",
     "main",
+    "normalize_code",
     "resolve_codgeo",
     "run_clean_step_safely",
     "run_etl",

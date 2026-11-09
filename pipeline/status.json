@@ -75,14 +75,14 @@
     },
     "generate_pois": {
       "status": "CREATED",
-      "timestamp": "2026-07-31T10:23:19.691406",
+      "timestamp": "2026-11-09T13:05:44.065040+00:00",
       "details": {
         "path": "pipeline/cache/output/odis_pois.parquet"
       }
     },
     "generate_referentiels": {
       "status": "CREATED",
-      "timestamp": "2026-07-31T19:29:48.914158",
+      "timestamp": "2026-11-09T13:05:44.516501+00:00",
       "details": {
         "path": "pipeline/cache/output/odis_referentiels.parquet"
       }
@@ -96,12 +96,12 @@
     },
     "ingest_all": {
       "status": "COMPLETED",
-      "timestamp": "2026-10-05T10:55:57.600105+00:00",
+      "timestamp": "2026-11-09T13:05:11.173938+00:00",
       "details": {}
     },
     "clean_communes": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:01:00.042381",
+      "timestamp": "2026-11-09T12:30:41.659492+00:00",
       "details": {
         "rows": 35014,
         "path": "pipeline/cache/clean/communes.parquet"
@@ -178,15 +178,15 @@
     },
     "build_communes": {
       "status": "CREATED",
-      "timestamp": "2026-07-31T10:22:12.473917",
+      "timestamp": "2026-11-09T13:05:41.349572+00:00",
       "details": {
         "path": "pipeline/cache/output/odis_communes_pre.parquet",
-        "rows": 34968
+        "rows": 34967
       }
     },
     "build_bassins_de_vie": {
       "status": "CREATED",
-      "timestamp": "2026-10-05T10:54:25.926021+00:00",
+      "timestamp": "2026-11-09T13:05:42.142393+00:00",
       "details": {
         "path": "pipeline/cache/output/odis_bassins_de_vie.parquet",
         "rows": 1707
@@ -194,7 +194,7 @@
     },
     "build_all": {
       "status": "COMPLETED",
-      "timestamp": "2026-10-05T10:55:58.226626+00:00",
+      "timestamp": "2026-11-09T13:05:44.623107+00:00",
       "details": {}
     },
     "clean_voisins": {
@@ -206,7 +206,7 @@
     },
     "build_vertical_tables": {
       "status": "REFUGEE_ASSOCIATIONS",
-      "timestamp": "2026-07-31T10:22:50.993653",
+      "timestamp": "2026-11-09T13:05:42.404519+00:00",
       "details": {
         "path": "pipeline/cache/output/odis_refugee_associations.parquet"
       }
@@ -221,7 +221,7 @@
     },
     "clean_political": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:01:05.197961",
+      "timestamp": "2026-11-05T10:20:15.575469+00:00",
       "details": {
         "rows": 34844,
         "path": "pipeline/cache/clean/political.parquet"
@@ -229,40 +229,566 @@
     },
     "clean_housing_occupation": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:01:13.119454",
+      "timestamp": "2026-11-09T11:06:20.993017+00:00",
       "details": {
-        "rows": 34854,
+        "rows": 34858,
         "path": "pipeline/cache/clean/housing_occupation.parquet"
       }
     },
     "clean_school_effectifs": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:01:29.123758",
+      "timestamp": "2026-11-05T11:22:09.858371+00:00",
       "details": {
-        "rows": 21102,
+        "rows": 21075,
         "path": "pipeline/cache/clean/school_effectifs.parquet"
       }
     },
     "clean_formations": {
-      "status": "ANNUAIRE",
-      "timestamp": "2026-09-10T13:35:47.477650+00:00",
+      "status": "COMPLETED",
+      "timestamp": "2026-11-05T11:22:10.014560+00:00",
       "details": {
-        "path": "pipeline/cache/clean/formations_annuaire.parquet",
-        "rows": 223905
+        "rows": 197868,
+        "path": "pipeline/cache/clean/formations_annuaire.parquet"
       }
     },
     "apply_prescoring": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:24:35.884945",
+      "timestamp": "2026-11-09T13:05:50.289610+00:00",
       "details": {
-        "columns": 134,
+        "columns": 131,
         "path": "pipeline/cache/output/odis_communes.parquet",
-        "rows": 34968
+        "rows": 34967,
+        "quality_gate": {
+          "status": "PASSED",
+          "contract_version": 1,
+          "communes": {
+            "rows": 34967,
+            "columns": 131
+          },
+          "score_metrics": [
+            {
+              "id": "log_vac_scaled",
+              "coverage": 0.47064374982126006
+            },
+            {
+              "id": "log_soc_inoc_scaled",
+              "coverage": 0.4797094403294535
+            },
+            {
+              "id": "log_occup_scaled",
+              "coverage": 0.9965395944747906
+            },
+            {
+              "id": "log_loyer_moyen_appt_all_scaled",
+              "coverage": 0.9965967912603312
+            },
+            {
+              "id": "log_loyer_moyen_appt_t1_t2_scaled",
+              "coverage": 0.9965967912603312
+            },
+            {
+              "id": "log_loyer_moyen_appt_t3_p_scaled",
+              "coverage": 0.9965967912603312
+            },
+            {
+              "id": "log_loyer_moyen_house_all_scaled",
+              "coverage": 0.9965967912603312
+            },
+            {
+              "id": "ter_pol_scaled",
+              "coverage": 0.9943661166242457
+            },
+            {
+              "id": "ter_anvita_scaled",
+              "coverage": 1.0
+            },
+            {
+              "id": "ter_ctai_scaled",
+              "coverage": 1.0
+            },
+            {
+              "id": "inc_asso_core_scaled",
+              "coverage": 1.0
+            },
+            {
+              "id": "inc_asso_refug_scaled",
+              "coverage": 1.0
+            },
+            {
+              "id": "inc_siae_density_scaled",
+              "coverage": 1.0
+            },
+            {
+              "id": "edu_petite_enfance_scaled",
+              "coverage": 1.0
+            },
+            {
+              "id": "edu_classes_ferm_scaled",
+              "coverage": 0.602711127634627
+            },
+            {
+              "id": "sante_hopital_scaled",
+              "coverage": 1.0
+            },
+            {
+              "id": "sante_maternite_scaled",
+              "coverage": 1.0
+            },
+            {
+              "id": "sante_psy_scaled",
+              "coverage": 1.0
+            },
+            {
+              "id": "sante_dialyse_scaled",
+              "coverage": 1.0
+            },
+            {
+              "id": "sante_maison_sante_scaled",
+              "coverage": 1.0
+            },
+            {
+              "id": "sante_addictologie_scaled",
+              "coverage": 1.0
+            },
+            {
+              "id": "sante_pmi_scaled",
+              "coverage": 1.0
+            },
+            {
+              "id": "mob_gare_scaled",
+              "coverage": 1.0
+            },
+            {
+              "id": "youth_decline_scaled",
+              "coverage": 0.9937941487688392
+            },
+            {
+              "id": "workclass_decline_scaled",
+              "coverage": 0.9962536105470873
+            },
+            {
+              "id": "heb_loc_iml_scaled",
+              "coverage": 1.0
+            },
+            {
+              "id": "heb_chrs_scaled",
+              "coverage": 1.0
+            },
+            {
+              "id": "heb_cph_scaled",
+              "coverage": 1.0
+            },
+            {
+              "id": "heb_cada_scaled",
+              "coverage": 1.0
+            },
+            {
+              "id": "heb_fjt_scaled",
+              "coverage": 1.0
+            },
+            {
+              "id": "heb_pension_scaled",
+              "coverage": 1.0
+            },
+            {
+              "id": "heb_asso_habitant_scaled",
+              "coverage": 1.0
+            },
+            {
+              "id": "log_soc_delay_scaled",
+              "coverage": 0.9897617753882232
+            },
+            {
+              "id": "sante_rdv_delay_scaled",
+              "coverage": 0.9964252009037092
+            },
+            {
+              "id": "mob_dur_share_scaled",
+              "coverage": 0.9939657391254612
+            },
+            {
+              "id": "ter_insecurite_scaled",
+              "coverage": 0.9969399719735751
+            }
+          ],
+          "checks": [
+            {
+              "name": "communes.minimum_rows",
+              "status": "PASSED",
+              "actual": 34967,
+              "minimum": 30000
+            },
+            {
+              "name": "communes.required_columns",
+              "status": "PASSED",
+              "missing": []
+            },
+            {
+              "name": "communes.primary_key",
+              "status": "PASSED",
+              "nulls": 0,
+              "duplicates": 0
+            },
+            {
+              "name": "communes.geography.dep_code",
+              "status": "PASSED",
+              "coverage": 0.9970829639374267,
+              "minimum": 0.995
+            },
+            {
+              "name": "communes.geography.reg_code",
+              "status": "PASSED",
+              "coverage": 0.9970829639374267,
+              "minimum": 0.995
+            },
+            {
+              "name": "communes.geography.epci_code",
+              "status": "PASSED",
+              "coverage": 0.997197357508508,
+              "minimum": 0.995
+            },
+            {
+              "name": "communes.geography.bassin_de_vie",
+              "status": "PASSED",
+              "coverage": 0.9973117510795894,
+              "minimum": 0.995
+            },
+            {
+              "name": "score.log_vac_scaled",
+              "status": "PASSED",
+              "coverage": 0.47064374982126006,
+              "minimum_coverage": 0.001,
+              "distinct_values": 8405
+            },
+            {
+              "name": "score.log_soc_inoc_scaled",
+              "status": "PASSED",
+              "coverage": 0.4797094403294535,
+              "minimum_coverage": 0.001,
+              "distinct_values": 2530
+            },
+            {
+              "name": "score.log_occup_scaled",
+              "status": "PASSED",
+              "coverage": 0.9965395944747906,
+              "minimum_coverage": 0.001,
+              "distinct_values": 22918
+            },
+            {
+              "name": "score.log_loyer_moyen_appt_all_scaled",
+              "status": "PASSED",
+              "coverage": 0.9965967912603312,
+              "minimum_coverage": 0.001,
+              "distinct_values": 723
+            },
+            {
+              "name": "score.log_loyer_moyen_appt_t1_t2_scaled",
+              "status": "PASSED",
+              "coverage": 0.9965967912603312,
+              "minimum_coverage": 0.001,
+              "distinct_values": 760
+            },
+            {
+              "name": "score.log_loyer_moyen_appt_t3_p_scaled",
+              "status": "PASSED",
+              "coverage": 0.9965967912603312,
+              "minimum_coverage": 0.001,
+              "distinct_values": 667
+            },
+            {
+              "name": "score.log_loyer_moyen_house_all_scaled",
+              "status": "PASSED",
+              "coverage": 0.9965967912603312,
+              "minimum_coverage": 0.001,
+              "distinct_values": 699
+            },
+            {
+              "name": "score.ter_pol_scaled",
+              "status": "PASSED",
+              "coverage": 0.9943661166242457,
+              "minimum_coverage": 0.001,
+              "distinct_values": 2
+            },
+            {
+              "name": "score.ter_anvita_scaled",
+              "status": "PASSED",
+              "coverage": 1.0,
+              "minimum_coverage": 0.001,
+              "distinct_values": 3
+            },
+            {
+              "name": "score.ter_ctai_scaled",
+              "status": "PASSED",
+              "coverage": 1.0,
+              "minimum_coverage": 0.001,
+              "distinct_values": 2
+            },
+            {
+              "name": "score.inc_asso_core_scaled",
+              "status": "PASSED",
+              "coverage": 1.0,
+              "minimum_coverage": 0.001,
+              "distinct_values": 5919
+            },
+            {
+              "name": "score.inc_asso_refug_scaled",
+              "status": "PASSED",
+              "coverage": 1.0,
+              "minimum_coverage": 0.001,
+              "distinct_values": 357
+            },
+            {
+              "name": "score.inc_siae_density_scaled",
+              "status": "PASSED",
+              "coverage": 1.0,
+              "minimum_coverage": 0.001,
+              "distinct_values": 5521
+            },
+            {
+              "name": "score.edu_petite_enfance_scaled",
+              "status": "PASSED",
+              "coverage": 1.0,
+              "minimum_coverage": 0.001,
+              "distinct_values": 526
+            },
+            {
+              "name": "score.edu_classes_ferm_scaled",
+              "status": "PASSED",
+              "coverage": 0.602711127634627,
+              "minimum_coverage": 0.001,
+              "distinct_values": 3
+            },
+            {
+              "name": "score.sante_hopital_scaled",
+              "status": "PASSED",
+              "coverage": 1.0,
+              "minimum_coverage": 0.001,
+              "distinct_values": 2
+            },
+            {
+              "name": "score.sante_maternite_scaled",
+              "status": "PASSED",
+              "coverage": 1.0,
+              "minimum_coverage": 0.001,
+              "distinct_values": 2
+            },
+            {
+              "name": "score.sante_psy_scaled",
+              "status": "PASSED",
+              "coverage": 1.0,
+              "minimum_coverage": 0.001,
+              "distinct_values": 2
+            },
+            {
+              "name": "score.sante_dialyse_scaled",
+              "status": "PASSED",
+              "coverage": 1.0,
+              "minimum_coverage": 0.001,
+              "distinct_values": 2
+            },
+            {
+              "name": "score.sante_maison_sante_scaled",
+              "status": "PASSED",
+              "coverage": 1.0,
+              "minimum_coverage": 0.001,
+              "distinct_values": 2
+            },
+            {
+              "name": "score.sante_addictologie_scaled",
+              "status": "PASSED",
+              "coverage": 1.0,
+              "minimum_coverage": 0.001,
+              "distinct_values": 2
+            },
+            {
+              "name": "score.sante_pmi_scaled",
+              "status": "PASSED",
+              "coverage": 1.0,
+              "minimum_coverage": 0.001,
+              "distinct_values": 2
+            },
+            {
+              "name": "score.mob_gare_scaled",
+              "status": "PASSED",
+              "coverage": 1.0,
+              "minimum_coverage": 0.001,
+              "distinct_values": 2
+            },
+            {
+              "name": "score.youth_decline_scaled",
+              "status": "PASSED",
+              "coverage": 0.9937941487688392,
+              "minimum_coverage": 0.001,
+              "distinct_values": 21658
+            },
+            {
+              "name": "score.workclass_decline_scaled",
+              "status": "PASSED",
+              "coverage": 0.9962536105470873,
+              "minimum_coverage": 0.001,
+              "distinct_values": 7873
+            },
+            {
+              "name": "score.heb_loc_iml_scaled",
+              "status": "PASSED",
+              "coverage": 1.0,
+              "minimum_coverage": 0.001,
+              "distinct_values": 228
+            },
+            {
+              "name": "score.heb_chrs_scaled",
+              "status": "PASSED",
+              "coverage": 1.0,
+              "minimum_coverage": 0.001,
+              "distinct_values": 2
+            },
+            {
+              "name": "score.heb_cph_scaled",
+              "status": "PASSED",
+              "coverage": 1.0,
+              "minimum_coverage": 0.001,
+              "distinct_values": 2
+            },
+            {
+              "name": "score.heb_cada_scaled",
+              "status": "PASSED",
+              "coverage": 1.0,
+              "minimum_coverage": 0.001,
+              "distinct_values": 2
+            },
+            {
+              "name": "score.heb_fjt_scaled",
+              "status": "PASSED",
+              "coverage": 1.0,
+              "minimum_coverage": 0.001,
+              "distinct_values": 2
+            },
+            {
+              "name": "score.heb_pension_scaled",
+              "status": "PASSED",
+              "coverage": 1.0,
+              "minimum_coverage": 0.001,
+              "distinct_values": 2
+            },
+            {
+              "name": "score.heb_asso_habitant_scaled",
+              "status": "PASSED",
+              "coverage": 1.0,
+              "minimum_coverage": 0.001,
+              "distinct_values": 372
+            },
+            {
+              "name": "score.log_soc_delay_scaled",
+              "status": "PASSED",
+              "coverage": 0.9897617753882232,
+              "minimum_coverage": 0.001,
+              "distinct_values": 882
+            },
+            {
+              "name": "score.sante_rdv_delay_scaled",
+              "status": "PASSED",
+              "coverage": 0.9964252009037092,
+              "minimum_coverage": 0.001,
+              "distinct_values": 5439
+            },
+            {
+              "name": "score.mob_dur_share_scaled",
+              "status": "PASSED",
+              "coverage": 0.9939657391254612,
+              "minimum_coverage": 0.001,
+              "distinct_values": 19123
+            },
+            {
+              "name": "score.ter_insecurite_scaled",
+              "status": "PASSED",
+              "coverage": 0.9969399719735751,
+              "minimum_coverage": 0.001,
+              "distinct_values": 8819
+            },
+            {
+              "name": "release.odis_referentiels.parquet",
+              "status": "PASSED",
+              "path": "pipeline/cache/output/odis_referentiels.parquet"
+            },
+            {
+              "name": "release.odis_communes.parquet",
+              "status": "PASSED",
+              "path": "pipeline/cache/output/odis_communes.parquet"
+            },
+            {
+              "name": "release.odis_bassins_de_vie.parquet",
+              "status": "PASSED",
+              "path": "pipeline/cache/output/odis_bassins_de_vie.parquet"
+            },
+            {
+              "name": "release.odis_pois.parquet",
+              "status": "PASSED",
+              "path": "pipeline/cache/output/odis_pois.parquet"
+            },
+            {
+              "name": "release.odis_associations_agg.parquet",
+              "status": "PASSED",
+              "path": "pipeline/cache/output/odis_associations_agg.parquet"
+            },
+            {
+              "name": "release.odis_formations_agg.parquet",
+              "status": "PASSED",
+              "path": "pipeline/cache/output/odis_formations_agg.parquet"
+            },
+            {
+              "name": "release.odis_ccas.parquet",
+              "status": "PASSED",
+              "path": "pipeline/cache/output/odis_ccas.parquet"
+            },
+            {
+              "name": "release.odis_refugee_associations.parquet",
+              "status": "PASSED",
+              "path": "pipeline/cache/output/odis_refugee_associations.parquet"
+            },
+            {
+              "name": "release.odis_ft_jobs_agg.parquet",
+              "status": "PASSED",
+              "path": "pipeline/cache/output/odis_ft_jobs_agg.parquet"
+            },
+            {
+              "name": "release.odis_inclusion_jobs.parquet",
+              "status": "PASSED",
+              "path": "pipeline/cache/output/odis_inclusion_jobs.parquet"
+            },
+            {
+              "name": "release.salesforce_jaccueille_bdv.parquet",
+              "status": "PASSED",
+              "path": "pipeline/cache/output/salesforce_jaccueille_bdv.parquet"
+            },
+            {
+              "name": "join.bassin_de_vie",
+              "status": "PASSED",
+              "orphan_fraction": 0.0,
+              "maximum": 0.005
+            },
+            {
+              "name": "coverage.odis_ft_jobs_coverage.parquet",
+              "status": "PASSED",
+              "completed_departments": 96,
+              "expected_departments": 96,
+              "pages_complete": true,
+              "nonempty_departments": true
+            },
+            {
+              "name": "coverage.odis_inclusion_jobs_coverage.parquet",
+              "status": "PASSED",
+              "completed_departments": 96,
+              "expected_departments": 96,
+              "pages_complete": true,
+              "nonempty_departments": true
+            }
+          ]
+        }
       }
     },
     "clean_codes_postaux": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:01:29.197768",
+      "timestamp": "2026-11-05T10:20:11.249998+00:00",
       "details": {
         "rows": 35511,
         "path": "pipeline/cache/clean/codes_postaux.parquet"
@@ -278,7 +804,7 @@
     },
     "score_bassins_de_vie": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:24:41.630240",
+      "timestamp": "2026-11-09T13:05:50.420981+00:00",
       "details": {
         "rows": 1707
       }
@@ -300,33 +826,33 @@
     },
     "clean_loyers": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:01:30.472391",
+      "timestamp": "2026-11-05T11:22:09.464724+00:00",
       "details": {
-        "rows": 34970,
+        "rows": 34928,
         "path": "pipeline/cache/clean/loyers.parquet"
       }
     },
     "clean_services_inclusion": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:01:01.505266",
+      "timestamp": "2026-11-05T11:22:10.611813+00:00",
       "details": {
-        "rows": 283416,
+        "rows": 277617,
         "path": "pipeline/cache/clean/services_inclusion.parquet"
       }
     },
     "clean_structures_inclusion": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:01:01.914614",
+      "timestamp": "2026-11-05T11:22:10.932529+00:00",
       "details": {
-        "rows": 12752,
+        "rows": 12560,
         "path": "pipeline/cache/clean/structures_inclusion.parquet"
       }
     },
     "clean_population_details": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:01:31.426702",
+      "timestamp": "2026-11-09T13:05:03.915987+00:00",
       "details": {
-        "rows": 34852,
+        "rows": 34858,
         "path": "pipeline/cache/clean/population_details.parquet"
       }
     },
@@ -344,7 +870,7 @@
     },
     "clean_nomenclature_waldec": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:01:31.437824",
+      "timestamp": "2026-11-05T10:20:14.240461+00:00",
       "details": {
         "rows": 297,
         "path": "pipeline/cache/clean/referentiel_waldec.parquet"
@@ -352,20 +878,20 @@
     },
     "inc_services_core_scaled": {
       "status": "CALCULATED",
-      "timestamp": "2026-07-31T10:23:22.774530",
+      "timestamp": "2026-11-09T13:05:48.362631+00:00",
       "details": {}
     },
     "clean_regions": {
       "status": "COMPLETED",
-      "timestamp": "2026-01-15T12:23:51.866549",
+      "timestamp": "2026-11-05T10:20:13.256131+00:00",
       "details": {
-        "path": "pipeline/cache/clean/regions.parquet",
-        "rows": 18
+        "rows": 18,
+        "path": "pipeline/cache/clean/regions.parquet"
       }
     },
     "clean_departements": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:01:31.443663",
+      "timestamp": "2026-11-05T10:20:12.251215+00:00",
       "details": {
         "rows": 101,
         "path": "pipeline/cache/clean/departements.parquet"
@@ -485,7 +1011,7 @@
     },
     "clean_electoral_history": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:01:12.675049",
+      "timestamp": "2026-11-09T13:05:11.169295+00:00",
       "details": {
         "rows": 37036,
         "path": "pipeline/cache/clean/electoral_history.parquet"
@@ -506,18 +1032,26 @@
     },
     "build_salesforce_jaccueille_bdv": {
       "status": "COMPLETED",
-      "timestamp": "2026-10-05T10:55:58.226055+00:00",
+      "timestamp": "2026-11-09T13:05:44.622183+00:00",
       "details": {
         "path": "pipeline/cache/output/salesforce_jaccueille_bdv.parquet",
-        "rows": 0
+        "rows": 462
+      }
+    },
+    "clean_bassins_de_vie": {
+      "status": "COMPLETED",
+      "timestamp": "2026-11-05T12:38:02.926536+00:00",
+      "details": {
+        "rows": 34876,
+        "path": "pipeline/cache/clean/bassins_de_vie.parquet"
       }
     }
   },
   "sources": {
     "communes": {
-      "status": "CACHED",
-      "timestamp": "2026-06-11T11:35:50.541134",
-      "file": "pipeline/cache/raw/communes.geojson"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-09T12:30:41.067877+00:00",
+      "file": "managed by Odace"
     },
     "population": {
       "status": "FAILED",
@@ -530,14 +1064,14 @@
       "file": "pipeline/cache/raw/voisins.csv"
     },
     "bassins_de_vie": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.507446",
-      "file": "pipeline/cache/raw/bassins_de_vie.zip"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-05T12:38:00.792014+00:00",
+      "file": "managed by Odace"
     },
     "services_inclusion": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.508010",
-      "file": "pipeline/cache/raw/services_inclusion.parquet"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-05T11:22:09.401449+00:00",
+      "file": "managed by Odace"
     },
     "associations": {
       "status": "CACHED",
@@ -570,9 +1104,9 @@
       "file": "pipeline/cache/raw/staging_caf_taux_couverture.json"
     },
     "education_effectifs": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.511852",
-      "file": "pipeline/cache/raw/education_effectifs.csv"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-05T11:22:09.401869+00:00",
+      "file": "managed by Odace"
     },
     "education_annuaire": {
       "status": "FAILED",
@@ -590,9 +1124,9 @@
       "file": "Source file not found: /Users/jacques/dev/13_odis_stream2/csv/annuaire_sante_finess.parquet"
     },
     "rome": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.513908",
-      "file": "pipeline/cache/raw/rome.zip"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-05T11:17:59.486843+00:00",
+      "file": "managed by Odace"
     },
     "population_active": {
       "status": "CACHED",
@@ -615,24 +1149,24 @@
       "file": "pipeline/cache/raw/referentiel_fap_2021.csv"
     },
     "political_nuance": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.508557",
-      "file": "pipeline/cache/raw/political_nuance.csv"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-05T10:20:09.219036+00:00",
+      "file": "managed by Odace"
     },
     "housing_occupation": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.510185",
-      "file": "pipeline/cache/raw/housing_occupation.zip"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-09T11:06:20.250939+00:00",
+      "file": "managed by Odace"
     },
     "codes_postaux": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.512374",
-      "file": "pipeline/cache/raw/codes_postaux.parquet"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-05T10:20:09.219881+00:00",
+      "file": "managed by Odace"
     },
     "formations_annuaire": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.512881",
-      "file": "pipeline/cache/raw/formations_annuaire.csv"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-05T11:22:09.402272+00:00",
+      "file": "managed by Odace"
     },
     "formations_referentiel": {
       "status": "CACHED",
@@ -660,34 +1194,34 @@
       "file": "Failed to fetch dim_accueillant: 403 Client Error: Forbidden for url: https://odace-pipeline-588398598428.europe-west1.run.app/api/data/preview/silver/dim_accueillant"
     },
     "loyers_apparts": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.514944",
-      "file": "pipeline/cache/raw/loyers_apparts_2023.csv"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-05T11:22:09.402665+00:00",
+      "file": "managed by Odace"
     },
     "structures_inclusion": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.515450",
-      "file": "pipeline/cache/raw/structures_inclusion.parquet"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-05T11:22:09.403060+00:00",
+      "file": "managed by Odace"
     },
     "population_details": {
-      "status": "CACHED",
-      "timestamp": "2026-07-23T16:39:55.098966",
-      "file": "pipeline/cache/raw/population_details.zip"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-09T13:04:59.838679+00:00",
+      "file": "managed by Odace"
     },
     "nomenclature_waldec": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.511305",
-      "file": "pipeline/cache/raw/nomenclature_waldec.json"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-05T10:20:09.219467+00:00",
+      "file": "managed by Odace"
     },
     "regions_ref": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.515966",
-      "file": "pipeline/cache/raw/referentiel_regions.json"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-05T10:20:09.220285+00:00",
+      "file": "managed by Odace"
     },
     "departements_ref": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.516478",
-      "file": "pipeline/cache/raw/referentiel_departements.json"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-05T10:20:09.220683+00:00",
+      "file": "managed by Odace"
     },
     "fap_rome_mapping": {
       "status": "CACHED",
@@ -695,8 +1229,8 @@
       "file": "pipeline/cache/raw/Dares_Table_passage_ROME_Qualif_to_FAP2021_pour_programme.csv"
     },
     "rome_referential": {
-      "status": "FETCHED",
-      "timestamp": "2026-06-11T09:34:20.041903",
+      "status": "fetched",
+      "timestamp": "2026-11-05T11:00:16.687627+00:00",
       "file": "pipeline/cache/raw/rome_referential_api.parquet"
     },
     "odace_fact_loyer_annonce": {
@@ -765,8 +1299,8 @@
       "file": "Failed to fetch dim_gare via query: 501 Server Error: Not Implemented for url: https://odace.services.d4g.fr/api/data/query"
     },
     "ref_epci": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.570648",
+      "status": "reused_within_ttl",
+      "timestamp": "2026-11-09T10:30:50.585714+00:00",
       "file": "pipeline/cache/raw/ref_epci.json"
     },
     "odace_query_odace_query_bpe": {
@@ -775,8 +1309,8 @@
       "file": "Failed to execute query for 'odace_query_bpe' on Odace: 500 Server Error: Internal Server Error for url: https://odace.services.d4g.fr/api/data/query"
     },
     "electoral_history": {
-      "status": "CACHED",
-      "timestamp": "2026-07-31T10:00:59.509096",
+      "status": "reused_within_ttl",
+      "timestamp": "2026-11-09T11:00:03.762553+00:00",
       "file": "pipeline/cache/raw/candidats_results.parquet"
     },
     "jaccueille_prospects": {
@@ -793,6 +1327,16 @@
       "status": "reused_within_ttl",
       "timestamp": "2026-10-05T10:55:37.150403+00:00",
       "file": "pipeline/cache/clean/salesforce_jaccueille.parquet"
+    },
+    "odace_dim_siae_structure": {
+      "status": "error",
+      "timestamp": "2026-11-09T13:05:37.640606+00:00",
+      "file": "CRITICAL ERROR: Failed to export dim_siae_structure from Odace API: 429 Client Error: Too Many Requests for url: https://odas-app-trlhxf55uq-ew.a.run.app/api/data/export/dim_siae_structure?format=parquet"
+    },
+    "odace_ref_service_inclusion": {
+      "status": "error",
+      "timestamp": "2026-11-09T13:05:44.419802+00:00",
+      "file": "CRITICAL ERROR: Failed to export ref_service_inclusion from Odace API: 429 Client Error: Too Many Requests for url: https://odas-app-trlhxf55uq-ew.a.run.app/api/data/export/ref_service_inclusion?format=parquet"
     }
   }
 }

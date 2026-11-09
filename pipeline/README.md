@@ -27,12 +27,14 @@ Geospatial processing runs entirely on pure **Pandas 3.0 + Shapely 2.0** with cl
 ### Configure credentials
 
 Create `pipeline/.env` with the credentials required by the providers used in
-the run. At minimum, Odace credentials are needed for Odace-backed sources:
+the run. At minimum, ODAS (Open Data Accueil Solidaire) credentials are needed for ODAS-backed sources:
 
 ```env
-ODACE_API_URL=https://odace.services.d4g.fr
-ODACE_API_KEY=sk_live_...
+ODAS_API_URL=https://odas-app-trlhxf55uq-ew.a.run.app
+ODAS_API_KEY=sk_live_...
 ```
+
+> **Note (Cloud Run Cold Start)**: The ODAS data platform runs on Google Cloud Run with scale-to-zero autoscaling. When idle, the container may take ~20-30 seconds to wake up (cold start). `OdasClient` automatically handles this warmup phase via its `/health` check polling before kicking off downloads or queries.
 
 Live France Travail and Les emplois de l'inclusion refreshes require their own
 configured credentials. A deployment also requires access to the configured

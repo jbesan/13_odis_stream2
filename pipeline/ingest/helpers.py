@@ -150,6 +150,31 @@ def resolve_codgeo(insee_code: Any, dept_code: Any) -> str:
     return dept_str + comm_str
 
 
+def normalize_code(series: pd.Series, width: int) -> pd.Series:
+    """Normalize numeric or alphanumeric codes with zero padding up to width.
+
+    Strips whitespace, converts to uppercase, removes trailing .0 from float stringification,
+    and zero-pads purely numeric codes to the given width. Preserves alphanumeric codes
+    (e.g., '2A', '2B', '971') and converts empty strings/nulls to <NA>.
+
+    Args:
+        series: Pandas series of raw code values (strings, ints, floats, or nulls).
+        width: Target character width for zero-padding numeric codes.
+
+    Returns:
+        Series of standardized string codes with nulls preserved as <NA>.
+    """
+    codes = (
+        series.astype("string")
+        .str.strip()
+        .str.upper()
+        .str.replace(r"\.0$", "", regex=True)
+    )
+    is_numeric = codes.str.fullmatch(r"\d+")
+    padded = codes.where(~is_numeric, codes.str.zfill(width))
+    return padded.replace("", pd.NA)
+
+
 def _load_source_contract(source_name: str) -> Dict[str, Any]:
     """Load one versioned source contract from the active contract catalogue."""
     contracts = load_config(str(context.DATA_CONTRACTS_FILE))

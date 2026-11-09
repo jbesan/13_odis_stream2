@@ -58,11 +58,43 @@ def test_publish_datasets_uploads_files_before_pointer(mock_client_class, tmp_pa
     assert events[-1][0:2] == ("pointer", "datasets/current.json")
     pointer = json.loads(events[-1][2])
     assert pointer["version"] == "v-test-1"
+    assert pointer.get("previous_version") is None
     assert pointer["files"] == expected_release_files
     assert pointer["manifest"]["name"] == "data_manifest.json"
     assert pointer["manifest"]["sha256"] == artifact_metadata(
         output_dir / "data_manifest.json"
     ).sha256
+
+
+@patch("pipeline.etl.storage.Client")
+def test_publish_datasets_captures_previous_version(mock_client_class, tmp_path):
+    output_dir = _make_output_dir(tmp_path)
+    pointer_uploaded = []
+
+    def get_blob(blob_path):
+        blob = MagicMock()
+        if blob_path == "datasets/current.json":
+            blob.exists.return_value = True
+            blob.download_as_bytes.return_value = json.dumps(
+                {"version": "v-previous-run"}
+            ).encode("utf-8")
+        else:
+            blob.exists.return_value = False
+        blob.upload_from_string.side_effect = lambda value, **kwargs: pointer_uploaded.append(
+            json.loads(value)
+        )
+        return blob
+
+    bucket = MagicMock()
+    bucket.blob.side_effect = get_blob
+    mock_client_class.return_value.bucket.return_value = bucket
+
+    version = etl._publish_datasets_to_gcs(output_dir, "odis-stream2-app-data-euw1")
+
+    assert version == "v-test-1"
+    assert len(pointer_uploaded) == 1
+    assert pointer_uploaded[0]["version"] == "v-test-1"
+    assert pointer_uploaded[0]["previous_version"] == "v-previous-run"
 
 
 @patch("pipeline.etl.storage.Client")

@@ -666,9 +666,9 @@ scores:
       = positif)
     high_value_adjective: forte
     show: true
-    unit: '% (Evol. 2016-2022)'
+    unit: '% (Evol. 2017-2023)'
     display_factor: 100
-    tooltip: Evolution de la population des moins de 15 ans entre 2016 et 2022
+    tooltip: Evolution de la population des moins de 15 ans entre 2017 et 2023
     format: '{:.1f}'
   weight: 1.0
   min_bound: -0.2

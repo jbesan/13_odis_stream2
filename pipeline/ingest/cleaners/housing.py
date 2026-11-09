@@ -162,21 +162,52 @@ def transform_housing_occupation_odace(
             f"{primary_key} ({duplicate_count} duplicate rows)"
         )
 
-    df["valeur"] = pd.to_numeric(df["valeur"], errors="coerce")
+    target_year = str(contract.get("reference_year", "latest"))
+    required_indicators = contract["required_indicators"]
+    minimum_per_indicator = contract["minimum_communes_per_indicator"]
     value_contract = contract["value"]
-    if not value_contract.get("nullable", True) and df["valeur"].isna().any():
-        raise PipelineRunError(
-            "Odace fact_occupation_logement has null or invalid values"
+    nullable = value_contract.get("nullable", True)
+
+    if target_year != "latest":
+        reference_year = target_year
+    else:
+        available_years = sorted(df["annee"].unique(), reverse=True)
+        indicator_years = [
+            yr
+            for yr in available_years
+            if set(required_indicators).issubset(
+                set(df.loc[df["annee"] == yr, "indicateur_occupation"])
+            )
+        ]
+        if not indicator_years:
+            raise PipelineRunError(
+                "Odace fact_occupation_logement has no year containing all required indicators "
+                f"({required_indicators})"
+            )
+
+        # Prefer the newest year that also satisfies non-null and per-indicator coverage
+        fully_valid_years = []
+        for yr in indicator_years:
+            yr_df = df.loc[
+                (df["annee"] == yr)
+                & df["indicateur_occupation"].isin(required_indicators)
+            ]
+            yr_vals = pd.to_numeric(yr_df["valeur"], errors="coerce")
+            if not nullable and yr_vals.isna().any():
+                continue
+            cov = yr_df.groupby("indicateur_occupation")["commune_insee_code"].nunique()
+            if all(
+                cov.get(ind, 0) >= minimum_per_indicator for ind in required_indicators
+            ):
+                fully_valid_years.append(yr)
+
+        reference_year = (
+            fully_valid_years[0] if fully_valid_years else indicator_years[0]
         )
-    minimum_value = value_contract.get("minimum")
-    if minimum_value is not None and (df["valeur"] < minimum_value).any():
-        raise PipelineRunError(
-            "Odace fact_occupation_logement has values below its contractual minimum "
-            f"({minimum_value})"
+        logging.info(
+            f"Odace housing_occupation: Resolved latest valid reference year: {reference_year}"
         )
 
-    reference_year = str(contract["reference_year"])
-    required_indicators = contract["required_indicators"]
     reference = df.loc[
         (df["annee"] == reference_year)
         & df["indicateur_occupation"].isin(required_indicators)
@@ -185,6 +216,19 @@ def transform_housing_occupation_odace(
         raise PipelineRunError(
             "Odace fact_occupation_logement has no required observations for "
             f"reference year {reference_year}"
+        )
+
+    reference["valeur"] = pd.to_numeric(reference["valeur"], errors="coerce")
+    value_contract = contract["value"]
+    if not value_contract.get("nullable", True) and reference["valeur"].isna().any():
+        raise PipelineRunError(
+            f"Odace fact_occupation_logement has null or invalid values for reference year {reference_year}"
+        )
+    minimum_value = value_contract.get("minimum")
+    if minimum_value is not None and (reference["valeur"] < minimum_value).any():
+        raise PipelineRunError(
+            "Odace fact_occupation_logement has values below its contractual minimum "
+            f"({minimum_value}) for reference year {reference_year}"
         )
 
     observed_indicators = set(reference["indicateur_occupation"])
@@ -236,6 +280,7 @@ def transform_housing_occupation_odace(
         )
     if df_out["codgeo"].duplicated().any():
         raise PipelineRunError("Housing occupation output has duplicate codgeo values")
+    df_out.attrs["reference_year"] = reference_year
     return df_out
 
 
@@ -283,11 +328,63 @@ def clean_housing_occupation(config: Dict[str, Any], logger: PipelineLogger) -> 
 
 
 def clean_loyers(config: Dict[str, Any], logger: PipelineLogger) -> None:
-    """Cleans Loyers data (Appartements) and saves to parquet."""
-    logger.log_step("clean_loyers", "STARTED")
-    source = config["sources"]["loyers_apparts"]
-    path = context.CACHE_DIR / source["local_name"]
+    """Cleans Loyers data (Appartements) and saves to parquet.
 
+    Args:
+        config: Pipeline configuration dictionary.
+        logger: Pipeline logger instance.
+
+    Raises:
+        PipelineRunError: If ODAS fetch fails or returns unusable data.
+    """
+    import pipeline.ingest as ingest
+
+    logger.log_step("clean_loyers", "STARTED")
+    source = config.get("sources", {}).get("loyers_apparts", {})
+
+    if source.get("use_odace", False):
+        try:
+            client = ingest.get_odace_client(logger)
+            df_odace = client.fetch_table(
+                source.get("odace_table", "fact_loyer_appartement")
+            )
+            if (
+                not df_odace.empty
+                and "commune_insee_code" in df_odace.columns
+                and "loyer_predit_m2" in df_odace.columns
+            ):
+                df_out = pd.DataFrame()
+                df_out["codgeo"] = ingest.normalize_code(
+                    df_odace["commune_insee_code"], 5
+                )
+                df_out["loyer_app_m2"] = pd.to_numeric(
+                    df_odace["loyer_predit_m2"], errors="coerce"
+                )
+                df_out = df_out.dropna(subset=["codgeo", "loyer_app_m2"])
+                df_out = df_out.groupby("codgeo")["loyer_app_m2"].mean().reset_index()
+
+                if not df_out.empty:
+                    output_path = context.CLEAN_DIR / "loyers.parquet"
+                    df_out.to_parquet(output_path)
+                    logger.log_step(
+                        "clean_loyers",
+                        "COMPLETED",
+                        {
+                            "path": str(output_path),
+                            "rows": len(df_out),
+                            "source": "odace",
+                        },
+                    )
+                    return
+            else:
+                logging.warning(
+                    "Odace fetch returned empty or invalid data for fact_loyer_appartement."
+                )
+        except Exception as e:
+            logging.error(f"Failed to fetch fact_loyer_appartement from Odace: {e}")
+        raise PipelineRunError("Odace loyers did not produce a usable dataset")
+
+    path = context.CACHE_DIR / source.get("local_name", "loyers_apparts_2023.csv")
     if not path.exists():
         return
 

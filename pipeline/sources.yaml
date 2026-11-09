@@ -19,6 +19,8 @@ sources:
     description: "Population municipale 2024"
 
   bassins_de_vie:
+    use_odace: true
+    odace_table: "ref_bassin_vie"
     url: "https://www.insee.fr/fr/statistiques/fichier/6676988/BV2022_au_01-01-2025.zip"
     format: "zip"
     local_name: "bassins_de_vie.zip"
@@ -33,6 +35,8 @@ sources:
       - Libellé géographique du bassin de vie 2022
 
   services_inclusion:
+    use_odace: true
+    odace_table: "dim_service_inclusion"
     datagouv_resource_id: "de4856b8-bb67-4b79-83bd-038e846a1774"
     format: "parquet"
     local_name: "services_inclusion.parquet"
@@ -47,6 +51,8 @@ sources:
       - code_insee
 
   political_nuance:
+    use_odace: true
+    odace_table: "fact_nuance_politique"
     datagouv_resource_id: "ea5d6bc3-37d0-4884-a437-155a90c3e05f"
     format: "csv"
     local_name: "political_nuance.csv"
@@ -59,7 +65,7 @@ sources:
       - nuance_politique
 
   electoral_history:
-    datagouv_resource_id: "52a11762-45b4-414f-b6a2-eaa290217dc6"
+    datagouv_resource_id: "4d3b35f6-0b22-4415-a24c-419a676312e2"
     format: "parquet"
     local_name: "candidats_results.parquet"
     ttl_days: 365
@@ -97,7 +103,7 @@ sources:
     use_odace: true
     odace_table: "fact_occupation_logement"
     ttl_days: 365
-    description: "Occupation des logements par commune (INSEE RP 2022 via Odace)"
+    description: "Occupation des logements par commune (INSEE RP via Odace)"
 
   logement_social:
     use_odace: true
@@ -105,19 +111,9 @@ sources:
     ttl_days: 30
     description: "Parc locatif social (RPLS)"
 
-  bmo:
-    datagouv_resource_id: "54478315-aafd-4070-b8df-a5647297e0c0"
-    format: "xlsx"
-    local_name: "bmo_2025.xlsx"
-    ttl_days: 365
-    description: "Enquête Besoins en Main d'Oeuvre 2025"
-    used_columns:
-      - Code
-      - Famillon
-      - Métier
-      - xmet
-
   nomenclature_waldec:
+    use_odace: true
+    odace_table: "ref_waldec"
     datagouv_resource_id: "d65d5cae-399f-4150-804f-493026645fd5"
     format: "json"
     local_name: "nomenclature_waldec.json"
@@ -141,6 +137,8 @@ sources:
     description: "Taux de couverture petite enfance (CAF)"
 
   education_effectifs:
+    use_odace: true
+    odace_table: "fact_effectif_scolaire"
     url: "https://data.education.gouv.fr/explore/dataset/fr-en-ecoles-effectifs-nb_classes/download?format=csv&timezone=Europe/Berlin&use_labels_for_header=false"
     format: "csv"
     local_name: "education_effectifs.csv"
@@ -159,6 +157,8 @@ sources:
     description: "Annuaire de l'éducation (Premier et Second degré)"
 
   codes_postaux:
+    use_odace: true
+    odace_table: "ref_code_postal"
     url: "https://object.files.data.gouv.fr/hydra-parquet/hydra-parquet/008a2dda-2c60-4b63-b910-998f6f818089.parquet"
     format: "parquet"
     local_name: "codes_postaux.parquet"
@@ -169,6 +169,8 @@ sources:
       - Code_commune_INSEE
 
   formations_annuaire:
+    use_odace: true
+    odace_table: "dim_organisme_formation"
     datagouv_resource_id: "ac59a0f5-fa83-4b82-bf12-3c5806d4f19f"
     format: "csv"
     local_name: "formations_annuaire.csv"
@@ -183,6 +185,8 @@ sources:
       - informationsDeclarees.specialitesDeFormation.codeSpecialite3
 
   formations_referentiel:
+    use_odace: true
+    odace_table: "ref_formation"
     datagouv_resource_id: "803121dd-1acf-423d-b7d8-8511f1c607c1"
     format: "xlsx"
     local_name: "formations_referentiel.xlsx"
@@ -193,6 +197,8 @@ sources:
       - label
 
   rome:
+    use_odace: true
+    odace_table: "ref_rome"
     datagouv_resource_id: "1c893376-8476-4262-9a0e-8df519883e1e"
     format: "zip"
     archive_file: "unix_referentiel_code_rome_v460.json"
@@ -216,17 +222,21 @@ sources:
     description: "Population active et chômage (INSEE)"
 
   referentiel_services_inclusion:
+    use_odace: true
+    odace_table: "ref_service_inclusion"
     url: "file://pipeline/local/referentiel_services_inclusion.csv"
     format: "csv"
     local_name: "referentiel_services_inclusion.csv"
     ttl_days: 365
-    description: "Référentiel des services d'inclusion (fichier local portable)"
+    description: "Référentiel des services d'inclusion (Data Inclusion via ODAS)"
     used_columns:
       - code
       - libelle
       - thematique
 
   loyers_apparts:
+    use_odace: true
+    odace_table: "fact_loyer_appartement"
     datagouv_resource_id: "43618998-3b37-4a69-bb25-f321f1a93ed1"
     format: "csv"
     local_name: "loyers_apparts_2023.csv"
@@ -244,6 +254,8 @@ sources:
       - loypredm2
 
   structures_inclusion:
+    use_odace: true
+    odace_table: "dim_structure_inclusion"
     datagouv_resource_id: "915c05e8-77ea-44f6-9837-0f1eff897a54"
     format: "parquet"
     local_name: "structures_inclusion.parquet"
@@ -259,13 +271,21 @@ sources:
       - site_web
       - adresse
 
+  siae_structures:
+    use_odace: true
+    odace_table: "dim_siae_structure"
+    ttl_days: 30
+    description: "Structures de l'insertion par l'activité économique (SIAE)"
+
   population_details:
     use_odace: true
     odace_table: "fact_demographie"
     ttl_days: 365
-    description: "Population détaillée 2022 (Historique 2011, 2016)"
+    description: "Population détaillée 2023 (Historique 2012, 2017)"
 
   regions_ref:
+    use_odace: true
+    odace_table: "ref_region"
     url: "https://tabular-api.data.gouv.fr/api/resources/2486b351-5d85-4e1a-8d12-5df082c75104/data/json/"
     format: "json"
     local_name: "referentiel_regions.json"
@@ -276,6 +296,8 @@ sources:
       - LIBELLE
 
   departements_ref:
+    use_odace: true
+    odace_table: "ref_departement"
     url: "https://tabular-api.data.gouv.fr/api/resources/54a8263d-6e2d-48d5-b214-aa17cc13f7a0/data/json/"
     format: "json"
     local_name: "referentiel_departements.json"

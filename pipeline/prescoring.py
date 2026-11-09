@@ -452,22 +452,38 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
         communes_gdf = communes_gdf.copy()
 
         # Population Decline (Inverted logic handled in process_scaling)
-        if (
-            "pop_jeune_2016" in communes_gdf.columns
-            and "pop_jeune_2022" in communes_gdf.columns
-        ):
+        jeune_years = sorted(
+            [
+                int(c.split("_")[-1])
+                for c in communes_gdf.columns
+                if c.startswith("pop_jeune_")
+                and c.split("_")[-1].isdigit()
+                and communes_gdf[c].notna().any()
+            ]
+        )
+        if len(jeune_years) >= 2:
+            prev_yr, latest_yr = jeune_years[-2], jeune_years[-1]
             communes_gdf["youth_growth_rate"] = safe_ratio(
-                communes_gdf["pop_jeune_2022"] - communes_gdf["pop_jeune_2016"],
-                communes_gdf["pop_jeune_2016"],
+                communes_gdf[f"pop_jeune_{latest_yr}"]
+                - communes_gdf[f"pop_jeune_{prev_yr}"],
+                communes_gdf[f"pop_jeune_{prev_yr}"],
             )
 
-        if (
-            "pop_active_2016" in communes_gdf.columns
-            and "pop_active_2022" in communes_gdf.columns
-        ):
+        active_years = sorted(
+            [
+                int(c.split("_")[-1])
+                for c in communes_gdf.columns
+                if c.startswith("pop_active_")
+                and c.split("_")[-1].isdigit()
+                and communes_gdf[c].notna().any()
+            ]
+        )
+        if len(active_years) >= 2:
+            prev_yr, latest_yr = active_years[-2], active_years[-1]
             communes_gdf["workclass_growth_rate"] = safe_ratio(
-                communes_gdf["pop_active_2022"] - communes_gdf["pop_active_2016"],
-                communes_gdf["pop_active_2016"],
+                communes_gdf[f"pop_active_{latest_yr}"]
+                - communes_gdf[f"pop_active_{prev_yr}"],
+                communes_gdf[f"pop_active_{prev_yr}"],
             )
 
         if "youth_growth_rate" in communes_gdf.columns:
@@ -615,7 +631,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                             if isinstance(val, list):
                                 return val
                             return [str(val)]
-                        except (ValueError, SyntaxError):
+                        except ValueError, SyntaxError:
                             # It's a raw string slug
                             return [x]
 
@@ -677,16 +693,19 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
 
         # Additional drop request from user
         more_cols_to_drop = [
-            "pop_jeune_2016",
-            "pop_jeune_2022",
-            "pop_active_2016",
-            "pop_active_2022",
             "libelle_bassin_de_vie",
             "has_gare",
             "inc_siae_count",  #'gare_count', # KEEP
             #'risky_schools_count', # KEEP
             "log_priv_total",
         ]
+        pop_detail_cols = [
+            c
+            for c in communes_gdf.columns
+            if (c.startswith("pop_jeune_") or c.startswith("pop_active_"))
+            and c.split("_")[-1].isdigit()
+        ]
+        more_cols_to_drop.extend(pop_detail_cols)
         communes_gdf.drop(
             columns=[c for c in more_cols_to_drop if c in communes_gdf.columns],
             inplace=True,
@@ -731,7 +750,9 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
 
             # Ensure polygon is in EPSG:4326 before serializing to WKB for the UI
             if "polygon" not in communes_gdf.columns:
-                save_columns["polygon"] = shapely.to_wkb(communes_gdf["geometry"]).to_numpy()
+                save_columns["polygon"] = shapely.to_wkb(
+                    communes_gdf["geometry"]
+                ).to_numpy()
 
             communes_gdf = append_columns(communes_gdf, save_columns)
 
@@ -952,9 +973,7 @@ def score_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger):
         if "level_0" in bv_export.columns:
             bv_export.drop(columns=["level_0"], inplace=True)
 
-        bv_export.reset_index().to_parquet(
-            bv_path, compression="brotli", index=False
-        )
+        bv_export.reset_index().to_parquet(bv_path, compression="brotli", index=False)
         logger.log_step("score_bassins_de_vie", "COMPLETED", {"rows": len(bv_gdf)})
 
     except Exception as e:

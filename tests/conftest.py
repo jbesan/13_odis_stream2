@@ -180,6 +180,8 @@ def mock_storage_client_for_offline_tests():
                 raise FileNotFoundError(f"Mock blob {self.name} not found")
 
     class MockBucket:
+        name = "odis-stream2-app-data-euw1"
+
         def blob(self, blob_name: str) -> MockBlob:
             return MockBlob(blob_name)
 
@@ -190,12 +192,19 @@ def mock_storage_client_for_offline_tests():
         def bucket(self, bucket_name: str) -> MockBucket:
             return MockBucket()
 
-    patcher = unittest.mock.patch("utils.data_loader.storage.Client", MockStorageClient)
-    patcher.start()
+    patcher_loader = unittest.mock.patch(
+        "utils.data_loader.storage.Client", MockStorageClient
+    )
+    patcher_sync = unittest.mock.patch(
+        "utils.data_sync.storage.Client", MockStorageClient
+    )
+    patcher_loader.start()
+    patcher_sync.start()
     try:
         yield
     finally:
-        patcher.stop()
+        patcher_sync.stop()
+        patcher_loader.stop()
 
 
 # --- Network Leak Protection & Offline Mocks ---

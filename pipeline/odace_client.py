@@ -8,15 +8,36 @@ from typing import Optional, Dict, Any
 from pipeline.common import PipelineLogger, CACHE_DIR
 
 
-class OdaceClient:
-    def __init__(self, logger: Optional[PipelineLogger] = None):
-        self.api_key = os.environ.get("ODACE_API_KEY")
-        self.api_url = os.environ.get("ODACE_API_URL")
+class OdasClient:
+    """Client for the ODAS (Open Data Accueil Solidaire) platform on Google Cloud Run."""
+
+    def __init__(
+        self,
+        logger: Optional[PipelineLogger] = None,
+        warmup: bool = True,
+        max_warmup_seconds: int = 60,
+    ):
+        """Initializes OdasClient with credentials from environment.
+
+        Args:
+            logger: Optional pipeline logger for logging source outcomes.
+            warmup: Whether to automatically ensure the Cloud Run instance is warm
+                before issuing heavy queries/exports.
+            max_warmup_seconds: Maximum time in seconds to wait during cold-start warmup.
+
+        Raises:
+            ValueError: If ODAS_API_KEY or ODAS_API_URL are not set.
+        """
+        self.api_key = os.environ.get("ODAS_API_KEY")
+        self.api_url = os.environ.get("ODAS_API_URL")
         self.logger = logger
+        self.warmup_enabled = warmup
+        self.max_warmup_seconds = max_warmup_seconds
+        self._is_warm = False
 
         if not self.api_key or not self.api_url:
             raise ValueError(
-                "ODACE_API_KEY and ODACE_API_URL must be set in environment variables."
+                "ODAS_API_KEY and ODAS_API_URL must be set in environment variables."
             )
 
         self.headers = {
@@ -31,9 +52,70 @@ class OdaceClient:
             self.config = load_config(CONFIG_FILE)
         except Exception as e:
             logging.warning(
-                f"OdaceClient: Failed to load config from {CONFIG_FILE}: {e}"
+                f"OdasClient: Failed to load config from {CONFIG_FILE}: {e}"
             )
             self.config = {}
+
+    def wait_for_ready(
+        self, max_wait_seconds: Optional[int] = None, poll_interval: float = 3.0
+    ) -> bool:
+        """Polls the ODAS /health endpoint until the Cloud Run instance completes cold start.
+
+        Args:
+            max_wait_seconds: Maximum seconds to wait (defaults to self.max_warmup_seconds).
+            poll_interval: Seconds between readiness polling attempts.
+
+        Returns:
+            True when the service is healthy and ready.
+
+        Raises:
+            TimeoutError: If the service does not respond healthy within max_wait_seconds.
+        """
+        if self._is_warm:
+            return True
+
+        limit = max_wait_seconds or self.max_warmup_seconds
+        start_time = time.time()
+        health_url = f"{self.api_url.rstrip('/')}/health"
+        attempt = 0
+
+        logging.info("OdasClient: Checking ODAS Cloud Run service readiness...")
+
+        while (time.time() - start_time) < limit:
+            attempt += 1
+            elapsed = time.time() - start_time
+            try:
+                response = requests.get(health_url, timeout=5)
+                if response.status_code == 200:
+                    self._is_warm = True
+                    logging.info(
+                        f"OdasClient: Service ready after {elapsed:.1f}s (attempt {attempt})."
+                    )
+                    return True
+                else:
+                    logging.info(
+                        f"OdasClient: Cold start in progress (HTTP {response.status_code}, elapsed {elapsed:.1f}s / {limit}s)..."
+                    )
+            except (requests.RequestException, TimeoutError) as exc:
+                logging.info(
+                    f"OdasClient: Cold start in progress ({exc.__class__.__name__}, elapsed {elapsed:.1f}s / {limit}s)..."
+                )
+
+            time.sleep(poll_interval)
+
+        error_msg = (
+            f"OdasClient: ODAS Cloud Run service at {self.api_url} failed to respond healthy within {limit}s "
+            "(cold start timeout or service unavailable)."
+        )
+        logging.error(error_msg)
+        if self.logger:
+            self.logger.log_source("odas_service", "ERROR", error_msg)
+        raise TimeoutError(error_msg)
+
+    def _ensure_ready(self) -> None:
+        """Ensures the Cloud Run instance is awake before issuing heavy requests."""
+        if self.warmup_enabled and not self._is_warm:
+            self.wait_for_ready()
 
     def _fetch_table_export(self, table_name: str, ttl_seconds: int) -> pd.DataFrame:
         """Downloads table data via the new export endpoint and reads the Parquet file."""
@@ -53,7 +135,8 @@ class OdaceClient:
                         f"OdaceClient: Failed to read Parquet cache for {table_name}: {e}"
                     )
 
-        # Download from export endpoint
+        # Download from export endpoint (ensuring Cloud Run container is awake)
+        self._ensure_ready()
         url = f"{self.api_url}/api/data/export/{table_name}?format=parquet"
         try:
             logging.info(f"OdaceClient: Downloading {table_name} via export API...")
@@ -199,7 +282,8 @@ class OdaceClient:
                         f"OdaceClient: Failed to read Parquet cache for query '{cache_name}': {e}"
                     )
 
-        # Run query with pagination
+        # Run query with pagination (ensuring Cloud Run container is awake)
+        self._ensure_ready()
         url = f"{self.api_url}/api/data/query"
         try:
             logging.info(
@@ -270,23 +354,36 @@ class OdaceClient:
         if not self.api_url or not self.api_key:
             return None
 
+        self._ensure_ready()
         url = f"{self.api_url}/api/data/catalog/silver/{table_name}"
         try:
-            logging.info(f"OdaceClient: Fetching catalog detail for {table_name}...")
-            response = requests.get(url, headers=self.headers, timeout=15)
+            logging.info(f"OdasClient: Fetching catalog detail for {table_name}...")
+            response = requests.get(url, headers=self.headers, timeout=60)
             if response.status_code == 200:
                 return response.json()
             else:
                 logging.warning(
-                    f"OdaceClient: Catalog detail returned HTTP {response.status_code} for {table_name}"
+                    f"OdasClient: Catalog detail returned HTTP {response.status_code} for {table_name}"
                 )
                 return None
         except Exception as e:
             logging.warning(
-                f"OdaceClient: Failed to fetch catalog detail for {table_name}: {e}"
+                f"OdasClient: Failed to fetch catalog detail for {table_name}: {e}"
             )
             return None
 
 
-def get_odace_client(logger: Optional[PipelineLogger] = None) -> OdaceClient:
-    return OdaceClient(logger)
+def get_odas_client(
+    logger: Optional[PipelineLogger] = None,
+    warmup: bool = True,
+    max_warmup_seconds: int = 60,
+) -> OdasClient:
+    """Factory function returning a configured OdasClient instance."""
+    return OdasClient(
+        logger=logger, warmup=warmup, max_warmup_seconds=max_warmup_seconds
+    )
+
+
+# Backward-compatibility aliases for Odace callers
+OdaceClient = OdasClient
+get_odace_client = get_odas_client
