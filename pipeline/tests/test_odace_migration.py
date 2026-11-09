@@ -369,6 +369,79 @@ def test_transform_housing_occupation_odace_applies_year_and_contract(
     assert result.loc[result["codgeo"] == "01001", "MOD_OVER_OCC"].iloc[0] == 1.0
 
 
+def test_transform_housing_occupation_odace_resolves_latest_and_ignores_historical_nulls(
+    housing_occupation_contract,
+):
+    """Verifies that reference_year: 'latest' resolves the newest year and ignores historical nulls."""
+    contract = housing_occupation_contract.copy()
+    contract["reference_year"] = "latest"
+
+    # 2017 has nulls, 2023 is clean and latest
+    rows = [
+        # 2017 with null
+        {
+            "commune_insee_code": "01001",
+            "annee": "2017",
+            "indicateur_occupation": "MOD_OVER_OCC",
+            "valeur": None,
+        },
+        {
+            "commune_insee_code": "01001",
+            "annee": "2017",
+            "indicateur_occupation": "STD_OCC",
+            "valeur": 5.0,
+        },
+        {
+            "commune_insee_code": "01001",
+            "annee": "2017",
+            "indicateur_occupation": "SEV_UNDER_OCC",
+            "valeur": 2.0,
+        },
+        # 2023 (complete and clean)
+        {
+            "commune_insee_code": "01001",
+            "annee": "2023",
+            "indicateur_occupation": "MOD_OVER_OCC",
+            "valeur": 10.0,
+        },
+        {
+            "commune_insee_code": "01001",
+            "annee": "2023",
+            "indicateur_occupation": "STD_OCC",
+            "valeur": 20.0,
+        },
+        {
+            "commune_insee_code": "01001",
+            "annee": "2023",
+            "indicateur_occupation": "SEV_UNDER_OCC",
+            "valeur": 30.0,
+        },
+        {
+            "commune_insee_code": "2B002",
+            "annee": "2023",
+            "indicateur_occupation": "MOD_OVER_OCC",
+            "valeur": 15.0,
+        },
+        {
+            "commune_insee_code": "2B002",
+            "annee": "2023",
+            "indicateur_occupation": "STD_OCC",
+            "valeur": 25.0,
+        },
+        {
+            "commune_insee_code": "2B002",
+            "annee": "2023",
+            "indicateur_occupation": "SEV_UNDER_OCC",
+            "valeur": 35.0,
+        },
+    ]
+    df = pd.DataFrame(rows)
+    result = transform_housing_occupation_odace(df, contract)
+    assert len(result) == 2
+    assert result.attrs["reference_year"] == "2023"
+    assert result.loc[result["codgeo"] == "01001", "MOD_OVER_OCC"].iloc[0] == 10.0
+
+
 def test_transform_housing_occupation_odace_rejects_incomplete_indicator_family(
     housing_occupation_odace_data, housing_occupation_contract
 ):
@@ -968,15 +1041,24 @@ def test_clean_political_odace_success(mock_get_client, temp_cache_dirs):
     assert set(res.columns) == {"codgeo", "pol_num", "maire_extreme_droite"}
     # RN -> far right -> pol_num 0.0
     rn_row = res.loc[res["codgeo"] == "01001"]
-    assert rn_row["maire_extreme_droite"].iloc[0] is True or rn_row["maire_extreme_droite"].iloc[0] == 1
+    assert (
+        rn_row["maire_extreme_droite"].iloc[0] is True
+        or rn_row["maire_extreme_droite"].iloc[0] == 1
+    )
     assert rn_row["pol_num"].iloc[0] == 0.0
     # SOC -> not far right -> pol_num 1.0
     soc_row = res.loc[res["codgeo"] == "01002"]
-    assert soc_row["maire_extreme_droite"].iloc[0] is False or soc_row["maire_extreme_droite"].iloc[0] == 0
+    assert (
+        soc_row["maire_extreme_droite"].iloc[0] is False
+        or soc_row["maire_extreme_droite"].iloc[0] == 0
+    )
     assert soc_row["pol_num"].iloc[0] == 1.0
     # REC -> far right nuance -> pol_num 0.0
     rec_row = res.loc[res["codgeo"] == "01003"]
-    assert rec_row["maire_extreme_droite"].iloc[0] is True or rec_row["maire_extreme_droite"].iloc[0] == 1
+    assert (
+        rec_row["maire_extreme_droite"].iloc[0] is True
+        or rec_row["maire_extreme_droite"].iloc[0] == 1
+    )
     assert rec_row["pol_num"].iloc[0] == 0.0
     mock_client.fetch_table.assert_called_once_with("fact_nuance_politique")
 
@@ -1119,11 +1201,31 @@ def test_clean_departements_edge_cases(mock_get_client, temp_cache_dirs):
     mock_get_client.return_value = mock_client
     mock_client.fetch_table.return_value = pd.DataFrame(
         [
-            {"code_departement": 1.0, "libelle_departement": " Ain ", "code_region": 84.0},
-            {"code_departement": "2A", "libelle_departement": "Corse-du-Sud", "code_region": "94"},
-            {"code_departement": 971, "libelle_departement": "Guadeloupe", "code_region": 1.0},
-            {"code_departement": None, "libelle_departement": "Unknown", "code_region": "00"},
-            {"code_departement": "01", "libelle_departement": "Ain Duplicate", "code_region": "84"},
+            {
+                "code_departement": 1.0,
+                "libelle_departement": " Ain ",
+                "code_region": 84.0,
+            },
+            {
+                "code_departement": "2A",
+                "libelle_departement": "Corse-du-Sud",
+                "code_region": "94",
+            },
+            {
+                "code_departement": 971,
+                "libelle_departement": "Guadeloupe",
+                "code_region": 1.0,
+            },
+            {
+                "code_departement": None,
+                "libelle_departement": "Unknown",
+                "code_region": "00",
+            },
+            {
+                "code_departement": "01",
+                "libelle_departement": "Ain Duplicate",
+                "code_region": "84",
+            },
         ]
     )
 
@@ -1222,12 +1324,28 @@ def test_clean_political_edge_cases(mock_get_client, temp_cache_dirs):
     mock_client.fetch_table.return_value = pd.DataFrame(
         [
             # Float code 1001.0 -> 01001
-            {"commune_insee_code": 1001.0, "code_nuance_politique": "RN", "famille_nuance_politique": "Extrême droite"},
+            {
+                "commune_insee_code": 1001.0,
+                "code_nuance_politique": "RN",
+                "famille_nuance_politique": "Extrême droite",
+            },
             # Duplicate for 01002: one non-far-right, one far-right -> far-right wins
-            {"commune_insee_code": "01002", "code_nuance_politique": "SOC", "famille_nuance_politique": "Gauche"},
-            {"commune_insee_code": "01002", "code_nuance_politique": "EXD", "famille_nuance_politique": "Extrême droite"},
+            {
+                "commune_insee_code": "01002",
+                "code_nuance_politique": "SOC",
+                "famille_nuance_politique": "Gauche",
+            },
+            {
+                "commune_insee_code": "01002",
+                "code_nuance_politique": "EXD",
+                "famille_nuance_politique": "Extrême droite",
+            },
             # Null codgeo row
-            {"commune_insee_code": None, "code_nuance_politique": "RN", "famille_nuance_politique": "Extrême droite"},
+            {
+                "commune_insee_code": None,
+                "code_nuance_politique": "RN",
+                "famille_nuance_politique": "Extrême droite",
+            },
         ]
     )
 
@@ -1247,10 +1365,16 @@ def test_clean_political_edge_cases(mock_get_client, temp_cache_dirs):
     assert len(res) == 2
     assert set(res["codgeo"]) == {"01001", "01002"}
     # 01001 -> far-right -> pol_num 0.0
-    assert res.loc[res["codgeo"] == "01001", "maire_extreme_droite"].iloc[0] is True or res.loc[res["codgeo"] == "01001", "maire_extreme_droite"].iloc[0] == 1
+    assert (
+        res.loc[res["codgeo"] == "01001", "maire_extreme_droite"].iloc[0] is True
+        or res.loc[res["codgeo"] == "01001", "maire_extreme_droite"].iloc[0] == 1
+    )
     assert res.loc[res["codgeo"] == "01001", "pol_num"].iloc[0] == 0.0
     # 01002 -> far-right took precedence -> pol_num 0.0
-    assert res.loc[res["codgeo"] == "01002", "maire_extreme_droite"].iloc[0] is True or res.loc[res["codgeo"] == "01002", "maire_extreme_droite"].iloc[0] == 1
+    assert (
+        res.loc[res["codgeo"] == "01002", "maire_extreme_droite"].iloc[0] is True
+        or res.loc[res["codgeo"] == "01002", "maire_extreme_droite"].iloc[0] == 1
+    )
     assert res.loc[res["codgeo"] == "01002", "pol_num"].iloc[0] == 0.0
 
 
@@ -1891,7 +2015,10 @@ def test_fetch_rome_referential_odace_success(mock_get_client, temp_cache_dirs):
     mock_get_client.return_value = mock_client
     mock_client.fetch_table.return_value = pd.DataFrame(
         [
-            {"code_rome": "M1805", "libelle_rome": " Études et développement informatique "},
+            {
+                "code_rome": "M1805",
+                "libelle_rome": " Études et développement informatique ",
+            },
             {"code_rome": "K1101", "libelle_rome": "Accompagnement médicosocial"},
         ]
     )
@@ -1913,8 +2040,14 @@ def test_fetch_rome_referential_odace_success(mock_get_client, temp_cache_dirs):
     res = pd.read_parquet(path)
     assert len(res) == 2
     assert set(res.columns) == {"code", "label"}
-    assert res.loc[res["code"] == "M1805", "label"].iloc[0] == "Études et développement informatique"
-    assert res.loc[res["code"] == "K1101", "label"].iloc[0] == "Accompagnement médicosocial"
+    assert (
+        res.loc[res["code"] == "M1805", "label"].iloc[0]
+        == "Études et développement informatique"
+    )
+    assert (
+        res.loc[res["code"] == "K1101", "label"].iloc[0]
+        == "Accompagnement médicosocial"
+    )
     mock_client.fetch_table.assert_called_once_with("ref_rome", ttl_days=365)
 
 
@@ -2017,9 +2150,21 @@ def test_build_siae_structures_from_odas_with_cached_geo(tmp_path, monkeypatch):
     # ODAS cache for dim_siae_structure with commune_sk (real ODAS schema)
     pd.DataFrame(
         [
-            {"siae_structure_sk": "s1", "commune_sk": "c_01001", "code_postal": "01000"},
-            {"siae_structure_sk": "s2", "commune_sk": "c_01001", "code_postal": "01000"},
-            {"siae_structure_sk": "s3", "commune_sk": "c_75001", "code_postal": "75001"},
+            {
+                "siae_structure_sk": "s1",
+                "commune_sk": "c_01001",
+                "code_postal": "01000",
+            },
+            {
+                "siae_structure_sk": "s2",
+                "commune_sk": "c_01001",
+                "code_postal": "01000",
+            },
+            {
+                "siae_structure_sk": "s3",
+                "commune_sk": "c_75001",
+                "code_postal": "75001",
+            },
             {"siae_structure_sk": "s4", "commune_sk": None, "code_postal": "01000"},
         ]
     ).to_parquet(raw_dir / "odace_dim_siae_structure.parquet")
@@ -2027,8 +2172,16 @@ def test_build_siae_structures_from_odas_with_cached_geo(tmp_path, monkeypatch):
     # Cached dim_geo
     pd.DataFrame(
         [
-            {"geo_level": "commune", "commune_sk": "c_01001", "commune_insee_code": "01001"},
-            {"geo_level": "commune", "commune_sk": "c_75001", "commune_insee_code": "75001"},
+            {
+                "geo_level": "commune",
+                "commune_sk": "c_01001",
+                "commune_insee_code": "01001",
+            },
+            {
+                "geo_level": "commune",
+                "commune_sk": "c_75001",
+                "commune_insee_code": "75001",
+            },
         ]
     ).to_parquet(raw_dir / "odace_dim_geo.parquet")
 
@@ -2087,7 +2240,11 @@ def test_build_siae_structures_cold_cache_fetches_dim_geo(
     mock_get_client.return_value = mock_client
     mock_client.fetch_table.return_value = pd.DataFrame(
         [
-            {"geo_level": "commune", "commune_sk": "c_33001", "commune_insee_code": "33001"},
+            {
+                "geo_level": "commune",
+                "commune_sk": "c_33001",
+                "commune_insee_code": "33001",
+            },
         ]
     )
 
@@ -2155,7 +2312,9 @@ def test_build_siae_structures_fallback_to_structures_inclusion(tmp_path, monkey
 
 
 @patch("pipeline.ingest.get_odace_client")
-def test_clean_formations_referentiel_without_codes_postaux(mock_get_client, temp_cache_dirs):
+def test_clean_formations_referentiel_without_codes_postaux(
+    mock_get_client, temp_cache_dirs
+):
     """Verify clean_formations succeeds for formations_referentiel even when codes_postaux is missing."""
     _, clean_dir = temp_cache_dirs
 
@@ -2163,8 +2322,14 @@ def test_clean_formations_referentiel_without_codes_postaux(mock_get_client, tem
     mock_get_client.return_value = mock_client
     mock_client.fetch_table.return_value = pd.DataFrame(
         [
-            {"code_formation": "110", "libelle_formation": "Spécialités pluriscientifiques"},
-            {"code_formation": "200", "libelle_formation": "Technologies industrielles"},
+            {
+                "code_formation": "110",
+                "libelle_formation": "Spécialités pluriscientifiques",
+            },
+            {
+                "code_formation": "200",
+                "libelle_formation": "Technologies industrielles",
+            },
         ]
     )
 
@@ -2260,7 +2425,9 @@ def test_clean_bassins_de_vie_odace_failure(mock_get_client, temp_cache_dirs):
         }
     }
 
-    with pytest.raises(PipelineRunError, match="clean_bassins_de_vie failed with Odace"):
+    with pytest.raises(
+        PipelineRunError, match="clean_bassins_de_vie failed with Odace"
+    ):
         clean_bassins_de_vie(config, MagicMock(spec=PipelineLogger))
 
 
@@ -2311,7 +2478,7 @@ def test_clean_bassins_de_vie_edge_cases(mock_get_client, temp_cache_dirs):
             {
                 "commune_sk": "sk_1",
                 "commune_insee_code": "1001",  # 4 chars -> pads to 01001
-                "code_bassin_vie": "1053",   # 4 chars -> pads to 01053
+                "code_bassin_vie": "1053",  # 4 chars -> pads to 01053
                 "libelle_bassin_vie": " Bourg-en-Bresse  ",
             },
             {
@@ -2367,20 +2534,36 @@ def test_build_communes_uses_clean_bassins_de_vie(tmp_path, monkeypatch):
     pd.DataFrame({"codgeo": ["75056"], "nom": ["Paris"]}).to_parquet(
         clean_dir / "communes.parquet"
     )
-    pd.DataFrame(
-        {"code": ["75"], "label": ["Paris"], "reg_code": ["11"]}
-    ).to_parquet(clean_dir / "departements.parquet")
-    pd.DataFrame(
-        {"code": ["11"], "label": ["Île-de-France"]}
-    ).to_parquet(clean_dir / "regions.parquet")
+    pd.DataFrame({"code": ["75"], "label": ["Paris"], "reg_code": ["11"]}).to_parquet(
+        clean_dir / "departements.parquet"
+    )
+    pd.DataFrame({"code": ["11"], "label": ["Île-de-France"]}).to_parquet(
+        clean_dir / "regions.parquet"
+    )
 
     # Write clean bassins_de_vie.parquet
     pd.DataFrame(
         [
-            {"codgeo": "01001", "bassin_de_vie": "01053", "libelle_bassin_de_vie": "Bourg"},
-            {"codgeo": "75056", "bassin_de_vie": "75056", "libelle_bassin_de_vie": "Paris"},
-            {"codgeo": "69123", "bassin_de_vie": "69123", "libelle_bassin_de_vie": "Lyon"},
-            {"codgeo": "13055", "bassin_de_vie": "13055", "libelle_bassin_de_vie": "Marseille"},
+            {
+                "codgeo": "01001",
+                "bassin_de_vie": "01053",
+                "libelle_bassin_de_vie": "Bourg",
+            },
+            {
+                "codgeo": "75056",
+                "bassin_de_vie": "75056",
+                "libelle_bassin_de_vie": "Paris",
+            },
+            {
+                "codgeo": "69123",
+                "bassin_de_vie": "69123",
+                "libelle_bassin_de_vie": "Lyon",
+            },
+            {
+                "codgeo": "13055",
+                "bassin_de_vie": "13055",
+                "libelle_bassin_de_vie": "Marseille",
+            },
         ]
     ).to_parquet(clean_dir / "bassins_de_vie.parquet")
 
@@ -2415,9 +2598,96 @@ def test_main_cli_bassins_de_vie_step_registered():
     assert "bassins_de_vie" in contracts.runner.step_to_source_map
     assert contracts.runner.step_to_source_map["bassins_de_vie"] == "bassins_de_vie"
     assert "bassins_de_vie" in contracts.runner.clean_filenames
-    assert contracts.runner.clean_filenames["bassins_de_vie"] == "bassins_de_vie.parquet"
+    assert (
+        contracts.runner.clean_filenames["bassins_de_vie"] == "bassins_de_vie.parquet"
+    )
 
 
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_population_details_success(mock_get_client, temp_cache_dirs):
+    """Verifies clean_population_details unstacking and contract validation for 2017/2023."""
+    from pipeline.ingest import clean_population_details
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+
+    # Generate 30005 communes for 2017 and 2023
+    n = 30005
+    communes = [f"{i:05d}" for i in range(1, n + 1)]
+    records = []
+    for yr in ["2017", "2023"]:
+        for age in ["Y_LT15", "Y25T39"]:
+            for code in communes:
+                records.append(
+                    {
+                        "commune_insee_code": code,
+                        "annee": yr,
+                        "sexe": "_T",
+                        "tranche_age": age,
+                        "valeur": 50.0,
+                    }
+                )
+
+    mock_client.fetch_table.return_value = pd.DataFrame(records)
+
+    config = {
+        "sources": {
+            "population_details": {
+                "use_odace": True,
+                "odace_table": "fact_demographie",
+            }
+        }
+    }
+
+    clean_population_details(config, MagicMock(spec=PipelineLogger))
+
+    _raw_dir, clean_dir = temp_cache_dirs
+    output_file = clean_dir / "population_details.parquet"
+    assert output_file.exists()
+
+    df = pd.read_parquet(output_file)
+    assert len(df) == n
+    assert "pop_jeune_2017" in df.columns
+    assert "pop_jeune_2023" in df.columns
+    assert "pop_active_2017" in df.columns
+    assert "pop_active_2023" in df.columns
+    assert df["pop_jeune_2023"].notna().sum() == n
 
 
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_population_details_insufficient_years(mock_get_client, temp_cache_dirs):
+    """Verifies clean_population_details fails closed if fewer than 2 census years exist."""
+    from pipeline.ingest import clean_population_details
 
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+
+    n = 30005
+    communes = [f"{i:05d}" for i in range(1, n + 1)]
+    records = []
+    # Only single year
+    for age in ["Y_LT15", "Y25T39"]:
+        for code in communes:
+            records.append(
+                {
+                    "commune_insee_code": code,
+                    "annee": "2023",
+                    "sexe": "_T",
+                    "tranche_age": age,
+                    "valeur": 50.0,
+                }
+            )
+
+    mock_client.fetch_table.return_value = pd.DataFrame(records)
+
+    config = {
+        "sources": {
+            "population_details": {
+                "use_odace": True,
+                "odace_table": "fact_demographie",
+            }
+        }
+    }
+
+    with pytest.raises(PipelineRunError, match="requires at least 2 census years"):
+        clean_population_details(config, MagicMock(spec=PipelineLogger))

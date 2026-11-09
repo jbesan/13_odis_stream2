@@ -305,10 +305,10 @@ demographics:
       Y25T39: "active"
       Y40T54: "active"
     expected_columns:
-      - "pop_jeune_2016"
-      - "pop_active_2016"
-      - "pop_jeune_2022"
-      - "pop_active_2022"
+      - "pop_jeune_2017"
+      - "pop_active_2017"
+      - "pop_jeune_2023"
+      - "pop_active_2023"
 
 education:
   risky_school_class_threshold: 20.0

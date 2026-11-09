@@ -7,6 +7,7 @@ a single process-wide cached bundle via Streamlit's cache_resource.
 import json
 import logging
 import os
+from pathlib import Path
 import tempfile
 from typing import Any, Dict, List, Optional, Set
 
@@ -17,6 +18,7 @@ import streamlit as st
 import yaml
 
 import config as cfg
+from utils.data_sync import ensure_datasets_available
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -679,6 +681,11 @@ def get_scoring_datasets(release_version: Optional[str] = None) -> Dict[str, Any
 
 def get_app_data() -> Dict[str, Any]:
     """Return the complete data bundle for the active release."""
+    sync_summary = ensure_datasets_available(
+        target_dir=Path(_get_dataset_cache_base_dir())
+    )
+    if sync_summary is not None:
+        load_active_data_manifest.clear()
     return get_scoring_datasets(get_active_release_version())
 
 

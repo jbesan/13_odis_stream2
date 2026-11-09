@@ -86,10 +86,16 @@ PLM_SUM_CHILDREN_METRICS = frozenset(
         "pop_active",
         "pop_employes",
         "pop_chomeurs",
+        "pop_jeune_2012",
         "pop_jeune_2016",
+        "pop_jeune_2017",
         "pop_jeune_2022",
+        "pop_jeune_2023",
+        "pop_active_2012",
         "pop_active_2016",
+        "pop_active_2017",
         "pop_active_2022",
+        "pop_active_2023",
         "log_priv_vacant_plus_2ans",
         "log_priv_total",
         "log_soc_total",
@@ -179,6 +185,12 @@ def _plm_metric_policies(df: pd.DataFrame) -> Dict[str, PLMAggregationPolicy]:
         **{
             column: PLMAggregationPolicy("sum_children")
             for column in PLM_SUM_CHILDREN_METRICS
+        },
+        **{
+            column: PLMAggregationPolicy("sum_children")
+            for column in df.columns
+            if (column.startswith("pop_jeune_") or column.startswith("pop_active_"))
+            and column.split("_")[-1].isdigit()
         },
         **{
             column: PLMAggregationPolicy("population_weighted_mean")
@@ -367,7 +379,9 @@ def merge_siae_structures(
                     ].drop_duplicates()
                     siae_df = siae_df.merge(geo_communes, on="commune_sk", how="left")
                     if "commune_insee_code" in siae_df.columns:
-                        siae_df["codgeo"] = normalize_code(siae_df["commune_insee_code"], 5)
+                        siae_df["codgeo"] = normalize_code(
+                            siae_df["commune_insee_code"], 5
+                        )
 
             if "codgeo" not in siae_df.columns:
                 siae_df["codgeo"] = pd.Series(index=siae_df.index, dtype="string")
@@ -377,11 +391,17 @@ def merge_siae_structures(
                 cp_clean = CLEAN_DIR / "codes_postaux.parquet"
                 if cp_clean.exists():
                     try:
-                        cp_df = pd.read_parquet(cp_clean).drop_duplicates(subset=["code_postal"])
-                        siae_df["code_postal_norm"] = normalize_code(siae_df["code_postal"], 5)
+                        cp_df = pd.read_parquet(cp_clean).drop_duplicates(
+                            subset=["code_postal"]
+                        )
+                        siae_df["code_postal_norm"] = normalize_code(
+                            siae_df["code_postal"], 5
+                        )
                         missing_mask = siae_df["codgeo"].isna()
                         if missing_mask.any():
-                            recov = siae_df.loc[missing_mask, ["code_postal_norm"]].merge(
+                            recov = siae_df.loc[
+                                missing_mask, ["code_postal_norm"]
+                            ].merge(
                                 cp_df[["code_postal", "codgeo"]],
                                 left_on="code_postal_norm",
                                 right_on="code_postal",
@@ -389,8 +409,12 @@ def merge_siae_structures(
                             )
                             siae_df.loc[missing_mask, "codgeo"] = recov["codgeo"].values
                     except Exception as ex:
-                        logging.debug(f"SIAE code_postal fallback resolution failed: {ex}")
-                        logging.debug(f"SIAE code_postal fallback resolution failed: {ex}")
+                        logging.debug(
+                            f"SIAE code_postal fallback resolution failed: {ex}"
+                        )
+                        logging.debug(
+                            f"SIAE code_postal fallback resolution failed: {ex}"
+                        )
 
         if "codgeo" in siae_df.columns and siae_df["codgeo"].notna().any():
             siae_agg = (
@@ -423,7 +447,9 @@ def merge_siae_structures(
                 logging.info(f"SIAE structures counts merged from {siae_path}.")
                 resolved_siae = True
         if not resolved_siae:
-            logging.warning("SIAE structures could not be merged; setting inc_siae_count to NaN.")
+            logging.warning(
+                "SIAE structures could not be merged; setting inc_siae_count to NaN."
+            )
             communes_gdf["inc_siae_count"] = np.nan
 
     return communes_gdf
@@ -483,10 +509,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> pd.DataFra
         merge_clean("population_active", ["pop_active", "pop_employes", "pop_chomeurs"])
 
         # Merge Population Details (Age Breakdown)
-        merge_clean(
-            "population_details",
-            ["pop_jeune_2016", "pop_jeune_2022", "pop_active_2016", "pop_active_2022"],
-        )
+        merge_clean("population_details")
 
         # Merge LOVAC
         merge_clean("lovac", ["pp_vacant_plus_2ans_25", "log_priv_total_24"])
@@ -794,13 +817,23 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> pd.DataFra
                     ttl_days=bv_cfg.get("ttl_days", 365),
                 )
                 if not df_odace.empty and "commune_insee_code" in df_odace.columns:
-                    bv_df = pd.DataFrame(
-                        {
-                            "CODGEO": df_odace["commune_insee_code"].astype(str).str.zfill(5),
-                            "bassin_de_vie": df_odace["code_bassin_vie"].astype(str).str.zfill(5),
-                            "libelle_bassin_de_vie": df_odace["libelle_bassin_vie"].astype(str).str.strip(),
-                        }
-                    ).dropna(subset=["CODGEO", "bassin_de_vie"]).drop_duplicates(subset=["CODGEO"])
+                    bv_df = (
+                        pd.DataFrame(
+                            {
+                                "CODGEO": df_odace["commune_insee_code"]
+                                .astype(str)
+                                .str.zfill(5),
+                                "bassin_de_vie": df_odace["code_bassin_vie"]
+                                .astype(str)
+                                .str.zfill(5),
+                                "libelle_bassin_de_vie": df_odace["libelle_bassin_vie"]
+                                .astype(str)
+                                .str.strip(),
+                            }
+                        )
+                        .dropna(subset=["CODGEO", "bassin_de_vie"])
+                        .drop_duplicates(subset=["CODGEO"])
+                    )
             except Exception as e:
                 logging.warning(f"Could not load bassins_de_vie from ODAS: {e}")
 
@@ -817,7 +850,11 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> pd.DataFra
                     }
                 )
 
-        if bv_df is not None and "CODGEO" in bv_df.columns and "bassin_de_vie" in bv_df.columns:
+        if (
+            bv_df is not None
+            and "CODGEO" in bv_df.columns
+            and "bassin_de_vie" in bv_df.columns
+        ):
             bv_df["CODGEO"] = bv_df["CODGEO"].astype(str).str.zfill(5)
             bv_mapping = bv_df[
                 ["CODGEO", "bassin_de_vie", "libelle_bassin_de_vie"]
@@ -894,13 +931,13 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> pd.DataFra
                 "libelle_bassin_de_vie",
             ] = mars_bv_label
 
-                # Calculate pop_active_be for Ratio
-                # We need pop_active per commune first. It is already in communes_gdf.
-                # Group by bassin_emploi (which is code_be from BMO, but we just joined BV mapping which is bassin_de_vie)
-                # Wait, the user asked for "population active du bassin d'emploi".
-                # 'bassin_emploi' comes from BMO stats merge.
+            # Calculate pop_active_be for Ratio
+            # We need pop_active per commune first. It is already in communes_gdf.
+            # Group by bassin_emploi (which is code_be from BMO, but we just joined BV mapping which is bassin_de_vie)
+            # Wait, the user asked for "population active du bassin d'emploi".
+            # 'bassin_emploi' comes from BMO stats merge.
 
-                # Ratios moved to prescoring.py
+            # Ratios moved to prescoring.py
 
         # --- Pre-calculate Ratios and Scaled Scores (Optimization) ---
         # Moved to prescoring.py
@@ -948,9 +985,7 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> pd.DataFra
         df_to_save = communes_gdf.drop(columns=cols_to_drop).copy()
 
         output_path = OUTPUT_DIR / "odis_communes_pre.parquet"
-        df_to_save.to_parquet(
-            output_path, compression="brotli", index=False
-        )
+        df_to_save.to_parquet(output_path, compression="brotli", index=False)
         logger.log_step(
             "build_communes",
             "CREATED",
@@ -977,7 +1012,9 @@ def build_bassins_de_vie(
 
         communes_df = communes_gdf.copy()
         if "geometry" not in communes_df.columns and "polygon" in communes_df.columns:
-            communes_df["geometry"] = [make_valid(wkb.loads(bytes(x))) for x in communes_df["polygon"]]
+            communes_df["geometry"] = [
+                make_valid(wkb.loads(bytes(x))) for x in communes_df["polygon"]
+            ]
 
         communes_df["geometry"] = communes_df["geometry"].apply(make_valid)
         communes_df["geometry"] = communes_df["geometry"].apply(extract_polygonal)
@@ -1047,9 +1084,7 @@ def build_bassins_de_vie(
         bv_df["heb_jaccueille_count"] = 0.0
 
         output_path = OUTPUT_DIR / "odis_bassins_de_vie.parquet"
-        bv_df.reset_index().to_parquet(
-            output_path, compression="brotli", index=False
-        )
+        bv_df.reset_index().to_parquet(output_path, compression="brotli", index=False)
         logger.log_step(
             "build_bassins_de_vie",
             "CREATED",
@@ -1102,9 +1137,7 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
             df_agg = df_agg[~df_agg["codgeo"].isin(PLM_ARRONDISSEMENTS)].copy()
 
             out = OUTPUT_DIR / "odis_formations_agg.parquet"
-            df_agg.to_parquet(
-                out, compression="brotli", index=False
-            )
+            df_agg.to_parquet(out, compression="brotli", index=False)
             logger.log_step("build_vertical_tables", "FORMATIONS", {"path": str(out)})
 
         # 5. Refugee Associations (Detailed List)
@@ -1183,9 +1216,7 @@ def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
                 all_pois["codgeo"] = all_pois["codgeo"].astype("category")
 
             output_path = OUTPUT_DIR / "odis_pois.parquet"
-            all_pois.to_parquet(
-                output_path, compression="brotli", index=False
-            )
+            all_pois.to_parquet(output_path, compression="brotli", index=False)
             logger.log_step("generate_pois", "CREATED", {"path": str(output_path)})
 
     except Exception as e:
@@ -1337,9 +1368,7 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
         communes_path = CLEAN_DIR / "communes.parquet"
         if communes_path.exists():
             # Clean file uses 'nom' instead of 'libgeo'
-            communes_df = pd.read_parquet(
-                communes_path, columns=["codgeo", "nom"]
-            )
+            communes_df = pd.read_parquet(communes_path, columns=["codgeo", "nom"])
             if "codgeo" in communes_df.columns and "nom" in communes_df.columns:
                 communes_ref = pd.DataFrame(
                     {
@@ -1362,7 +1391,10 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
         clean_bv_path = CLEAN_DIR / "bassins_de_vie.parquet"
         if clean_bv_path.exists():
             df_bv_clean = pd.read_parquet(clean_bv_path)
-            if "bassin_de_vie" in df_bv_clean.columns and "libelle_bassin_de_vie" in df_bv_clean.columns:
+            if (
+                "bassin_de_vie" in df_bv_clean.columns
+                and "libelle_bassin_de_vie" in df_bv_clean.columns
+            ):
                 bv_ref = df_bv_clean[
                     ["bassin_de_vie", "libelle_bassin_de_vie"]
                 ].drop_duplicates()
@@ -1391,13 +1423,17 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
                     ["code_bassin_vie", "libelle_bassin_vie"]
                 ].drop_duplicates()
                 bv_ref.columns = ["code", "label"]
-                bv_ref = pd.DataFrame(
-                    {
-                        "key": "bassins_de_vie",
-                        "code": bv_ref["code"].astype(str).str.zfill(5),
-                        "label": bv_ref["label"].astype(str).str.strip(),
-                    }
-                ).dropna().drop_duplicates(subset=["code"])
+                bv_ref = (
+                    pd.DataFrame(
+                        {
+                            "key": "bassins_de_vie",
+                            "code": bv_ref["code"].astype(str).str.zfill(5),
+                            "label": bv_ref["label"].astype(str).str.strip(),
+                        }
+                    )
+                    .dropna()
+                    .drop_duplicates(subset=["code"])
+                )
                 refs_list.append(bv_ref)
                 logger.log_step(
                     "generate_referentiels", "BASSINS_VIE", {"count": len(bv_ref)}
@@ -1411,10 +1447,14 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
                 # 'Bassin de vie 2022', 'Libellé géographique du bassin de vie 2022'
                 if (
                     "Bassin de vie 2022" in df_bv_source.columns
-                    and "Libellé géographique du bassin de vie 2022" in df_bv_source.columns
+                    and "Libellé géographique du bassin de vie 2022"
+                    in df_bv_source.columns
                 ):
                     bv_ref = df_bv_source[
-                        ["Bassin de vie 2022", "Libellé géographique du bassin de vie 2022"]
+                        [
+                            "Bassin de vie 2022",
+                            "Libellé géographique du bassin de vie 2022",
+                        ]
                     ].drop_duplicates()
                     bv_ref.columns = ["code", "label"]
 
@@ -1452,10 +1492,11 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
             if regions_raw_path.exists():
                 regions_df = load_dataset(regions_raw_path, regions_cfg)
                 code_column = "REG" if "REG" in regions_df.columns else "code"
-                label_column = (
-                    "LIBELLE" if "LIBELLE" in regions_df.columns else "label"
-                )
-                if code_column in regions_df.columns and label_column in regions_df.columns:
+                label_column = "LIBELLE" if "LIBELLE" in regions_df.columns else "label"
+                if (
+                    code_column in regions_df.columns
+                    and label_column in regions_df.columns
+                ):
                     regions_df = regions_df.rename(
                         columns={code_column: "code", label_column: "label"}
                     )
@@ -1483,8 +1524,7 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
                 if missing_labels:
                     raise PipelineRunError(
                         "ODACE dim_geo contains region codes absent from the region "
-                        "referential: "
-                        + ", ".join(sorted(missing_labels))
+                        "referential: " + ", ".join(sorted(missing_labels))
                     )
                 regions_ref = regions_ref[regions_ref["code"].isin(geo_region_codes)]
             refs_list.append(regions_ref)
@@ -1593,13 +1633,9 @@ def build_salesforce_jaccueille_bdv(
                 f"Required clean Salesforce file missing: {sf_clean_path}"
             )
         if not cp_path.exists():
-            raise FileNotFoundError(
-                f"Required postal codes file missing: {cp_path}"
-            )
+            raise FileNotFoundError(f"Required postal codes file missing: {cp_path}")
         if not communes_path.exists():
-            raise FileNotFoundError(
-                f"Candidate communes file missing: {communes_path}"
-            )
+            raise FileNotFoundError(f"Candidate communes file missing: {communes_path}")
 
         df_sf = pd.read_parquet(sf_clean_path)
         df_bdv = aggregate_by_bassin_de_vie(
@@ -1618,7 +1654,9 @@ def build_salesforce_jaccueille_bdv(
     except Exception as e:
         logger.log_step("build_salesforce_jaccueille_bdv", "ERROR", {"error": str(e)})
         logging.exception(f"Build Salesforce BDV failed: {e}")
-        raise PipelineRunError("Required build step 'salesforce_jaccueille_bdv' failed") from e
+        raise PipelineRunError(
+            "Required build step 'salesforce_jaccueille_bdv' failed"
+        ) from e
 
 
 def main(argv=None):

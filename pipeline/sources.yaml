@@ -65,7 +65,7 @@ sources:
       - nuance_politique
 
   electoral_history:
-    datagouv_resource_id: "52a11762-45b4-414f-b6a2-eaa290217dc6"
+    datagouv_resource_id: "4d3b35f6-0b22-4415-a24c-419a676312e2"
     format: "parquet"
     local_name: "candidats_results.parquet"
     ttl_days: 365
@@ -103,25 +103,13 @@ sources:
     use_odace: true
     odace_table: "fact_occupation_logement"
     ttl_days: 365
-    description: "Occupation des logements par commune (INSEE RP 2022 via Odace)"
+    description: "Occupation des logements par commune (INSEE RP via Odace)"
 
   logement_social:
     use_odace: true
     odace_table: "fact_logement_social_rpls"
     ttl_days: 30
     description: "Parc locatif social (RPLS)"
-
-  bmo:
-    datagouv_resource_id: "54478315-aafd-4070-b8df-a5647297e0c0"
-    format: "xlsx"
-    local_name: "bmo_2025.xlsx"
-    ttl_days: 365
-    description: "Enquête Besoins en Main d'Oeuvre 2025"
-    used_columns:
-      - Code
-      - Famillon
-      - Métier
-      - xmet
 
   nomenclature_waldec:
     use_odace: true
@@ -293,7 +281,7 @@ sources:
     use_odace: true
     odace_table: "fact_demographie"
     ttl_days: 365
-    description: "Population détaillée 2022 (Historique 2011, 2016)"
+    description: "Population détaillée 2023 (Historique 2012, 2017)"
 
   regions_ref:
     use_odace: true

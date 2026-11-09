@@ -5,6 +5,7 @@ import pandas as pd
 from shapely.geometry import shape
 import openpyxl  # noqa: F401  # Mandatory top-level import: fail fast if excel engine is missing
 import python_calamine  # noqa: F401  # Mandatory top-level import: fail fast if calamine engine is missing
+import polars  # noqa: F401  # Mandatory top-level import: fail fast if polars is missing
 import logging
 import json
 import zipfile

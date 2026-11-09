@@ -44,7 +44,7 @@ EXPOSE 8080
 # The critical command
 # We explicitly use the $PORT variable provided by Cloud Run
 # We disable CORS and XSRF because Cloud Run's proxy handles the security
-CMD python3 generate_secrets.py && streamlit run main.py \
+CMD python3 generate_secrets.py && python3 -m utils.data_sync && streamlit run main.py \
     --server.port=8080 \
     --server.address=0.0.0.0 \
     --server.enableStaticServing=true \

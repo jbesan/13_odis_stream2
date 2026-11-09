@@ -198,6 +198,23 @@ def clean_population_details(config: Dict[str, Any], logger: PipelineLogger) -> 
                     if col not in df_pivot.columns:
                         df_pivot[col] = np.nan
 
+                jeune_cols = [
+                    c
+                    for c in df_pivot.columns
+                    if c.startswith("pop_jeune_") and df_pivot[c].notna().sum() >= 30000
+                ]
+                active_cols = [
+                    c
+                    for c in df_pivot.columns
+                    if c.startswith("pop_active_")
+                    and df_pivot[c].notna().sum() >= 30000
+                ]
+                if len(jeune_cols) < 2 or len(active_cols) < 2:
+                    raise PipelineRunError(
+                        f"Odace population_details requires at least 2 census years with >=30000 communes "
+                        f"(found valid jeune={jeune_cols}, active={active_cols})"
+                    )
+
                 output_path = context.CLEAN_DIR / "population_details.parquet"
                 df_pivot.to_parquet(output_path)
                 logger.log_step(
@@ -212,6 +229,9 @@ def clean_population_details(config: Dict[str, Any], logger: PipelineLogger) -> 
                 )
         except Exception as e:
             logging.error(f"Failed to fetch population_details from Odace: {e}")
+            raise PipelineRunError(
+                f"Odace population_details did not produce a usable dataset: {e}"
+            ) from e
         raise PipelineRunError(
             "Odace population_details did not produce a usable dataset"
         )

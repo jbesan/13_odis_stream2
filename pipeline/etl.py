@@ -103,14 +103,30 @@ def _publish_datasets_to_gcs(
     manifest_metadata = artifact_metadata(
         source_dir / RELEASE_MANIFEST_FILE, name=RELEASE_MANIFEST_FILE
     ).model_dump()
+
+    # Read existing current.json to capture previous_version for graceful rollback
+    pointer_path = f"{datasets_prefix}/current.json"
+    pointer_blob = bucket.blob(pointer_path)
+    previous_version = None
+    try:
+        if pointer_blob.exists():
+            old_pointer_bytes = pointer_blob.download_as_bytes()
+            if old_pointer_bytes:
+                old_pointer = json.loads(old_pointer_bytes)
+                old_version = old_pointer.get("version")
+                if old_version and old_version != release_version:
+                    previous_version = str(old_version)
+    except Exception as exc:
+        logging.warning("Could not read previous pointer version from GCS: %s", exc)
+
     pointer = {
         "version": release_version,
+        "previous_version": previous_version,
         "files": release_files,
         "manifest": manifest_metadata,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    pointer_path = f"{datasets_prefix}/current.json"
-    bucket.blob(pointer_path).upload_from_string(
+    pointer_blob.upload_from_string(
         json.dumps(pointer, ensure_ascii=False, indent=2),
         content_type="application/json",
     )

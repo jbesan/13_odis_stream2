@@ -8,6 +8,8 @@ def test_clean_electoral_history(tmp_path):
     """
     Unit test for clean_electoral_history using a mocked dataset.
     """
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
     clean_dir = tmp_path / "clean"
     clean_dir.mkdir()
     
@@ -46,20 +48,14 @@ def test_clean_electoral_history(tmp_path):
         {"id_election": "2026_muni_t1", "code_commune": "33063", "nuance": None, "libelle_abrege_liste": "L-DROITE", "nom": None, "voix": 50},
         {"id_election": "2022_pres_t1", "code_commune": "33063", "nuance": None, "libelle_abrege_liste": None, "nom": "MÉLENCHON", "voix": 200},
     ])
+    fake_data.to_parquet(raw_dir / "candidats_results.parquet")
     
     logger = MagicMock(spec=PipelineLogger)
-    
-    def side_effect_read_parquet(path, columns=None, filters=None, engine=None):
-        if columns == ["id_election"]:
-            return fake_data[["id_election"]]
-        if filters:
-            allowed = filters[0][2]
-            return fake_data[fake_data["id_election"].isin(allowed)]
-        return fake_data
 
     with (
-        patch("pandas.read_parquet", side_effect=side_effect_read_parquet),
-        patch("pipeline.ingest.CLEAN_DIR", clean_dir)
+        patch("pipeline.ingest.cleaners.electoral.context.CACHE_DIR", raw_dir),
+        patch("pipeline.ingest.cleaners.electoral.context.CLEAN_DIR", clean_dir),
+        patch("pipeline.ingest.CLEAN_DIR", clean_dir),
     ):
         clean_electoral_history(config, logger)
         

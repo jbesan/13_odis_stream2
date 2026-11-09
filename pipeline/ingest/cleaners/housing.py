@@ -162,21 +162,31 @@ def transform_housing_occupation_odace(
             f"{primary_key} ({duplicate_count} duplicate rows)"
         )
 
-    df["valeur"] = pd.to_numeric(df["valeur"], errors="coerce")
-    value_contract = contract["value"]
-    if not value_contract.get("nullable", True) and df["valeur"].isna().any():
-        raise PipelineRunError(
-            "Odace fact_occupation_logement has null or invalid values"
-        )
-    minimum_value = value_contract.get("minimum")
-    if minimum_value is not None and (df["valeur"] < minimum_value).any():
-        raise PipelineRunError(
-            "Odace fact_occupation_logement has values below its contractual minimum "
-            f"({minimum_value})"
+    target_year = str(contract.get("reference_year", "latest"))
+    required_indicators = contract["required_indicators"]
+
+    if target_year != "latest" and target_year in df["annee"].values:
+        reference_year = target_year
+    else:
+        # Resolve latest available year covering all required indicators
+        available_years = sorted(df["annee"].unique(), reverse=True)
+        valid_years = [
+            yr
+            for yr in available_years
+            if set(required_indicators).issubset(
+                set(df.loc[df["annee"] == yr, "indicateur_occupation"])
+            )
+        ]
+        if not valid_years:
+            raise PipelineRunError(
+                "Odace fact_occupation_logement has no year containing all required indicators "
+                f"({required_indicators})"
+            )
+        reference_year = valid_years[0]
+        logging.info(
+            f"Odace housing_occupation: Resolved latest valid reference year: {reference_year}"
         )
 
-    reference_year = str(contract["reference_year"])
-    required_indicators = contract["required_indicators"]
     reference = df.loc[
         (df["annee"] == reference_year)
         & df["indicateur_occupation"].isin(required_indicators)
@@ -185,6 +195,19 @@ def transform_housing_occupation_odace(
         raise PipelineRunError(
             "Odace fact_occupation_logement has no required observations for "
             f"reference year {reference_year}"
+        )
+
+    reference["valeur"] = pd.to_numeric(reference["valeur"], errors="coerce")
+    value_contract = contract["value"]
+    if not value_contract.get("nullable", True) and reference["valeur"].isna().any():
+        raise PipelineRunError(
+            f"Odace fact_occupation_logement has null or invalid values for reference year {reference_year}"
+        )
+    minimum_value = value_contract.get("minimum")
+    if minimum_value is not None and (reference["valeur"] < minimum_value).any():
+        raise PipelineRunError(
+            "Odace fact_occupation_logement has values below its contractual minimum "
+            f"({minimum_value}) for reference year {reference_year}"
         )
 
     observed_indicators = set(reference["indicateur_occupation"])
@@ -236,6 +259,7 @@ def transform_housing_occupation_odace(
         )
     if df_out["codgeo"].duplicated().any():
         raise PipelineRunError("Housing occupation output has duplicate codgeo values")
+    df_out.attrs["reference_year"] = reference_year
     return df_out
 
 

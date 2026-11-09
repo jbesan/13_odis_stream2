@@ -4,7 +4,7 @@ source_contracts:
   housing_occupation:
     version: 1
     odace_table: fact_occupation_logement
-    reference_year: "2022"
+    reference_year: "latest"
     required_columns:
       - commune_insee_code
       - annee
