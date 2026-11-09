@@ -442,6 +442,19 @@ def test_transform_housing_occupation_odace_resolves_latest_and_ignores_historic
     assert result.loc[result["codgeo"] == "01001", "MOD_OVER_OCC"].iloc[0] == 10.0
 
 
+def test_transform_housing_occupation_odace_rejects_missing_explicit_year(
+    housing_occupation_odace_data, housing_occupation_contract
+):
+    """Explicit reference_year must fail closed if absent instead of falling back to latest."""
+    contract = housing_occupation_contract.copy()
+    contract["reference_year"] = "2099"
+    with pytest.raises(
+        PipelineRunError,
+        match="has no required observations for reference year 2099",
+    ):
+        transform_housing_occupation_odace(housing_occupation_odace_data, contract)
+
+
 def test_transform_housing_occupation_odace_rejects_incomplete_indicator_family(
     housing_occupation_odace_data, housing_occupation_contract
 ):

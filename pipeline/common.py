@@ -439,7 +439,13 @@ def _lambert93_to_wgs84(x: float, y: float) -> Tuple[float, float]:
     phi = 2.0 * math.atan(math.exp(l)) - math.pi / 2.0
     for _ in range(5):
         esphi = _L93_E * math.sin(phi)
-        phi = 2.0 * math.atan(math.pow((1.0 + esphi) / (1.0 - esphi), _L93_E / 2.0) * math.exp(l)) - math.pi / 2.0
+        phi = (
+            2.0
+            * math.atan(
+                math.pow((1.0 + esphi) / (1.0 - esphi), _L93_E / 2.0) * math.exp(l)
+            )
+            - math.pi / 2.0
+        )
 
     return math.degrees(lon_rad), math.degrees(phi)
 
@@ -449,7 +455,10 @@ def _wgs84_to_lambert93(lon: float, lat: float) -> Tuple[float, float]:
     phi = math.radians(lat)
     lam = math.radians(lon)
     esphi = _L93_E * math.sin(phi)
-    l = math.log(math.tan(math.pi / 4.0 + phi / 2.0) * math.pow((1.0 - esphi) / (1.0 + esphi), _L93_E / 2.0))
+    l = math.log(
+        math.tan(math.pi / 4.0 + phi / 2.0)
+        * math.pow((1.0 - esphi) / (1.0 + esphi), _L93_E / 2.0)
+    )
     gamma = (lam - _L93_LON0) * _L93_N
     r = _L93_C * math.exp(-_L93_N * l)
     x = _L93_XS + r * math.sin(gamma)

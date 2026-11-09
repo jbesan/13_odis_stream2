@@ -158,14 +158,10 @@ def clean_departements(config: Dict[str, Any], logger: PipelineLogger) -> None:
     if source.get("use_odace", False):
         try:
             client = ingest.get_odace_client(logger)
-            df_odace = client.fetch_table(
-                source.get("odace_table", "ref_departement")
-            )
+            df_odace = client.fetch_table(source.get("odace_table", "ref_departement"))
             if not df_odace.empty and "code_departement" in df_odace.columns:
                 df_out = pd.DataFrame()
-                df_out["code"] = ingest.normalize_code(
-                    df_odace["code_departement"], 2
-                )
+                df_out["code"] = ingest.normalize_code(df_odace["code_departement"], 2)
                 df_out["label"] = (
                     df_odace["libelle_departement"].astype(str).str.strip()
                     if "libelle_departement" in df_odace.columns
@@ -193,7 +189,9 @@ def clean_departements(config: Dict[str, Any], logger: PipelineLogger) -> None:
                     )
                     return
             else:
-                logging.warning("Odace fetch returned empty or invalid data for ref_departement.")
+                logging.warning(
+                    "Odace fetch returned empty or invalid data for ref_departement."
+                )
         except Exception as e:
             logging.error(f"Failed to fetch ref_departement from Odace: {e}")
         raise PipelineRunError("Odace departements did not produce a usable dataset")
@@ -217,7 +215,9 @@ def clean_departements(config: Dict[str, Any], logger: PipelineLogger) -> None:
         if "reg_code" in df_out.columns:
             df_out["reg_code"] = ingest.normalize_code(df_out["reg_code"], 2)
 
-        df_out = df_out.dropna(subset=["code", "label"]).drop_duplicates(subset=["code"])
+        df_out = df_out.dropna(subset=["code", "label"]).drop_duplicates(
+            subset=["code"]
+        )
         output_path = context.CLEAN_DIR / "departements.parquet"
         df_out.to_parquet(output_path)
         logger.log_step(
@@ -250,9 +250,7 @@ def clean_regions(config: Dict[str, Any], logger: PipelineLogger) -> None:
     if source.get("use_odace", False):
         try:
             client = ingest.get_odace_client(logger)
-            df_odace = client.fetch_table(
-                source.get("odace_table", "ref_region")
-            )
+            df_odace = client.fetch_table(source.get("odace_table", "ref_region"))
             if not df_odace.empty and "code_region" in df_odace.columns:
                 df_out = pd.DataFrame()
                 df_out["code"] = ingest.normalize_code(df_odace["code_region"], 2)
@@ -279,7 +277,9 @@ def clean_regions(config: Dict[str, Any], logger: PipelineLogger) -> None:
                     )
                     return
             else:
-                logging.warning("Odace fetch returned empty or invalid data for ref_region.")
+                logging.warning(
+                    "Odace fetch returned empty or invalid data for ref_region."
+                )
         except Exception as e:
             logging.error(f"Failed to fetch ref_region from Odace: {e}")
         raise PipelineRunError("Odace regions did not produce a usable dataset")
@@ -336,9 +336,7 @@ def clean_codes_postaux(config: Dict[str, Any], logger: PipelineLogger) -> None:
     if source.get("use_odace", False):
         try:
             client = ingest.get_odace_client(logger)
-            df_odace = client.fetch_table(
-                source.get("odace_table", "ref_code_postal")
-            )
+            df_odace = client.fetch_table(source.get("odace_table", "ref_code_postal"))
             if (
                 not df_odace.empty
                 and "code_postal" in df_odace.columns
@@ -351,7 +349,9 @@ def clean_codes_postaux(config: Dict[str, Any], logger: PipelineLogger) -> None:
                 df_out["codgeo"] = ingest.normalize_code(
                     df_odace["commune_insee_code"], 5
                 )
-                df_out = df_out.dropna(subset=["code_postal", "codgeo"]).drop_duplicates()
+                df_out = df_out.dropna(
+                    subset=["code_postal", "codgeo"]
+                ).drop_duplicates()
 
                 if not df_out.empty:
                     output_path = context.CLEAN_DIR / "codes_postaux.parquet"
@@ -367,7 +367,9 @@ def clean_codes_postaux(config: Dict[str, Any], logger: PipelineLogger) -> None:
                     )
                     return
             else:
-                logging.warning("Odace fetch returned empty or invalid data for ref_code_postal.")
+                logging.warning(
+                    "Odace fetch returned empty or invalid data for ref_code_postal."
+                )
         except Exception as e:
             logging.error(f"Failed to fetch ref_code_postal from Odace: {e}")
         raise PipelineRunError("Odace codes_postaux did not produce a usable dataset")
@@ -446,13 +448,21 @@ def clean_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger) -> None
             if not df_odace.empty:
                 cols_dict = {
                     "codgeo": ingest.normalize_code(df_odace["commune_insee_code"], 5),
-                    "bassin_de_vie": ingest.normalize_code(df_odace["code_bassin_vie"], 5),
-                    "libelle_bassin_de_vie": df_odace["libelle_bassin_vie"].astype(str).str.strip(),
+                    "bassin_de_vie": ingest.normalize_code(
+                        df_odace["code_bassin_vie"], 5
+                    ),
+                    "libelle_bassin_de_vie": df_odace["libelle_bassin_vie"]
+                    .astype(str)
+                    .str.strip(),
                 }
                 if "commune_sk" in df_odace.columns:
                     cols_dict["commune_sk"] = df_odace["commune_sk"]
 
-                df_out = pd.DataFrame(cols_dict).dropna(subset=["codgeo", "bassin_de_vie"]).drop_duplicates(subset=["codgeo"])
+                df_out = (
+                    pd.DataFrame(cols_dict)
+                    .dropna(subset=["codgeo", "bassin_de_vie"])
+                    .drop_duplicates(subset=["codgeo"])
+                )
 
                 if df_out.empty:
                     raise PipelineRunError("Cleaned bassins_de_vie dataset is empty")
@@ -468,7 +478,9 @@ def clean_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger) -> None
                 logging.warning("Odace fetch returned empty data for ref_bassin_vie.")
         except Exception as e:
             logging.error(f"Failed to fetch ref_bassin_vie from Odace: {e}")
-            raise PipelineRunError(f"clean_bassins_de_vie failed with Odace: {e}") from e
+            raise PipelineRunError(
+                f"clean_bassins_de_vie failed with Odace: {e}"
+            ) from e
 
     # Legacy raw fallback
     archive_file = source.get("archive_file")
@@ -484,17 +496,24 @@ def clean_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger) -> None
                 }
             )
             if "codgeo" in df_raw.columns and "bassin_de_vie" in df_raw.columns:
-                df_out = pd.DataFrame(
-                    {
-                        "codgeo": ingest.normalize_code(df_raw["codgeo"], 5),
-                        "bassin_de_vie": ingest.normalize_code(df_raw["bassin_de_vie"], 5),
-                        "libelle_bassin_de_vie": df_raw.get(
-                            "libelle_bassin_de_vie", pd.Series("", index=df_raw.index)
-                        )
-                        .astype(str)
-                        .str.strip(),
-                    }
-                ).dropna(subset=["codgeo", "bassin_de_vie"]).drop_duplicates(subset=["codgeo"])
+                df_out = (
+                    pd.DataFrame(
+                        {
+                            "codgeo": ingest.normalize_code(df_raw["codgeo"], 5),
+                            "bassin_de_vie": ingest.normalize_code(
+                                df_raw["bassin_de_vie"], 5
+                            ),
+                            "libelle_bassin_de_vie": df_raw.get(
+                                "libelle_bassin_de_vie",
+                                pd.Series("", index=df_raw.index),
+                            )
+                            .astype(str)
+                            .str.strip(),
+                        }
+                    )
+                    .dropna(subset=["codgeo", "bassin_de_vie"])
+                    .drop_duplicates(subset=["codgeo"])
+                )
 
                 if df_out.empty:
                     raise PipelineRunError("Raw bassins_de_vie produced no valid rows")
@@ -508,7 +527,9 @@ def clean_bassins_de_vie(config: Dict[str, Any], logger: PipelineLogger) -> None
                 return
         except Exception as e:
             logging.error(f"Failed to clean raw bassins_de_vie: {e}")
-            raise PipelineRunError(f"clean_bassins_de_vie raw fallback failed: {e}") from e
+            raise PipelineRunError(
+                f"clean_bassins_de_vie raw fallback failed: {e}"
+            ) from e
 
     logging.warning("Bassins de vie source file not found and Odace disabled.")
     logger.log_step("clean_bassins_de_vie", "SKIPPED", {"reason": "Source not found"})

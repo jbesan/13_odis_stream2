@@ -78,7 +78,7 @@ def parse_thematiques(val: Any) -> list[str]:
                 else:
                     try:
                         raw_extracted = ast.literal_eval(val)
-                    except (ValueError, SyntaxError):
+                    except ValueError, SyntaxError:
                         raw_extracted = re.findall(r"'([^']*)'", val) or [val]
             else:
                 raw_extracted = [val]
@@ -129,7 +129,7 @@ def parse_reseaux(val: Any) -> list[str]:
                     return re.findall(r"'([^']*)'", val)
                 try:
                     return ast.literal_eval(val)
-                except (ValueError, SyntaxError):
+                except ValueError, SyntaxError:
                     return re.findall(r"'([^']*)'", val) or [val]
             return [val]
         return []
@@ -159,10 +159,18 @@ def clean_services_inclusion(config: Dict[str, Any], logger: PipelineLogger) -> 
             df_odace = client.fetch_table(
                 source.get("odace_table", "dim_service_inclusion")
             )
-            id_col = next((c for c in ["service_id", "id"] if c in df_odace.columns), None)
-            nom_col = next((c for c in ["service_nom", "nom"] if c in df_odace.columns), None)
+            id_col = next(
+                (c for c in ["service_id", "id"] if c in df_odace.columns), None
+            )
+            nom_col = next(
+                (c for c in ["service_nom", "nom"] if c in df_odace.columns), None
+            )
             commune_col = next(
-                (c for c in ["commune_insee_code", "code_insee", "codgeo"] if c in df_odace.columns),
+                (
+                    c
+                    for c in ["commune_insee_code", "code_insee", "codgeo"]
+                    if c in df_odace.columns
+                ),
                 None,
             )
 
@@ -175,10 +183,18 @@ def clean_services_inclusion(config: Dict[str, Any], logger: PipelineLogger) -> 
                 and "latitude" in df_odace.columns
                 and "longitude" in df_odace.columns
             ):
-                df_clean = df_odace.dropna(subset=["latitude", "longitude", "thematiques"]).copy()
-                df_clean["thematique_list"] = df_clean["thematiques"].apply(parse_thematiques)
-                df_exploded = df_clean.explode("thematique_list").dropna(subset=["thematique_list"])
-                df_exploded["service_slug"] = df_exploded["thematique_list"].apply(clean_slug)
+                df_clean = df_odace.dropna(
+                    subset=["latitude", "longitude", "thematiques"]
+                ).copy()
+                df_clean["thematique_list"] = df_clean["thematiques"].apply(
+                    parse_thematiques
+                )
+                df_exploded = df_clean.explode("thematique_list").dropna(
+                    subset=["thematique_list"]
+                )
+                df_exploded["service_slug"] = df_exploded["thematique_list"].apply(
+                    clean_slug
+                )
 
                 df_out = pd.DataFrame(
                     {
@@ -210,7 +226,9 @@ def clean_services_inclusion(config: Dict[str, Any], logger: PipelineLogger) -> 
                 )
         except Exception as e:
             logging.error(f"Failed to fetch dim_service_inclusion from Odace: {e}")
-        raise PipelineRunError("Odace services_inclusion did not produce a usable dataset")
+        raise PipelineRunError(
+            "Odace services_inclusion did not produce a usable dataset"
+        )
 
     # Legacy fallback
     path = context.CACHE_DIR / source.get("local_name", "services_inclusion.parquet")
@@ -279,7 +297,9 @@ def clean_structures_inclusion(config: Dict[str, Any], logger: PipelineLogger) -
                 source.get("odace_table", "dim_structure_inclusion")
             )
             if not df_odace.empty and "reseaux_porteurs" in df_odace.columns:
-                df_odace["reseaux_parsed"] = df_odace["reseaux_porteurs"].apply(parse_reseaux)
+                df_odace["reseaux_parsed"] = df_odace["reseaux_porteurs"].apply(
+                    parse_reseaux
+                )
                 ccas_keywords = inclusion_cfg.ccas_keywords
 
                 def has_ccas(lst: list[str]) -> bool:
@@ -292,7 +312,9 @@ def clean_structures_inclusion(config: Dict[str, Any], logger: PipelineLogger) -
                                 return True
                     return False
 
-                df_filtered = df_odace[df_odace["reseaux_parsed"].apply(has_ccas)].copy()
+                df_filtered = df_odace[
+                    df_odace["reseaux_parsed"].apply(has_ccas)
+                ].copy()
 
                 for field in inclusion_cfg.required_contact_fields:
                     if field in df_filtered.columns:
@@ -309,11 +331,17 @@ def clean_structures_inclusion(config: Dict[str, Any], logger: PipelineLogger) -
                 )
 
                 codgeo_col = next(
-                    (c for c in ["commune_insee_code", "code_insee", "codgeo"] if c in df_filtered.columns),
+                    (
+                        c
+                        for c in ["commune_insee_code", "code_insee", "codgeo"]
+                        if c in df_filtered.columns
+                    ),
                     None,
                 )
                 if codgeo_col:
-                    df_filtered["codgeo"] = ingest.normalize_code(df_filtered[codgeo_col], 5)
+                    df_filtered["codgeo"] = ingest.normalize_code(
+                        df_filtered[codgeo_col], 5
+                    )
                     df_filtered = df_filtered.dropna(subset=["codgeo"])
 
                     col_map = {
@@ -322,7 +350,10 @@ def clean_structures_inclusion(config: Dict[str, Any], logger: PipelineLogger) -
                         "commune_label": "commune",
                     }
                     for old_c, new_c in col_map.items():
-                        if old_c in df_filtered.columns and new_c not in df_filtered.columns:
+                        if (
+                            old_c in df_filtered.columns
+                            and new_c not in df_filtered.columns
+                        ):
                             df_filtered[new_c] = df_filtered[old_c]
 
                     cols_to_keep = [
@@ -335,7 +366,9 @@ def clean_structures_inclusion(config: Dict[str, Any], logger: PipelineLogger) -
                         "adresse",
                         "commune",
                     ]
-                    existing_cols = [c for c in cols_to_keep if c in df_filtered.columns]
+                    existing_cols = [
+                        c for c in cols_to_keep if c in df_filtered.columns
+                    ]
                     df_out = df_filtered[existing_cols]
 
                     if not df_out.empty:
@@ -359,7 +392,9 @@ def clean_structures_inclusion(config: Dict[str, Any], logger: PipelineLogger) -
                 )
         except Exception as e:
             logging.error(f"Failed to fetch dim_structure_inclusion from Odace: {e}")
-        raise PipelineRunError("Odace structures_inclusion did not produce a usable dataset")
+        raise PipelineRunError(
+            "Odace structures_inclusion did not produce a usable dataset"
+        )
 
     # Legacy fallback
     path = context.CACHE_DIR / source.get("local_name", "structures_inclusion.parquet")
@@ -507,9 +542,7 @@ def clean_nomenclature_waldec(config: Dict[str, Any], logger: PipelineLogger) ->
     if source.get("use_odace", False):
         try:
             client = ingest.get_odace_client(logger)
-            df_odace = client.fetch_table(
-                source.get("odace_table", "ref_waldec")
-            )
+            df_odace = client.fetch_table(source.get("odace_table", "ref_waldec"))
             if not df_odace.empty and "code_waldec" in df_odace.columns:
                 df_out = pd.DataFrame()
                 df_out["code"] = ingest.normalize_code(df_odace["code_waldec"], 6)
@@ -536,10 +569,14 @@ def clean_nomenclature_waldec(config: Dict[str, Any], logger: PipelineLogger) ->
                     )
                     return
             else:
-                logging.warning("Odace fetch returned empty or invalid data for ref_waldec.")
+                logging.warning(
+                    "Odace fetch returned empty or invalid data for ref_waldec."
+                )
         except Exception as e:
             logging.error(f"Failed to fetch ref_waldec from Odace: {e}")
-        raise PipelineRunError("Odace nomenclature_waldec did not produce a usable dataset")
+        raise PipelineRunError(
+            "Odace nomenclature_waldec did not produce a usable dataset"
+        )
 
     path = context.CACHE_DIR / source["local_name"]
 

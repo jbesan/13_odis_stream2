@@ -86,16 +86,6 @@ PLM_SUM_CHILDREN_METRICS = frozenset(
         "pop_active",
         "pop_employes",
         "pop_chomeurs",
-        "pop_jeune_2012",
-        "pop_jeune_2016",
-        "pop_jeune_2017",
-        "pop_jeune_2022",
-        "pop_jeune_2023",
-        "pop_active_2012",
-        "pop_active_2016",
-        "pop_active_2017",
-        "pop_active_2022",
-        "pop_active_2023",
         "log_priv_vacant_plus_2ans",
         "log_priv_total",
         "log_soc_total",
@@ -409,10 +399,7 @@ def merge_siae_structures(
                             )
                             siae_df.loc[missing_mask, "codgeo"] = recov["codgeo"].values
                     except Exception as ex:
-                        logging.debug(
-                            f"SIAE code_postal fallback resolution failed: {ex}"
-                        )
-                        logging.debug(
+                        logging.warning(
                             f"SIAE code_postal fallback resolution failed: {ex}"
                         )
 
@@ -498,9 +485,6 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> pd.DataFra
                 logging.warning(f"Clean {name} file not found.")
                 # Optional: Detailed log if impactful?
                 # logger.log_step("build_communes_merge", "WARNING", {"missing": name})
-
-        # Merge BMO (Stats only + code_be) - DEPRECATED
-        # merge_clean("bmo_stats", ['metiers_offres_diff', 'metiers_tension_diff', 'code_be'])
 
         # Merge Population
         merge_clean("population", ["population"])
@@ -1291,15 +1275,19 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
                             f"Could not fetch {odace_table} from ODAS: {ex}"
                         )
 
-            if incl_df is None:
+            if incl_df is None or incl_df.empty:
                 incl_name = incl_cfg.get(
                     "local_name", "referentiel_services_inclusion.csv"
                 )
-                incl_path = CACHE_DIR / incl_name
-                if incl_path.exists():
-                    incl_df = load_dataset(incl_path, incl_cfg)
+                for candidate_path in (
+                    CACHE_DIR / incl_name,
+                    Path(__file__).resolve().parent / "local" / incl_name,
+                ):
+                    if candidate_path.exists():
+                        incl_df = load_dataset(candidate_path, incl_cfg)
+                        break
 
-            if incl_df is not None:
+            if incl_df is not None and not incl_df.empty:
                 incl_df.columns = [c.strip() for c in incl_df.columns]
                 code_col = next(
                     (c for c in ["Nom", "code", "service_id"] if c in incl_df.columns),

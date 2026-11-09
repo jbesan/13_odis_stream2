@@ -146,7 +146,9 @@ def test_sync_active_release_fails_on_corrupted_checksum(tmp_path):
 
     pointer_blob = MagicMock()
     pointer_blob.exists.return_value = True
-    pointer_blob.download_as_bytes.return_value = json.dumps(pointer_dict).encode("utf-8")
+    pointer_blob.download_as_bytes.return_value = json.dumps(pointer_dict).encode(
+        "utf-8"
+    )
 
     manifest_blob = MagicMock()
     manifest_blob.download_as_bytes.return_value = manifest_bytes
@@ -218,17 +220,27 @@ def test_sync_active_release_recovers_via_previous_version_on_corruption(tmp_pat
         blob = MagicMock()
         blob.exists.return_value = True
         if blob_path.endswith("current.json"):
-            blob.download_as_bytes.return_value = json.dumps(pointer_dict).encode("utf-8")
+            blob.download_as_bytes.return_value = json.dumps(pointer_dict).encode(
+                "utf-8"
+            )
         elif "run-active-corrupted" in blob_path:
             if blob_path.endswith("data_manifest.json"):
-                blob.download_as_bytes.return_value = json.dumps(active_manifest).encode("utf-8")
+                blob.download_as_bytes.return_value = json.dumps(
+                    active_manifest
+                ).encode("utf-8")
             else:
-                blob.download_to_filename.side_effect = lambda path: Path(path).write_bytes(corrupted_content)
+                blob.download_to_filename.side_effect = lambda path: Path(
+                    path
+                ).write_bytes(corrupted_content)
         elif "run-previous-healthy" in blob_path:
             if blob_path.endswith("data_manifest.json"):
-                blob.download_as_bytes.return_value = json.dumps(previous_manifest).encode("utf-8")
+                blob.download_as_bytes.return_value = json.dumps(
+                    previous_manifest
+                ).encode("utf-8")
             else:
-                blob.download_to_filename.side_effect = lambda path: Path(path).write_bytes(good_previous_content)
+                blob.download_to_filename.side_effect = lambda path: Path(
+                    path
+                ).write_bytes(good_previous_content)
         else:
             blob.exists.return_value = False
         return blob
@@ -306,13 +318,21 @@ def test_atomic_staging_preserves_existing_files_on_mid_sync_failure(tmp_path):
         blob = MagicMock()
         blob.exists.return_value = True
         if blob_path.endswith("current.json"):
-            blob.download_as_bytes.return_value = json.dumps(pointer_dict).encode("utf-8")
+            blob.download_as_bytes.return_value = json.dumps(pointer_dict).encode(
+                "utf-8"
+            )
         elif blob_path.endswith("data_manifest.json"):
-            blob.download_as_bytes.return_value = json.dumps(manifest_dict).encode("utf-8")
+            blob.download_as_bytes.return_value = json.dumps(manifest_dict).encode(
+                "utf-8"
+            )
         elif blob_path.endswith("odis_communes.parquet"):
-            blob.download_to_filename.side_effect = lambda p: Path(p).write_bytes(new_communes)
+            blob.download_to_filename.side_effect = lambda p: Path(p).write_bytes(
+                new_communes
+            )
         elif blob_path.endswith("odis_pois.parquet"):
-            blob.download_to_filename.side_effect = lambda p: Path(p).write_bytes(bad_pois)
+            blob.download_to_filename.side_effect = lambda p: Path(p).write_bytes(
+                bad_pois
+            )
         else:
             blob.exists.return_value = False
         return blob
@@ -344,5 +364,7 @@ def test_default_dirs_anchored_on_app_dir(monkeypatch):
         monkeypatch.delenv(env_var, raising=False)
 
     monkeypatch.chdir(cfg.APP_DIR)
-    assert get_default_datasets_dir() == Path(cfg.APP_DIR) / "data" / "datasets" / "active"
+    assert (
+        get_default_datasets_dir() == Path(cfg.APP_DIR) / "data" / "datasets" / "active"
+    )
     assert get_default_static_dir() == Path(cfg.APP_DIR) / "static" / "data"

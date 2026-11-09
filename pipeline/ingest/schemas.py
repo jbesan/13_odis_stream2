@@ -168,7 +168,9 @@ class DemographicsPopulationDetailsConfig(BaseModel):
     sex_filter: str
     target_age_codes: List[str]
     age_group_mapping: Dict[str, str]
-    expected_columns: List[str]
+    min_communes_per_year: int = 30000
+    min_years: int = 2
+    expected_columns: List[str] = Field(default_factory=list)
 
 
 class DemographicsConfig(BaseModel):

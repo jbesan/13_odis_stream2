@@ -456,7 +456,9 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
             [
                 int(c.split("_")[-1])
                 for c in communes_gdf.columns
-                if c.startswith("pop_jeune_") and c.split("_")[-1].isdigit()
+                if c.startswith("pop_jeune_")
+                and c.split("_")[-1].isdigit()
+                and communes_gdf[c].notna().any()
             ]
         )
         if len(jeune_years) >= 2:
@@ -466,20 +468,14 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                 - communes_gdf[f"pop_jeune_{prev_yr}"],
                 communes_gdf[f"pop_jeune_{prev_yr}"],
             )
-        elif (
-            "pop_jeune_2016" in communes_gdf.columns
-            and "pop_jeune_2022" in communes_gdf.columns
-        ):
-            communes_gdf["youth_growth_rate"] = safe_ratio(
-                communes_gdf["pop_jeune_2022"] - communes_gdf["pop_jeune_2016"],
-                communes_gdf["pop_jeune_2016"],
-            )
 
         active_years = sorted(
             [
                 int(c.split("_")[-1])
                 for c in communes_gdf.columns
-                if c.startswith("pop_active_") and c.split("_")[-1].isdigit()
+                if c.startswith("pop_active_")
+                and c.split("_")[-1].isdigit()
+                and communes_gdf[c].notna().any()
             ]
         )
         if len(active_years) >= 2:
@@ -488,14 +484,6 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                 communes_gdf[f"pop_active_{latest_yr}"]
                 - communes_gdf[f"pop_active_{prev_yr}"],
                 communes_gdf[f"pop_active_{prev_yr}"],
-            )
-        elif (
-            "pop_active_2016" in communes_gdf.columns
-            and "pop_active_2022" in communes_gdf.columns
-        ):
-            communes_gdf["workclass_growth_rate"] = safe_ratio(
-                communes_gdf["pop_active_2022"] - communes_gdf["pop_active_2016"],
-                communes_gdf["pop_active_2016"],
             )
 
         if "youth_growth_rate" in communes_gdf.columns:
@@ -643,7 +631,7 @@ def apply_prescoring(config: Dict[str, Any], logger: PipelineLogger):
                             if isinstance(val, list):
                                 return val
                             return [str(val)]
-                        except (ValueError, SyntaxError):
+                        except ValueError, SyntaxError:
                             # It's a raw string slug
                             return [x]
 

@@ -75,14 +75,14 @@
     },
     "generate_pois": {
       "status": "CREATED",
-      "timestamp": "2026-11-09T12:31:01.749949+00:00",
+      "timestamp": "2026-11-09T13:05:44.065040+00:00",
       "details": {
         "path": "pipeline/cache/output/odis_pois.parquet"
       }
     },
     "generate_referentiels": {
       "status": "CREATED",
-      "timestamp": "2026-11-09T12:31:02.277191+00:00",
+      "timestamp": "2026-11-09T13:05:44.516501+00:00",
       "details": {
         "path": "pipeline/cache/output/odis_referentiels.parquet"
       }
@@ -96,7 +96,7 @@
     },
     "ingest_all": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-09T12:30:41.660513+00:00",
+      "timestamp": "2026-11-09T13:05:11.173938+00:00",
       "details": {}
     },
     "clean_communes": {
@@ -178,7 +178,7 @@
     },
     "build_communes": {
       "status": "CREATED",
-      "timestamp": "2026-11-09T12:30:58.807410+00:00",
+      "timestamp": "2026-11-09T13:05:41.349572+00:00",
       "details": {
         "path": "pipeline/cache/output/odis_communes_pre.parquet",
         "rows": 34967
@@ -186,7 +186,7 @@
     },
     "build_bassins_de_vie": {
       "status": "CREATED",
-      "timestamp": "2026-11-09T12:30:59.664039+00:00",
+      "timestamp": "2026-11-09T13:05:42.142393+00:00",
       "details": {
         "path": "pipeline/cache/output/odis_bassins_de_vie.parquet",
         "rows": 1707
@@ -194,7 +194,7 @@
     },
     "build_all": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-09T12:31:02.398683+00:00",
+      "timestamp": "2026-11-09T13:05:44.623107+00:00",
       "details": {}
     },
     "clean_voisins": {
@@ -206,7 +206,7 @@
     },
     "build_vertical_tables": {
       "status": "REFUGEE_ASSOCIATIONS",
-      "timestamp": "2026-11-09T12:30:59.984191+00:00",
+      "timestamp": "2026-11-09T13:05:42.404519+00:00",
       "details": {
         "path": "pipeline/cache/output/odis_refugee_associations.parquet"
       }
@@ -253,7 +253,7 @@
     },
     "apply_prescoring": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-09T12:31:15.573315+00:00",
+      "timestamp": "2026-11-09T13:05:50.289610+00:00",
       "details": {
         "columns": 131,
         "path": "pipeline/cache/output/odis_communes.parquet",
@@ -804,7 +804,7 @@
     },
     "score_bassins_de_vie": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-09T12:31:15.752704+00:00",
+      "timestamp": "2026-11-09T13:05:50.420981+00:00",
       "details": {
         "rows": 1707
       }
@@ -850,7 +850,7 @@
     },
     "clean_population_details": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-09T12:28:44.080608+00:00",
+      "timestamp": "2026-11-09T13:05:03.915987+00:00",
       "details": {
         "rows": 34858,
         "path": "pipeline/cache/clean/population_details.parquet"
@@ -878,7 +878,7 @@
     },
     "inc_services_core_scaled": {
       "status": "CALCULATED",
-      "timestamp": "2026-11-09T12:31:13.019944+00:00",
+      "timestamp": "2026-11-09T13:05:48.362631+00:00",
       "details": {}
     },
     "clean_regions": {
@@ -1011,7 +1011,7 @@
     },
     "clean_electoral_history": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-09T10:51:30.466374+00:00",
+      "timestamp": "2026-11-09T13:05:11.169295+00:00",
       "details": {
         "rows": 37036,
         "path": "pipeline/cache/clean/electoral_history.parquet"
@@ -1032,7 +1032,7 @@
     },
     "build_salesforce_jaccueille_bdv": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-09T12:31:02.398013+00:00",
+      "timestamp": "2026-11-09T13:05:44.622183+00:00",
       "details": {
         "path": "pipeline/cache/output/salesforce_jaccueille_bdv.parquet",
         "rows": 462
@@ -1205,7 +1205,7 @@
     },
     "population_details": {
       "status": "skipped_optional",
-      "timestamp": "2026-11-09T12:28:42.143726+00:00",
+      "timestamp": "2026-11-09T13:04:59.838679+00:00",
       "file": "managed by Odace"
     },
     "nomenclature_waldec": {
@@ -1309,9 +1309,9 @@
       "file": "Failed to execute query for 'odace_query_bpe' on Odace: 500 Server Error: Internal Server Error for url: https://odace.services.d4g.fr/api/data/query"
     },
     "electoral_history": {
-      "status": "refreshed",
-      "timestamp": "2026-11-09T10:50:58.260793+00:00",
-      "file": "pipeline/cache/raw/staging_candidats_results.parquet"
+      "status": "reused_within_ttl",
+      "timestamp": "2026-11-09T11:00:03.762553+00:00",
+      "file": "pipeline/cache/raw/candidats_results.parquet"
     },
     "jaccueille_prospects": {
       "status": "CACHED",
@@ -1330,12 +1330,12 @@
     },
     "odace_dim_siae_structure": {
       "status": "error",
-      "timestamp": "2026-11-09T12:30:54.818446+00:00",
+      "timestamp": "2026-11-09T13:05:37.640606+00:00",
       "file": "CRITICAL ERROR: Failed to export dim_siae_structure from Odace API: 429 Client Error: Too Many Requests for url: https://odas-app-trlhxf55uq-ew.a.run.app/api/data/export/dim_siae_structure?format=parquet"
     },
     "odace_ref_service_inclusion": {
       "status": "error",
-      "timestamp": "2026-11-09T12:31:02.178471+00:00",
+      "timestamp": "2026-11-09T13:05:44.419802+00:00",
       "file": "CRITICAL ERROR: Failed to export ref_service_inclusion from Odace API: 429 Client Error: Too Many Requests for url: https://odas-app-trlhxf55uq-ew.a.run.app/api/data/export/ref_service_inclusion?format=parquet"
     }
   }

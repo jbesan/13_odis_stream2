@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict
 
-import numpy as np
 import pandas as pd
 
 from pipeline.common import PipelineLogger
@@ -194,26 +193,39 @@ def clean_population_details(config: Dict[str, Any], logger: PipelineLogger) -> 
                 df_pivot.columns = [f"pop_{c[0]}_{c[1]}" for c in df_pivot.columns]
                 df_pivot = df_pivot.reset_index()
 
-                for col in details_cfg.expected_columns:
-                    if col not in df_pivot.columns:
-                        df_pivot[col] = np.nan
+                min_communes = details_cfg.min_communes_per_year
+                min_years = details_cfg.min_years
 
-                jeune_cols = [
-                    c
+                jeune_years = {
+                    int(c.split("_")[-1])
                     for c in df_pivot.columns
-                    if c.startswith("pop_jeune_") and df_pivot[c].notna().sum() >= 30000
-                ]
-                active_cols = [
-                    c
+                    if c.startswith("pop_jeune_")
+                    and c.split("_")[-1].isdigit()
+                    and df_pivot[c].notna().sum() >= min_communes
+                }
+                active_years = {
+                    int(c.split("_")[-1])
                     for c in df_pivot.columns
                     if c.startswith("pop_active_")
-                    and df_pivot[c].notna().sum() >= 30000
-                ]
-                if len(jeune_cols) < 2 or len(active_cols) < 2:
+                    and c.split("_")[-1].isdigit()
+                    and df_pivot[c].notna().sum() >= min_communes
+                }
+                valid_years = sorted(jeune_years & active_years)
+                if len(valid_years) < min_years:
                     raise PipelineRunError(
-                        f"Odace population_details requires at least 2 census years with >=30000 communes "
-                        f"(found valid jeune={jeune_cols}, active={active_cols})"
+                        f"Odace population_details requires at least {min_years} census years with >={min_communes} communes "
+                        f"(found valid years={valid_years}, jeune={sorted(jeune_years)}, active={sorted(active_years)})"
                     )
+
+                prev_yr, latest_yr = valid_years[-2], valid_years[-1]
+                kept_cols = [
+                    "codgeo",
+                    f"pop_jeune_{prev_yr}",
+                    f"pop_jeune_{latest_yr}",
+                    f"pop_active_{prev_yr}",
+                    f"pop_active_{latest_yr}",
+                ]
+                df_pivot = df_pivot[kept_cols]
 
                 output_path = context.CLEAN_DIR / "population_details.parquet"
                 df_pivot.to_parquet(output_path)

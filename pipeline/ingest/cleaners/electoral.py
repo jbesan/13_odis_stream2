@@ -177,8 +177,7 @@ def clean_electoral_history(config: Dict[str, Any], logger: PipelineLogger) -> N
     source = config["sources"]["electoral_history"]
     path = context.CACHE_DIR / source["local_name"]
     if not path.exists():
-        logging.warning(f"Electoral history source file not found at: {path}")
-        return
+        raise PipelineRunError(f"Electoral history source file not found at: {path}")
 
     domain_cfg = get_domain_contracts()
     electoral_cfg = domain_cfg.electoral
@@ -193,14 +192,18 @@ def clean_electoral_history(config: Dict[str, Any], logger: PipelineLogger) -> N
     # 1. Scan Parquet lazily with Polars
     lazy_df = pl.scan_parquet(path)
 
-    # 2. Filter relevant elections (municipales and présidentielles)
+    # 2. Filter relevant elections (municipales and présidentielles) and normalize codgeo early
     filtered = (
         lazy_df.filter(
             pl.col("id_election").cast(pl.Utf8).str.contains(election_pattern)
         )
         .select(
             [
-                pl.col("code_commune").cast(pl.Utf8).str.strip_chars(),
+                pl.col("code_commune")
+                .cast(pl.Utf8)
+                .str.strip_chars()
+                .str.zfill(5)
+                .alias("code_commune"),
                 pl.col("id_election").cast(pl.Utf8).str.strip_chars(),
                 pl.col("nuance").fill_null("").cast(pl.Utf8).str.strip_chars(),
                 pl.col("libelle_abrege_liste")
@@ -210,6 +213,11 @@ def clean_electoral_history(config: Dict[str, Any], logger: PipelineLogger) -> N
                 pl.col("nom").fill_null("").cast(pl.Utf8).str.strip_chars(),
                 pl.col("voix").fill_null(0).cast(pl.Float64),
             ]
+        )
+        .filter(
+            pl.col("code_commune").is_not_null()
+            & (pl.col("code_commune") != "")
+            & (pl.col("code_commune") != "00000")
         )
     )
 
@@ -228,9 +236,12 @@ def clean_electoral_history(config: Dict[str, Any], logger: PipelineLogger) -> N
         .alias("pct")
     )
 
-    # 5. Pick winner per commune+election (row with max votes)
+    # 5. Pick winner per commune+election (row with max votes, deterministic tie-break)
     winners = (
-        agg.sort("voix", descending=True)
+        agg.sort(
+            ["voix", "nuance", "libelle_abrege_liste", "nom"],
+            descending=[True, False, False, False],
+        )
         .group_by(["code_commune", "id_election"], maintain_order=True)
         .first()
     )
@@ -252,9 +263,9 @@ def clean_electoral_history(config: Dict[str, Any], logger: PipelineLogger) -> N
 
     id_el = pl.col("id_election")
     parts = id_el.str.split("_")
-    year = parts.list.get(0)
-    el_type = parts.list.get(1)
-    tour_key = parts.list.get(2)
+    year = parts.list.get(0, null_on_oob=True).fill_null("")
+    el_type = parts.list.get(1, null_on_oob=True).fill_null("")
+    tour_key = parts.list.get(2, null_on_oob=True).fill_null("")
 
     default_date = year + "-01-01"
     date_col = id_el.replace_strict(election_dates, default=default_date).alias("date")
@@ -274,7 +285,7 @@ def clean_electoral_history(config: Dict[str, Any], logger: PipelineLogger) -> N
                 formatted_election,
             ]
         )
-        .sort(["code_commune", "date"], descending=[False, True])
+        .sort(["code_commune", "date", "id_election"], descending=[False, True, True])
         .collect()
     )
 
@@ -325,7 +336,8 @@ def clean_electoral_history(config: Dict[str, Any], logger: PipelineLogger) -> N
                 "electoral_history": json.dumps(v, ensure_ascii=False),
             }
             for k, v in commune_histories.items()
-        ]
+        ],
+        schema={"codgeo": pl.Utf8, "electoral_history": pl.Utf8},
     )
 
     output_path = context.CLEAN_DIR / "electoral_history.parquet"

@@ -203,12 +203,16 @@ def fetch_rome_referential(
             )
 
             if not df.empty and code_col and label_col:
-                df_out = pd.DataFrame(
-                    {
-                        "code": df[code_col].astype(str).str.strip(),
-                        "label": df[label_col].astype(str).str.strip(),
-                    }
-                ).dropna().drop_duplicates()
+                df_out = (
+                    pd.DataFrame(
+                        {
+                            "code": df[code_col].astype(str).str.strip(),
+                            "label": df[label_col].astype(str).str.strip(),
+                        }
+                    )
+                    .dropna()
+                    .drop_duplicates()
+                )
                 df_out.to_parquet(local_path)
                 logging.info(
                     f"✅ [ROME] Saved {len(df_out)} métiers to {local_path} from ODAS {odace_table}"

@@ -41,7 +41,11 @@ def clean_school_effectifs(config: Dict[str, Any], logger: PipelineLogger) -> No
             if not df_odace.empty and "numero_ecole" in df_odace.columns:
                 # Filter for latest year
                 year_col = next(
-                    (c for c in ["annee_rentree_scolaire", "rentree_scolaire"] if c in df_odace.columns),
+                    (
+                        c
+                        for c in ["annee_rentree_scolaire", "rentree_scolaire"]
+                        if c in df_odace.columns
+                    ),
                     None,
                 )
                 if year_col:
@@ -52,21 +56,33 @@ def clean_school_effectifs(config: Dict[str, Any], logger: PipelineLogger) -> No
 
                 # Fetch annuaire to resolve UAI -> codgeo
                 annuaire_cfg = config.get("sources", {}).get("education_annuaire", {})
-                annuaire_table = annuaire_cfg.get("odace_table", "dim_etablissement_scolaire")
+                annuaire_table = annuaire_cfg.get(
+                    "odace_table", "dim_etablissement_scolaire"
+                )
                 df_annuaire = client.fetch_table(
                     annuaire_table, ttl_days=annuaire_cfg.get("ttl_days", 30)
                 )
 
                 uai_col = next(
-                    (c for c in df_annuaire.columns if c in set(edu_cfg.uai_column_candidates)),
+                    (
+                        c
+                        for c in df_annuaire.columns
+                        if c in set(edu_cfg.uai_column_candidates)
+                    ),
                     None,
                 )
                 insee_col = next(
-                    (c for c in df_annuaire.columns if c in set(edu_cfg.insee_column_candidates)),
+                    (
+                        c
+                        for c in df_annuaire.columns
+                        if c in set(edu_cfg.insee_column_candidates)
+                    ),
                     None,
                 )
                 if not uai_col or not insee_col:
-                    raise PipelineRunError("Odace education_annuaire is missing its UAI or commune code columns")
+                    raise PipelineRunError(
+                        "Odace education_annuaire is missing its UAI or commune code columns"
+                    )
 
                 df_ref = (
                     df_annuaire[[uai_col, insee_col]]
@@ -74,8 +90,12 @@ def clean_school_effectifs(config: Dict[str, Any], logger: PipelineLogger) -> No
                     .rename(columns={uai_col: "numero_ecole", insee_col: "codgeo"})
                 )
                 df_ref["codgeo"] = ingest.normalize_code(df_ref["codgeo"], 5)
-                df_ref["numero_ecole"] = df_ref["numero_ecole"].astype(str).str.strip().str.upper()
-                df_eff["numero_ecole"] = df_eff["numero_ecole"].astype(str).str.strip().str.upper()
+                df_ref["numero_ecole"] = (
+                    df_ref["numero_ecole"].astype(str).str.strip().str.upper()
+                )
+                df_eff["numero_ecole"] = (
+                    df_eff["numero_ecole"].astype(str).str.strip().str.upper()
+                )
 
                 merged = df_eff.merge(df_ref, on="numero_ecole", how="left")
                 valid = merged.dropna(subset=["codgeo"]).copy()
@@ -83,8 +103,12 @@ def clean_school_effectifs(config: Dict[str, Any], logger: PipelineLogger) -> No
                 effectif_col = "nombre_total_eleves"
                 classes_col = "nombre_total_classes"
                 if effectif_col in valid.columns and classes_col in valid.columns:
-                    valid[effectif_col] = pd.to_numeric(valid[effectif_col], errors="coerce").fillna(0)
-                    valid[classes_col] = pd.to_numeric(valid[classes_col], errors="coerce").fillna(0)
+                    valid[effectif_col] = pd.to_numeric(
+                        valid[effectif_col], errors="coerce"
+                    ).fillna(0)
+                    valid[classes_col] = pd.to_numeric(
+                        valid[classes_col], errors="coerce"
+                    ).fillna(0)
 
                     valid["students_per_class"] = np.where(
                         valid[classes_col] > 0,
@@ -92,7 +116,9 @@ def clean_school_effectifs(config: Dict[str, Any], logger: PipelineLogger) -> No
                         0.0,
                     )
                     threshold = edu_cfg.risky_school_class_threshold
-                    valid["is_risky"] = (valid["students_per_class"] < threshold).astype(int)
+                    valid["is_risky"] = (
+                        valid["students_per_class"] < threshold
+                    ).astype(int)
 
                     df_agg = (
                         valid.groupby("codgeo")
@@ -130,7 +156,11 @@ def clean_school_effectifs(config: Dict[str, Any], logger: PipelineLogger) -> No
                     logger.log_step(
                         "clean_school_effectifs",
                         "COMPLETED",
-                        {"path": str(output_path), "rows": len(df_agg), "source": "odace"},
+                        {
+                            "path": str(output_path),
+                            "rows": len(df_agg),
+                            "source": "odace",
+                        },
                     )
                     return
             else:
@@ -139,7 +169,9 @@ def clean_school_effectifs(config: Dict[str, Any], logger: PipelineLogger) -> No
                 )
         except Exception as e:
             logging.error(f"Failed to fetch fact_effectif_scolaire from Odace: {e}")
-        raise PipelineRunError("Odace education_effectifs did not produce a usable dataset")
+        raise PipelineRunError(
+            "Odace education_effectifs did not produce a usable dataset"
+        )
 
     # Legacy fallback
     path = context.CACHE_DIR / source.get("local_name", "education_effectifs.csv")
@@ -284,35 +316,53 @@ def clean_formations(config: Dict[str, Any], logger: PipelineLogger) -> None:
                 ref_cfg.get("odace_table", "ref_formation"),
                 ttl_days=ref_cfg.get("ttl_days", 365),
             )
-            code_col = next((c for c in ["code_formation", "code"] if c in df_ref.columns), None)
+            code_col = next(
+                (c for c in ["code_formation", "code"] if c in df_ref.columns), None
+            )
             label_col = next(
-                (c for c in ["libelle_formation", "label", "libelle"] if c in df_ref.columns),
+                (
+                    c
+                    for c in ["libelle_formation", "label", "libelle"]
+                    if c in df_ref.columns
+                ),
                 None,
             )
             if not df_ref.empty and code_col and label_col:
                 df_out_ref = pd.DataFrame()
                 df_out_ref["code"] = ingest.normalize_code(df_ref[code_col], 3)
                 df_out_ref["label"] = df_ref[label_col].astype(str).str.strip()
-                df_out_ref = df_out_ref.dropna(subset=["code", "label"]).drop_duplicates()
+                df_out_ref = df_out_ref.dropna(
+                    subset=["code", "label"]
+                ).drop_duplicates()
 
                 output_ref = context.CLEAN_DIR / "formations_referentiel.parquet"
                 df_out_ref.to_parquet(output_ref)
                 logger.log_step(
                     "clean_formations",
                     "REFERENTIEL",
-                    {"path": str(output_ref), "rows": len(df_out_ref), "source": "odace"},
+                    {
+                        "path": str(output_ref),
+                        "rows": len(df_out_ref),
+                        "source": "odace",
+                    },
                 )
             else:
                 logging.warning(
                     "Odace fetch returned empty or invalid data for ref_formation."
                 )
-                raise PipelineRunError("Odace formations_referentiel returned empty or invalid data")
+                raise PipelineRunError(
+                    "Odace formations_referentiel returned empty or invalid data"
+                )
         except Exception as e:
             logging.error(f"Failed to fetch ref_formation from Odace: {e}")
-            raise PipelineRunError("Odace formations_referentiel did not produce a usable dataset") from e
+            raise PipelineRunError(
+                "Odace formations_referentiel did not produce a usable dataset"
+            ) from e
     else:
         # Legacy fallback
-        ref_path = context.CACHE_DIR / ref_cfg.get("local_name", "formations_referentiel.xlsx")
+        ref_path = context.CACHE_DIR / ref_cfg.get(
+            "local_name", "formations_referentiel.xlsx"
+        )
         if ref_path.exists():
             df_ref = ingest.load_dataset(ref_path, ref_cfg, header=None, skiprows=2)
             if len(df_ref.columns) >= 2:
@@ -340,12 +390,17 @@ def clean_formations(config: Dict[str, Any], logger: PipelineLogger) -> None:
         if odace_cp_path.exists():
             try:
                 cp_raw = pd.read_parquet(odace_cp_path)
-                if "commune_insee_code" in cp_raw.columns and "code_postal" in cp_raw.columns:
+                if (
+                    "commune_insee_code" in cp_raw.columns
+                    and "code_postal" in cp_raw.columns
+                ):
                     cp_df = cp_raw.rename(columns={"commune_insee_code": "codgeo"})[
                         ["code_postal", "codgeo"]
                     ].drop_duplicates()
                     cp_df["codgeo"] = ingest.normalize_code(cp_df["codgeo"], 5)
-                    cp_df["code_postal"] = ingest.normalize_code(cp_df["code_postal"], 5)
+                    cp_df["code_postal"] = ingest.normalize_code(
+                        cp_df["code_postal"], 5
+                    )
             except Exception as ex:
                 logging.debug(f"Could not load fallback odace_ref_code_postal: {ex}")
 
@@ -399,19 +454,29 @@ def clean_formations(config: Dict[str, Any], logger: PipelineLogger) -> None:
                 logger.log_step(
                     "clean_formations",
                     "ANNUAIRE",
-                    {"path": str(output_annuaire), "rows": len(df_out), "source": "odace"},
+                    {
+                        "path": str(output_annuaire),
+                        "rows": len(df_out),
+                        "source": "odace",
+                    },
                 )
             else:
                 logging.warning(
                     "Odace fetch returned empty or invalid data for dim_organisme_formation."
                 )
-                raise PipelineRunError("Odace formations_annuaire returned empty or invalid data")
+                raise PipelineRunError(
+                    "Odace formations_annuaire returned empty or invalid data"
+                )
         except Exception as e:
             logging.error(f"Failed to fetch dim_organisme_formation from Odace: {e}")
-            raise PipelineRunError("Odace formations_annuaire did not produce a usable dataset") from e
+            raise PipelineRunError(
+                "Odace formations_annuaire did not produce a usable dataset"
+            ) from e
     else:
         # Legacy fallback
-        annuaire_path = context.CACHE_DIR / annuaire_cfg.get("local_name", "formations_annuaire.csv")
+        annuaire_path = context.CACHE_DIR / annuaire_cfg.get(
+            "local_name", "formations_annuaire.csv"
+        )
         if annuaire_path.exists():
             try:
                 df_annuaire = pd.read_csv(
@@ -449,7 +514,9 @@ def clean_formations(config: Dict[str, Any], logger: PipelineLogger) -> None:
 
             if cp_col and formation_cols:
                 df_melted = df_annuaire.melt(
-                    id_vars=[cp_col], value_vars=formation_cols, value_name="formation_code"
+                    id_vars=[cp_col],
+                    value_vars=formation_cols,
+                    value_name="formation_code",
                 ).dropna(subset=["formation_code"])
 
                 df_melted["code_postal"] = (

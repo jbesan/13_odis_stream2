@@ -140,6 +140,9 @@ def _search_referentiels_logic(query: str, domain: str) -> List[Dict[str, Any]]:
     else:
         logger.error("   ⚠️ No domain specified.")
 
+    if df.empty:
+        return []
+
     # 2. Robust Search Logic
     STOP_WORDS = {
         "le",

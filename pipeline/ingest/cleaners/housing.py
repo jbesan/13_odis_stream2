@@ -164,25 +164,46 @@ def transform_housing_occupation_odace(
 
     target_year = str(contract.get("reference_year", "latest"))
     required_indicators = contract["required_indicators"]
+    minimum_per_indicator = contract["minimum_communes_per_indicator"]
+    value_contract = contract["value"]
+    nullable = value_contract.get("nullable", True)
 
-    if target_year != "latest" and target_year in df["annee"].values:
+    if target_year != "latest":
         reference_year = target_year
     else:
-        # Resolve latest available year covering all required indicators
         available_years = sorted(df["annee"].unique(), reverse=True)
-        valid_years = [
+        indicator_years = [
             yr
             for yr in available_years
             if set(required_indicators).issubset(
                 set(df.loc[df["annee"] == yr, "indicateur_occupation"])
             )
         ]
-        if not valid_years:
+        if not indicator_years:
             raise PipelineRunError(
                 "Odace fact_occupation_logement has no year containing all required indicators "
                 f"({required_indicators})"
             )
-        reference_year = valid_years[0]
+
+        # Prefer the newest year that also satisfies non-null and per-indicator coverage
+        fully_valid_years = []
+        for yr in indicator_years:
+            yr_df = df.loc[
+                (df["annee"] == yr)
+                & df["indicateur_occupation"].isin(required_indicators)
+            ]
+            yr_vals = pd.to_numeric(yr_df["valeur"], errors="coerce")
+            if not nullable and yr_vals.isna().any():
+                continue
+            cov = yr_df.groupby("indicateur_occupation")["commune_insee_code"].nunique()
+            if all(
+                cov.get(ind, 0) >= minimum_per_indicator for ind in required_indicators
+            ):
+                fully_valid_years.append(yr)
+
+        reference_year = (
+            fully_valid_years[0] if fully_valid_years else indicator_years[0]
+        )
         logging.info(
             f"Odace housing_occupation: Resolved latest valid reference year: {reference_year}"
         )
@@ -340,11 +361,7 @@ def clean_loyers(config: Dict[str, Any], logger: PipelineLogger) -> None:
                     df_odace["loyer_predit_m2"], errors="coerce"
                 )
                 df_out = df_out.dropna(subset=["codgeo", "loyer_app_m2"])
-                df_out = (
-                    df_out.groupby("codgeo")["loyer_app_m2"]
-                    .mean()
-                    .reset_index()
-                )
+                df_out = df_out.groupby("codgeo")["loyer_app_m2"].mean().reset_index()
 
                 if not df_out.empty:
                     output_path = context.CLEAN_DIR / "loyers.parquet"

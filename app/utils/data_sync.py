@@ -137,7 +137,9 @@ def download_and_verify_release(
     manifest = json.loads(manifest_bytes)
     outputs: List[Dict[str, Any]] = manifest.get("outputs", [])
     if not outputs:
-        raise RuntimeError(f"Release manifest for {release_version} contains no outputs")
+        raise RuntimeError(
+            f"Release manifest for {release_version} contains no outputs"
+        )
 
     downloaded: List[str] = []
     skipped: List[str] = []
@@ -193,9 +195,8 @@ def download_and_verify_release(
 
         # Standalone communes_france.geojson if not declared in manifest outputs
         static_geojson = static_dir / "communes_france.geojson"
-        already_handled_geojson = (
-            "communes_france.geojson" in skipped
-            or any(name == "communes_france.geojson" for _, _, name in staged_moves)
+        already_handled_geojson = "communes_france.geojson" in skipped or any(
+            name == "communes_france.geojson" for _, _, name in staged_moves
         )
         if not already_handled_geojson and (force or not static_geojson.exists()):
             release_geojson_blob = bucket.blob(
@@ -235,12 +236,12 @@ def download_and_verify_release(
 
         for staged_file, dest_file, name in staged_moves:
             dest_file.parent.mkdir(parents=True, exist_ok=True)
-            staged_file.replace(dest_file)
+            shutil.move(str(staged_file), str(dest_file))
             downloaded.append(name)
 
-        staged_manifest.replace(target_dir / "data_manifest.json")
+        shutil.move(str(staged_manifest), str(target_dir / "data_manifest.json"))
         if staged_pointer is not None:
-            staged_pointer.replace(target_dir / "current.json")
+            shutil.move(str(staged_pointer), str(target_dir / "current.json"))
 
     finally:
         if staging_dir.exists():
@@ -349,6 +350,9 @@ def sync_active_release(
             try:
                 fallback_pointer = dict(pointer)
                 fallback_pointer["version"] = previous_version
+                fallback_pointer["fallback_from_version"] = release_version
+                fallback_pointer.pop("manifest", None)
+                fallback_pointer.pop("files", None)
                 fallback_pointer_raw = json.dumps(
                     fallback_pointer, ensure_ascii=False, indent=2
                 ).encode("utf-8")
