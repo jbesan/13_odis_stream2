@@ -141,3 +141,67 @@ def test_compute_ctai_scores_plm_remapping(tmp_path):
     assert scores_dict["13055"] == 1.0
     assert scores_dict["13201"] == 1.0
     assert scores_dict["38185"] == 0.0
+
+
+def test_compute_ctai_scores_parquet_referentials_and_aliases(tmp_path):
+    # Test reading parquet referentials for regions and departments, plus EPCI alias corrections
+    df_reg = pd.DataFrame([
+        {"code_region": "53", "libelle_region": "Bretagne"},
+        {"code_region": "24", "libelle_region": "Centre-Val de Loire"},
+    ])
+    df_reg.to_parquet(tmp_path / "odace_ref_region.parquet")
+
+    df_dep = pd.DataFrame([
+        {"code_departement": "10", "libelle_departement": "Aube", "code_region": "44"},
+        {"code_departement": "44", "libelle_departement": "Loire-Atlantique", "code_region": "52"},
+    ])
+    df_dep.to_parquet(tmp_path / "odace_ref_departement.parquet")
+
+    df_epci = pd.DataFrame([
+        {"code_epci": "244400644", "libelle_epci": "CA de la Région Nazairienne et de l'Estuaire (CARENE)"},
+        {"code_epci": "200070092", "libelle_epci": "CA du Libournais"},
+    ])
+    df_epci.to_parquet(tmp_path / "odace_ref_epci.parquet")
+
+    df_commune_epci = pd.DataFrame([
+        {"code_epci": "244400644", "commune_insee_code": "44184"},  # Saint-Nazaire
+        {"code_epci": "244400644", "commune_insee_code": "44055"},  # Donges
+        {"code_epci": "200070092", "commune_insee_code": "33243"},  # Libourne
+    ])
+    df_commune_epci.to_parquet(tmp_path / "odace_ref_commune_epci.parquet")
+
+    ctai_data = {
+        "regions": ["Bretagne"],
+        "departements": ["Aube"],
+        "epcis": ["Saint-Nazaire", "Libourne"],
+        "communes": []
+    }
+    json_path = tmp_path / "ctai_signataires.json"
+    json_path.write_text(json.dumps(ctai_data, ensure_ascii=False, indent=2))
+
+    communes_df = pd.DataFrame({
+        "codgeo": ["29019", "10081", "44184", "44055", "33243", "75056"],
+        "dep_code": ["29", "10", "44", "44", "33", "75"],
+        "reg_code": ["53", "44", "52", "52", "75", "11"],
+        "commune_name": ["Brest", "Troyes", "Saint-Nazaire", "Donges", "Libourne", "Paris"]
+    })
+
+    scores = compute_ctai_scores(
+        communes_df=communes_df,
+        cache_raw_dir=tmp_path,
+        json_path=json_path
+    )
+
+    scores_dict = dict(zip(communes_df["codgeo"], scores))
+    # Brest is in Bretagne region -> gets 0.5
+    assert scores_dict["29019"] == 0.5
+    # Troyes is in Aube department -> gets 0.5
+    assert scores_dict["10081"] == 0.5
+    # Saint-Nazaire is member of CARENE via alias -> gets 1.0
+    assert scores_dict["44184"] == 1.0
+    # Donges is also member of CARENE -> gets 1.0
+    assert scores_dict["44055"] == 1.0
+    # Libourne is member of CA du Libournais via alias -> gets 1.0
+    assert scores_dict["33243"] == 1.0
+    # Paris is not a member -> gets 0.0
+    assert scores_dict["75056"] == 0.0

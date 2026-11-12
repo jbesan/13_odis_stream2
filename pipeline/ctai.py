@@ -15,7 +15,10 @@ logger = logging.getLogger(__name__)
 # Manual corrections specifically for CTAI data typo(s)
 MANUAL_EPCI_CORRECTIONS = {
     "sijon": "dijon",
-    "le clunisois": "du clunisois"
+    "le clunisois": "du clunisois",
+    "saint-nazaire": "region nazairienne",
+    "saint nazaire": "region nazairienne",
+    "libourne": "libournais",
 }
 
 def compute_ctai_scores(
@@ -59,8 +62,27 @@ def compute_ctai_scores(
     epci_lookup = {}
     epci_to_communes = {}
 
+    regions_parquet = cache_raw_dir / "odace_ref_region.parquet"
     regions_file = cache_raw_dir / "referentiel_regions.json"
-    if regions_file.exists():
+    if regions_parquet.exists():
+        try:
+            df_reg = pd.read_parquet(regions_parquet)
+            lbl_col = "libelle_region" if "libelle_region" in df_reg.columns else "libelle"
+            code_col = "code_region" if "code_region" in df_reg.columns else "code"
+            region_name_to_code = {
+                clean_and_normalize(str(r[lbl_col])): str(r[code_col])
+                for _, r in df_reg.iterrows()
+                if pd.notna(r.get(lbl_col))
+            }
+            # Add aliases
+            region_name_to_code[clean_and_normalize("Bourgogne-Franche-Comté")] = "27"
+            region_name_to_code[clean_and_normalize("Centre-Val de Loire")] = "24"
+            region_name_to_code[clean_and_normalize("Occitanie")] = "76"
+            region_name_to_code[clean_and_normalize("Auvergne Rhône-Alpes")] = "84"
+            region_name_to_code[clean_and_normalize("Île-de-France")] = "11"
+        except Exception as e:
+            logger.warning(f"Failed to parse odace_ref_region.parquet: {e}")
+    elif regions_file.exists():
         try:
             with open(regions_file, "r") as f:
                 regs = json.load(f)
@@ -74,8 +96,21 @@ def compute_ctai_scores(
         except Exception as e:
             logger.warning(f"Failed to parse referentiel_regions.json: {e}")
 
+    depts_parquet = cache_raw_dir / "odace_ref_departement.parquet"
     depts_file = cache_raw_dir / "referentiel_departements.json"
-    if depts_file.exists():
+    if depts_parquet.exists():
+        try:
+            df_dep = pd.read_parquet(depts_parquet)
+            lbl_col = "libelle_departement" if "libelle_departement" in df_dep.columns else "libelle"
+            code_col = "code_departement" if "code_departement" in df_dep.columns else "code"
+            dept_name_to_code = {
+                clean_and_normalize(str(r[lbl_col])): clean_dept_code(str(r[code_col]))
+                for _, r in df_dep.iterrows()
+                if pd.notna(r.get(lbl_col))
+            }
+        except Exception as e:
+            logger.warning(f"Failed to parse odace_ref_departement.parquet: {e}")
+    elif depts_file.exists():
         try:
             with open(depts_file, "r") as f:
                 depts = json.load(f)

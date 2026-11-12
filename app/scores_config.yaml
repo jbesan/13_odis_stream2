@@ -197,7 +197,7 @@ scores:
     metric_type: discrete
     discrete_mapping:
       1.0: "Commune / EPCI signataire"
-      0.5: "Département signataire"
+      0.5: "Département ou Région signataire"
       0.0: "Non signataire"
   weight: 3.0
   min_bound: 0.0
