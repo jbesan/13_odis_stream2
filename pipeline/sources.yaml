@@ -287,6 +287,12 @@ sources:
     ttl_days: 30
     description: "Structures de l'insertion par l'activité économique (SIAE)"
 
+  inclusion_jobs:
+    use_odace: true
+    odace_table: "fact_siae_poste"
+    ttl_days: 7
+    description: "Les emplois de l'inclusion — Postes ouverts en SIAE"
+
   population_details:
     use_odace: true
     odace_table: "fact_demographie"
@@ -368,6 +374,8 @@ local_files:
     format: "api"
     ttl_days: 7
     description: "Les emplois de l'inclusion API - Offres d'emploi"
+    use_odace: true
+    odace_table: "fact_siae_poste"
     used_columns:
       - id
       - structure_siret

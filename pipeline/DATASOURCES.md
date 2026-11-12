@@ -213,6 +213,15 @@
 - Type: API (JSON)
 - Description: Récupération des offres d'emploi en temps réel filtrées par code ROME et commune. Utilisé pour le calcul de tension et le scoring "Live".
 
+## Offres d'emploi en insertion (SIAE Jobs)
+
+- Source active: ODAS Silver `fact_siae_poste` (13 000 postes uniques, 12 006 filtrés métropole)
+- Tables auxiliaires: `dim_siae_structure` (typologies ACI/AI/EI/ETTI/EITI/GEIQ/OPCS) et `dim_geo` (résolution commune)
+- Cache ETL brut: `pipeline/cache/raw/odace_fact_siae_poste.parquet`
+- Sorties générées: `pipeline/cache/output/odis_inclusion_jobs.parquet`, `odis_inclusion_structures.parquet`, `odis_inclusion_jobs_coverage.parquet`
+- Cleaner pipeline: `pipeline/ingest/cleaners/jobs.py::clean_inclusion_jobs`
+- Description: Offres d'emploi issues de la plateforme "Les emplois de l'inclusion", dédoublonnées sur `job_id`, enrichies des titres, descriptions, profils et types de contrat, rattachées géographiquement à la commune du lieu ou du siège employeur.
+
 ## Formations Annuaire
 
 - Données: https://www.data.gouv.fr/datasets/liste-publique-des-organismes-de-formation-l-6351-7-1-du-code-du-travail/#/resources/ac59a0f5-fa83-4b82-bf12-3c5806d4f19f

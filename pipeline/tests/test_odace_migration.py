@@ -16,6 +16,7 @@ from pipeline.ingest import (
     clean_electoral_history,
     clean_formations,
     clean_housing_occupation,
+    clean_inclusion_jobs,
     clean_loyers,
     clean_nomenclature_waldec,
     clean_political,
@@ -2914,4 +2915,173 @@ def test_clean_electoral_history_odace_failure(mock_get_client, temp_cache_dirs)
 
     with pytest.raises(PipelineRunError, match="Odace electoral_history did not produce a usable dataset"):
         clean_electoral_history(config, MagicMock(spec=PipelineLogger))
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_inclusion_jobs_odace_success(mock_get_client, tmp_path):
+    """Verifies clean_inclusion_jobs ingests ODAS fact_siae_poste in Mode A (metro only)."""
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+
+    # Prepare mock data
+    df_postes_data = pd.DataFrame(
+        [
+            # 1. Metro with explicit lieu
+            {
+                "poste_id": 101,
+                "structure_siret": "12345678900010",
+                "commune_sk": "sk-75001",
+                "lieu_commune_insee_code": "75001",
+                "rome_code": "A1203",
+                "postes_nombre": 2,
+                "intitule_poste": "Ouvrier agricole",
+                "description_poste": "Travail de la terre",
+                "profil_recherche": "Motivation",
+                "contrat_type": "CDD insertion",
+            },
+            # 2. Metro with missing lieu (resolved via commune_sk)
+            {
+                "poste_id": 102,
+                "structure_siret": "98765432100020",
+                "commune_sk": "sk-13054",
+                "lieu_commune_insee_code": None,
+                "rome_code": "M1601",
+                "postes_nombre": 1,
+                "intitule_poste": "Agent d'accueil",
+                "description_poste": "Accueil du public",
+                "profil_recherche": "Sens relationnel",
+                "contrat_type": "GEIQ Alternance",
+            },
+            # 3. DOM-TOM post (should be excluded in Mode A sans DOM-TOM)
+            {
+                "poste_id": 103,
+                "structure_siret": "55555555500010",
+                "commune_sk": "sk-97101",
+                "lieu_commune_insee_code": "97101",
+                "rome_code": "K2205",
+                "postes_nombre": 1,
+                "intitule_poste": "Aide soignant",
+                "description_poste": "Soin",
+                "profil_recherche": "Diplôme",
+                "contrat_type": "CDD",
+            },
+            # 4. Duplicate poste_id 101 (should be deduplicated)
+            {
+                "poste_id": 101,
+                "structure_siret": "12345678900010",
+                "commune_sk": "sk-75001",
+                "lieu_commune_insee_code": "75001",
+                "rome_code": "A1203",
+                "postes_nombre": 2,
+                "intitule_poste": "Ouvrier agricole",
+                "description_poste": "Travail de la terre",
+                "profil_recherche": "Motivation",
+                "contrat_type": "CDD insertion",
+            },
+        ]
+    )
+
+    df_siae_data = pd.DataFrame(
+        [
+            {
+                "siae_structure_siret_code": "12345678900010",
+                "siae_type_code": "ACI",
+                "siae_structure_label": "Ferme Solidaire",
+            },
+            {
+                "siae_structure_siret_code": "98765432100020",
+                "siae_type_code": "GEIQ",
+                "siae_structure_label": "GEIQ Accueil",
+            },
+        ]
+    )
+
+    df_geo_data = pd.DataFrame(
+        [
+            {"commune_sk": "sk-75001", "commune_insee_code": "75001"},
+            {"commune_sk": "sk-13054", "commune_insee_code": "13054"},
+            {"commune_sk": "sk-97101", "commune_insee_code": "97101"},
+        ]
+    )
+
+    def mock_fetch(table, ttl_days=None):
+        if table == "fact_siae_poste":
+            return df_postes_data
+        elif table == "dim_siae_structure":
+            return df_siae_data
+        elif table == "dim_geo":
+            return df_geo_data
+        return pd.DataFrame()
+
+    mock_client.fetch_table.side_effect = mock_fetch
+
+    out_dir = tmp_path / "output"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    with (
+        patch("pipeline.ingest.context.OUTPUT_DIR", out_dir),
+        patch("pipeline.ingest.INCLUSION_OUTPUT_PATH", out_dir / "odis_inclusion_jobs.parquet"),
+        patch("pipeline.ingest.INCLUSION_COVERAGE_SHARED_OUTPUT_PATH", out_dir / "odis_inclusion_jobs_coverage.parquet"),
+    ):
+        config = {
+            "sources": {
+                "inclusion_jobs": {
+                    "use_odace": True,
+                    "odace_table": "fact_siae_poste",
+                    "ttl_days": 7,
+                }
+            }
+        }
+
+        clean_inclusion_jobs(config, MagicMock(spec=PipelineLogger))
+
+        jobs_file = out_dir / "odis_inclusion_jobs.parquet"
+        struct_file = out_dir / "odis_inclusion_structures.parquet"
+        coverage_file = out_dir / "odis_inclusion_jobs_coverage.parquet"
+
+        assert jobs_file.exists()
+        assert struct_file.exists()
+        assert coverage_file.exists()
+
+        df_jobs = pd.read_parquet(jobs_file)
+        # Exactly 2 unique metropolitan posts (duplicate removed, DOM-TOM removed)
+        assert len(df_jobs) == 2
+        assert set(df_jobs["job_id"]) == {101, 102}
+        assert df_jobs["job_id"].is_unique
+
+        # Check resolution via commune_sk for post 102
+        post_102 = df_jobs[df_jobs["job_id"] == 102].iloc[0]
+        assert post_102["codgeo"] == "13054"
+        assert post_102["siae_type"] == "GEIQ"
+        assert post_102["siae_name"] == "GEIQ Accueil"
+        assert post_102["intitule_poste"] == "Agent d'accueil"
+
+        # Check coverage
+        df_cov = pd.read_parquet(coverage_file)
+        assert len(df_cov) == 96
+        assert (df_cov["status"] == "success").all()
+        assert df_cov.loc[df_cov["department"] == "75", "offers_count"].iloc[0] == 1
+        assert df_cov.loc[df_cov["department"] == "13", "offers_count"].iloc[0] == 1
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_inclusion_jobs_odace_failure(mock_get_client, tmp_path):
+    """Verifies clean_inclusion_jobs raises PipelineRunError on ODAS failure."""
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.side_effect = Exception("ODAS network timeout")
+
+    config = {
+        "sources": {
+            "inclusion_jobs": {
+                "use_odace": True,
+                "odace_table": "fact_siae_poste",
+                "ttl_days": 7,
+            }
+        }
+    }
+
+    with pytest.raises(PipelineRunError, match="Odace inclusion_jobs did not produce a usable dataset"):
+        clean_inclusion_jobs(config, MagicMock(spec=PipelineLogger))
+
 

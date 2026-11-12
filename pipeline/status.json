@@ -96,7 +96,7 @@
     },
     "ingest_all": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-12T09:49:49.875921+00:00",
+      "timestamp": "2026-11-12T10:19:02.193306+00:00",
       "details": {}
     },
     "clean_communes": {
@@ -946,8 +946,11 @@
     },
     "clean_inclusion_jobs": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:20:51.652667",
-      "details": {}
+      "timestamp": "2026-11-12T10:19:02.191965+00:00",
+      "details": {
+        "rows": 12006,
+        "path": "pipeline/cache/output/odis_inclusion_jobs.parquet"
+      }
     },
     "clean_hebergement_rna": {
       "status": "COMPLETED",
@@ -1345,6 +1348,11 @@
       "status": "error",
       "timestamp": "2026-11-09T13:05:44.419802+00:00",
       "file": "CRITICAL ERROR: Failed to export ref_service_inclusion from Odace API: 429 Client Error: Too Many Requests for url: https://odas-app-trlhxf55uq-ew.a.run.app/api/data/export/ref_service_inclusion?format=parquet"
+    },
+    "inclusion_jobs": {
+      "status": "refreshed",
+      "timestamp": "2026-11-12T10:19:02.175574+00:00",
+      "file": "pipeline/cache/output/odis_inclusion_jobs.parquet"
     }
   }
 }

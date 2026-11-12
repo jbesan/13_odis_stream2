@@ -12,6 +12,7 @@ import requests
 
 from pipeline.common import PipelineLogger, load_config
 from pipeline.emplois_inclusion_ingest import run_ingestion as run_inclusion_ingest
+from pipeline.employment_coverage import METROPOLITAN_DEPARTMENTS
 from pipeline.ft_live_ingest import run_etl
 from pipeline.ingest import context
 from pipeline.ingest.helpers import (
@@ -196,8 +197,233 @@ def clean_inclusion_jobs(
 
     logger.log_step("clean_inclusion_jobs", "STARTED")
 
+    if skip:
+        logger.log_source("inclusion_jobs", "SKIPPED")
+        logger.log_step("clean_inclusion_jobs", "SKIPPED")
+        return
+
+    source_cfg = config.get("sources", {}).get("inclusion_jobs") or config.get(
+        "local_files", {}
+    ).get("inclusion_jobs", {})
+    if source_cfg.get("use_odace", False):
+        try:
+            client = ingest.get_odace_client(logger)
+            odace_table = source_cfg.get("odace_table", "fact_siae_poste")
+            ttl_days = source_cfg.get("ttl_days", 7)
+            df_postes = client.fetch_table(odace_table, ttl_days=ttl_days)
+            if df_postes.empty:
+                raise ValueError(f"Odace export '{odace_table}' is empty")
+
+            # 1. Fetch auxiliary structures & geo for resolution
+            try:
+                siae_cfg = config.get("sources", {}).get("siae_structures", {})
+                df_siae = client.fetch_table(
+                    "dim_siae_structure",
+                    ttl_days=siae_cfg.get("ttl_days", 30),
+                )
+            except Exception as e_siae:
+                logging.warning(
+                    f"Could not fetch dim_siae_structure from ODAS: {e_siae}"
+                )
+                df_siae = pd.DataFrame()
+
+            try:
+                df_geo = client.fetch_table("dim_geo", ttl_days=30)
+            except Exception as e_geo:
+                logging.warning(f"Could not fetch dim_geo from ODAS: {e_geo}")
+                df_geo = pd.DataFrame()
+
+            sk_to_insee = {}
+            if (
+                not df_geo.empty
+                and "commune_sk" in df_geo.columns
+                and "commune_insee_code" in df_geo.columns
+            ):
+                sk_to_insee = dict(
+                    zip(df_geo["commune_sk"], df_geo["commune_insee_code"])
+                )
+
+            siret_to_type = {}
+            siret_to_name = {}
+            if not df_siae.empty and "siae_structure_siret_code" in df_siae.columns:
+                if "siae_type_code" in df_siae.columns:
+                    siret_to_type = dict(
+                        zip(
+                            df_siae["siae_structure_siret_code"].astype(str),
+                            df_siae["siae_type_code"].astype(str),
+                        )
+                    )
+                label_col = (
+                    "siae_structure_label"
+                    if "siae_structure_label" in df_siae.columns
+                    else "siae_structure_raison_sociale"
+                )
+                if label_col in df_siae.columns:
+                    siret_to_name = dict(
+                        zip(
+                            df_siae["siae_structure_siret_code"].astype(str),
+                            df_siae[label_col].fillna("").astype(str),
+                        )
+                    )
+
+            # 2. Build df_jobs
+            job_id = (
+                pd.to_numeric(df_postes["poste_id"], errors="coerce")
+                .fillna(0)
+                .astype("int64")
+            )
+
+            commune_from_sk = (
+                df_postes["commune_sk"].map(sk_to_insee)
+                if "commune_sk" in df_postes.columns
+                else None
+            )
+            if "lieu_commune_insee_code" in df_postes.columns:
+                codgeo = (
+                    df_postes["lieu_commune_insee_code"]
+                    .fillna(commune_from_sk)
+                    .fillna("")
+                    .astype(str)
+                )
+            elif commune_from_sk is not None:
+                codgeo = commune_from_sk.fillna("").astype(str)
+            else:
+                codgeo = pd.Series("", index=df_postes.index)
+
+            siae_siret = df_postes["structure_siret"].astype(str)
+            siae_type = siae_siret.map(siret_to_type).fillna("").astype(str)
+            siae_name = siae_siret.map(siret_to_name).fillna("").astype(str)
+            rome = (
+                df_postes["rome_code"].astype(str)
+                if "rome_code" in df_postes.columns
+                else df_postes.get("rome", pd.Series("", index=df_postes.index)).astype(str)
+            )
+            postes = (
+                pd.to_numeric(df_postes.get("postes_nombre", 1), errors="coerce")
+                .fillna(1)
+                .astype("int64")
+            )
+
+            intitule_poste = (
+                df_postes["intitule_poste"].fillna("").astype(str)
+                if "intitule_poste" in df_postes.columns
+                else pd.Series("", index=df_postes.index)
+            )
+            description_poste = (
+                df_postes["description_poste"].fillna("").astype(str)
+                if "description_poste" in df_postes.columns
+                else pd.Series("", index=df_postes.index)
+            )
+            profil_recherche = (
+                df_postes["profil_recherche"].fillna("").astype(str)
+                if "profil_recherche" in df_postes.columns
+                else pd.Series("", index=df_postes.index)
+            )
+            contrat_type = (
+                df_postes["contrat_type"].fillna("").astype(str)
+                if "contrat_type" in df_postes.columns
+                else pd.Series("", index=df_postes.index)
+            )
+
+            df_jobs = pd.DataFrame(
+                {
+                    "job_id": job_id,
+                    "codgeo": codgeo,
+                    "siae_siret": siae_siret,
+                    "siae_type": siae_type,
+                    "siae_name": siae_name,
+                    "rome": rome,
+                    "postes": postes,
+                    "intitule_poste": intitule_poste,
+                    "description_poste": description_poste,
+                    "profil_recherche": profil_recherche,
+                    "contrat_type": contrat_type,
+                }
+            ).drop_duplicates(subset=["job_id"], keep="first")
+
+            # 3. Mode A sans DOM-TOM: Filter strictly to France métropolitaine
+            dept_series = df_jobs["codgeo"].apply(
+                lambda c: (
+                    "2A"
+                    if c.startswith("2A")
+                    else ("2B" if c.startswith("2B") else c[:2])
+                )
+            )
+            is_metro = dept_series.isin(METROPOLITAN_DEPARTMENTS)
+            df_jobs = df_jobs[is_metro].copy()
+            dept_series = dept_series[is_metro]
+
+            # 4. Build df_structures
+            df_struct = df_jobs[
+                ["codgeo", "siae_siret", "siae_type", "siae_name"]
+            ].drop_duplicates(subset=["codgeo", "siae_siret"])
+
+            # 5. Build coverage across all 96 metropolitan departments
+            dept_counts = dept_series.value_counts().to_dict()
+            coverage_rows = []
+            for d in sorted(list(METROPOLITAN_DEPARTMENTS)):
+                coverage_rows.append(
+                    {
+                        "department": d,
+                        "status": "success",
+                        "offers_count": int(dept_counts.get(d, 0)),
+                        "pages_expected": 1,
+                        "pages_retrieved": 1,
+                        "error": None,
+                    }
+                )
+            df_coverage = pd.DataFrame(coverage_rows)
+
+            # 6. Save artifacts
+            output_dir = context.OUTPUT_DIR
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            jobs_target = output_dir / "odis_inclusion_jobs.parquet"
+            struct_target = output_dir / "odis_inclusion_structures.parquet"
+            coverage_target = output_dir / "odis_inclusion_jobs_coverage.parquet"
+
+            df_jobs.to_parquet(jobs_target, index=False)
+            df_struct.to_parquet(struct_target, index=False)
+            df_coverage.to_parquet(coverage_target, index=False)
+
+            # Also sync shared cache paths
+            shared_dir = ingest.INCLUSION_OUTPUT_PATH.parent
+            if output_dir.resolve() != shared_dir.resolve():
+                shared_dir.mkdir(parents=True, exist_ok=True)
+                df_jobs.to_parquet(ingest.INCLUSION_OUTPUT_PATH, index=False)
+                df_struct.to_parquet(
+                    shared_dir / "odis_inclusion_structures.parquet",
+                    index=False,
+                )
+                df_coverage.to_parquet(
+                    ingest.INCLUSION_COVERAGE_SHARED_OUTPUT_PATH,
+                    index=False,
+                )
+
+            logger.log_source(
+                "inclusion_jobs",
+                "REFRESHED",
+                jobs_target,
+                observed_at=_artifact_observed_at(jobs_target),
+            )
+            logger.log_step(
+                "clean_inclusion_jobs",
+                "COMPLETED",
+                {
+                    "path": str(jobs_target),
+                    "rows": len(df_jobs),
+                    "source": "odace",
+                },
+            )
+            return
+        except Exception as e:
+            logging.error(f"❌ [Inclusion Jobs] Failed to fetch from ODAS: {e}")
+            raise PipelineRunError(
+                f"Odace inclusion_jobs did not produce a usable dataset: {e}"
+            ) from e
+
     status = ingest.get_inclusion_jobs_status()
-    should_run = not skip
+    should_run = True
 
     if should_run:
         if status["within_ttl"]:
