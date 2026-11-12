@@ -22,6 +22,7 @@ from pipeline.ingest import (
     clean_political,
     clean_regions,
     clean_rome,
+    clean_salesforce_jaccueille,
     clean_school_effectifs,
     clean_services_inclusion,
     clean_structures_inclusion,
@@ -3083,5 +3084,101 @@ def test_clean_inclusion_jobs_odace_failure(mock_get_client, tmp_path):
 
     with pytest.raises(PipelineRunError, match="Odace inclusion_jobs did not produce a usable dataset"):
         clean_inclusion_jobs(config, MagicMock(spec=PipelineLogger))
+
+
+@patch("pipeline.ingest.cleaners.salesforce.get_odace_client")
+def test_clean_salesforce_jaccueille_odace_success(mock_get_client, tmp_path, monkeypatch):
+    """Verifies clean_salesforce_jaccueille correctly fetches and formats fact_jaccueille_code_postal."""
+    clean_dir = tmp_path / "clean"
+    clean_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr("pipeline.ingest.context.CLEAN_DIR", clean_dir)
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+
+    sample_odas = pd.DataFrame(
+        [
+            {
+                "jaccueille_code_postal_sk": "sk1",
+                "commune_sk": "c1",
+                "code_postal": "75015",
+                "nb_communes": 1,
+                "nb_prospects": 4,
+                "nb_contacts": 6,
+                "nb_total": 10,
+            },
+            {
+                "jaccueille_code_postal_sk": "sk2",
+                "commune_sk": None,
+                "code_postal": "01000",
+                "nb_communes": 2,
+                "nb_prospects": 1,
+                "nb_contacts": 2,
+                "nb_total": 3,
+            },
+        ]
+    )
+    mock_client.fetch_table.return_value = sample_odas
+
+    config = {
+        "sources": {
+            "salesforce_jaccueille": {
+                "use_odace": True,
+                "odace_table": "fact_jaccueille_code_postal",
+                "ttl_days": 7,
+            }
+        }
+    }
+
+    logger = MagicMock(spec=PipelineLogger)
+    clean_salesforce_jaccueille(config, logger)
+
+    out_file = clean_dir / "salesforce_jaccueille.parquet"
+    assert out_file.exists()
+
+    df = pd.read_parquet(out_file)
+    assert len(df) == 2
+    assert list(df.columns) == [
+        "code_postal",
+        "lead_count",
+        "contact_count",
+        "total_jaccueille_count",
+    ]
+    # Check sorted by code_postal
+    assert df.iloc[0]["code_postal"] == "01000"
+    assert df.iloc[0]["lead_count"] == 1
+    assert df.iloc[0]["contact_count"] == 2
+    assert df.iloc[0]["total_jaccueille_count"] == 3
+
+    assert df.iloc[1]["code_postal"] == "75015"
+    assert df.iloc[1]["lead_count"] == 4
+    assert df.iloc[1]["contact_count"] == 6
+    assert df.iloc[1]["total_jaccueille_count"] == 10
+
+
+@patch("pipeline.ingest.cleaners.salesforce.get_odace_client")
+def test_clean_salesforce_jaccueille_odace_failure(mock_get_client, tmp_path, monkeypatch):
+    """Verifies clean_salesforce_jaccueille raises PipelineRunError on failure."""
+    clean_dir = tmp_path / "clean"
+    clean_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr("pipeline.ingest.context.CLEAN_DIR", clean_dir)
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.side_effect = Exception("ODAS API error")
+
+    config = {
+        "sources": {
+            "salesforce_jaccueille": {
+                "use_odace": True,
+                "odace_table": "fact_jaccueille_code_postal",
+                "ttl_days": 7,
+            }
+        }
+    }
+
+    with pytest.raises(PipelineRunError, match="ODAS Salesforce J'accueille cleaner failed"):
+        clean_salesforce_jaccueille(config, MagicMock(spec=PipelineLogger))
+
 
 

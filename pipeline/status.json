@@ -96,7 +96,7 @@
     },
     "ingest_all": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-12T10:19:02.193306+00:00",
+      "timestamp": "2026-11-12T11:33:48.675646+00:00",
       "details": {}
     },
     "clean_communes": {
@@ -194,7 +194,7 @@
     },
     "build_all": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-09T13:05:44.623107+00:00",
+      "timestamp": "2026-11-12T11:45:13.187874+00:00",
       "details": {}
     },
     "clean_voisins": {
@@ -1027,18 +1027,18 @@
     },
     "clean_salesforce_jaccueille": {
       "status": "COMPLETED",
-      "timestamp": "2026-10-05T10:55:57.599544+00:00",
+      "timestamp": "2026-11-12T11:33:48.674867+00:00",
       "details": {
-        "rows": 1,
+        "rows": 1069,
         "path": "pipeline/cache/clean/salesforce_jaccueille.parquet"
       }
     },
     "build_salesforce_jaccueille_bdv": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-09T13:05:44.622183+00:00",
+      "timestamp": "2026-11-12T11:45:13.187101+00:00",
       "details": {
         "path": "pipeline/cache/output/salesforce_jaccueille_bdv.parquet",
-        "rows": 462
+        "rows": 480
       }
     },
     "clean_bassins_de_vie": {
@@ -1335,8 +1335,8 @@
       "file": "No URL provided"
     },
     "salesforce_jaccueille": {
-      "status": "reused_within_ttl",
-      "timestamp": "2026-10-05T10:55:37.150403+00:00",
+      "status": "refreshed",
+      "timestamp": "2026-11-12T11:33:48.673240+00:00",
       "file": "pipeline/cache/clean/salesforce_jaccueille.parquet"
     },
     "odace_dim_siae_structure": {

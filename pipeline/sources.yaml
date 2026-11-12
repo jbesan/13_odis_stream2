@@ -382,6 +382,8 @@ local_files:
       - code_insee_commune
 
   salesforce_jaccueille:
+    use_odace: true
+    odace_table: "fact_jaccueille_code_postal"
     format: "api"
     ttl_days: 7
     description: "API Salesforce J'accueille - Extraction en direct des Prospects et Contacts"

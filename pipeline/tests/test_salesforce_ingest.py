@@ -521,3 +521,41 @@ def test_aggregate_by_bassin_de_vie_edge_cases(tmp_path):
     )
     assert res_no_cp.empty
     assert "bassin_de_vie" in res_no_cp.columns
+
+
+def test_aggregate_by_bassin_de_vie_majority_population():
+    """Verify that a postal code spanning multiple BVs is assigned to the majority BV by population."""
+    df_sf = pd.DataFrame(
+        [
+            {
+                "code_postal": "34400",
+                "lead_count": 3,
+                "contact_count": 6,
+                "total_jaccueille_count": 9,
+            }
+        ]
+    )
+    # Postal code 34400 covers a small commune in Sommières BV and a large commune in Lunel BV
+    df_cp = pd.DataFrame(
+        {
+            "code_postal": ["34400", "34400"],
+            "codgeo": ["30222", "34145"],
+        }
+    )
+    df_comm = pd.DataFrame(
+        {
+            "codgeo": ["30222", "34145"],
+            "bassin_de_vie": ["30321", "34145"],  # Sommières vs Lunel
+            "population": [972.0, 26623.0],
+        }
+    )
+
+    res = aggregate_by_bassin_de_vie(
+        df_sf, df_postal_codes=df_cp, df_communes=df_comm
+    )
+    assert len(res) == 1
+    assert res.iloc[0]["bassin_de_vie"] == "34145"  # Lunel wins
+    assert res.iloc[0]["lead_count"] == 3
+    assert res.iloc[0]["contact_count"] == 6
+    assert res.iloc[0]["total_jaccueille_count"] == 9
+

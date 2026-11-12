@@ -222,6 +222,15 @@
 - Cleaner pipeline: `pipeline/ingest/cleaners/jobs.py::clean_inclusion_jobs`
 - Description: Offres d'emploi issues de la plateforme "Les emplois de l'inclusion", dédoublonnées sur `job_id`, enrichies des titres, descriptions, profils et types de contrat, rattachées géographiquement à la commune du lieu ou du siège employeur.
 
+## Salesforce J'accueille (Accueillants & Prospects)
+
+- Source active: ODAS Silver `fact_jaccueille_code_postal` (1 069 codes postaux)
+- Source historique: API REST Salesforce (authentification JWT avec clé privée RSA dépréciée)
+- Cache ETL brut: `pipeline/cache/raw/odace_fact_jaccueille_code_postal.parquet`
+- Sorties générées: `pipeline/cache/clean/salesforce_jaccueille.parquet` (grain code postal), projeté ensuite dans `pipeline/cache/output/salesforce_jaccueille_bdv.parquet` (grain Bassin de Vie)
+- Cleaner pipeline: `pipeline/ingest/cleaners/salesforce.py::clean_salesforce_jaccueille`
+- Description: Décompte des particuliers accueillants (`contact_count`) et prospects (`lead_count`) engagés dans le programme J'accueille, agrégés par code postal puis consolidés par Bassin de Vie pour l'indicateur territorial et les liens de reporting Salesforce.
+
 ## Formations Annuaire
 
 - Données: https://www.data.gouv.fr/datasets/liste-publique-des-organismes-de-formation-l-6351-7-1-du-code-du-travail/#/resources/ac59a0f5-fa83-4b82-bf12-3c5806d4f19f
