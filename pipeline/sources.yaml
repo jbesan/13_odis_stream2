@@ -357,6 +357,8 @@ sources:
 local_files:
 
   france_travail_live:
+    use_odace: true
+    odace_table: "fact_offre_emploi"
     url: "https://api.francetravail.io/partenaire/offresemploi/v2/offres/emploi/search"
     format: "api"
     ttl_days: 7

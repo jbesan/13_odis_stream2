@@ -17,6 +17,7 @@ from pipeline.ingest import (
     clean_formations,
     clean_housing_occupation,
     clean_inclusion_jobs,
+    clean_live_jobs,
     clean_loyers,
     clean_nomenclature_waldec,
     clean_political,
@@ -3179,6 +3180,148 @@ def test_clean_salesforce_jaccueille_odace_failure(mock_get_client, tmp_path, mo
 
     with pytest.raises(PipelineRunError, match="ODAS Salesforce J'accueille cleaner failed"):
         clean_salesforce_jaccueille(config, MagicMock(spec=PipelineLogger))
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_live_jobs_odace_success(mock_get_client, tmp_path, monkeypatch):
+    """Verifies clean_live_jobs correctly aggregates fact_offre_emploi into odis_ft_jobs_agg & coverage."""
+    import pipeline.ingest as ingest
+
+    output_dir = tmp_path / "output"
+    clean_dir = tmp_path / "clean"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    clean_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(ingest, "OUTPUT_DIR", output_dir)
+    monkeypatch.setattr("pipeline.ingest.context.CLEAN_DIR", clean_dir)
+    monkeypatch.setattr(ingest, "FT_SHARED_OUTPUT_PATH", output_dir / "odis_ft_jobs_agg.parquet")
+    monkeypatch.setattr(ingest, "FT_COVERAGE_SHARED_OUTPUT_PATH", output_dir / "odis_ft_jobs_coverage.parquet")
+
+    # Create mock clean rome referential
+    pd.DataFrame(
+        [
+            {"code": "M1213", "label": "Comptable"},
+            {"code": "A1208", "label": "Jardinier"},
+        ]
+    ).to_parquet(clean_dir / "rome.parquet")
+
+    sample_offers = pd.DataFrame(
+        [
+            {
+                "offre_emploi_sk": "sk1",
+                "commune_insee_code": "75056",
+                "rome_code": "M1213",
+                "postes_nombre": 2,
+                "is_offre_manque_candidats": True,
+            },
+            {
+                "offre_emploi_sk": "sk2",
+                "commune_insee_code": "75056",
+                "rome_code": "M1213",
+                "postes_nombre": 1,
+                "is_offre_manque_candidats": False,
+            },
+            {
+                "offre_emploi_sk": "sk3",
+                "commune_insee_code": "13055",
+                "rome_code": "A1208",
+                "postes_nombre": 1,
+                "is_offre_manque_candidats": False,
+            },
+            # DOM-TOM offer: should be excluded by metropolitan filter
+            {
+                "offre_emploi_sk": "sk4",
+                "commune_insee_code": "97401",
+                "rome_code": "A1208",
+                "postes_nombre": 5,
+                "is_offre_manque_candidats": True,
+            },
+            # Null commune INSEE offer: should be excluded
+            {
+                "offre_emploi_sk": "sk5",
+                "commune_insee_code": None,
+                "rome_code": "M1213",
+                "postes_nombre": 1,
+                "is_offre_manque_candidats": False,
+            },
+        ]
+    )
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.return_value = sample_offers
+
+    config = {
+        "sources": {
+            "france_travail_live": {
+                "use_odace": True,
+                "odace_table": "fact_offre_emploi",
+                "ttl_days": 7,
+            }
+        }
+    }
+
+    logger = MagicMock(spec=PipelineLogger)
+    clean_live_jobs(config, logger)
+
+    jobs_file = output_dir / "odis_ft_jobs_agg.parquet"
+    cov_file = output_dir / "odis_ft_jobs_coverage.parquet"
+
+    assert jobs_file.exists()
+    assert cov_file.exists()
+
+    df_jobs = pd.read_parquet(jobs_file)
+    assert len(df_jobs) == 2
+    assert list(df_jobs.columns) == [
+        "commune",
+        "romeCode",
+        "romeLibelle",
+        "nb_offres",
+        "total_postes",
+        "nb_offres_tension",
+    ]
+
+    row_13 = df_jobs[df_jobs["commune"] == "13055"].iloc[0]
+    assert row_13["romeCode"] == "A1208"
+    assert row_13["romeLibelle"] == "Jardinier"
+    assert row_13["nb_offres"] == 1
+    assert row_13["total_postes"] == 1
+    assert row_13["nb_offres_tension"] == 0
+
+    row_75 = df_jobs[df_jobs["commune"] == "75056"].iloc[0]
+    assert row_75["romeCode"] == "M1213"
+    assert row_75["romeLibelle"] == "Comptable"
+    assert row_75["nb_offres"] == 2
+    assert row_75["total_postes"] == 3
+    assert row_75["nb_offres_tension"] == 1
+
+    df_cov = pd.read_parquet(cov_file)
+    assert len(df_cov) == 96
+    assert (df_cov["status"] == "success").all()
+    assert df_cov.loc[df_cov["department"] == "75", "offers_count"].iloc[0] == 2
+    assert df_cov.loc[df_cov["department"] == "13", "offers_count"].iloc[0] == 1
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_live_jobs_odace_failure(mock_get_client, tmp_path):
+    """Verifies clean_live_jobs raises PipelineRunError on ODAS failure."""
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.side_effect = Exception("ODAS network timeout")
+
+    config = {
+        "sources": {
+            "france_travail_live": {
+                "use_odace": True,
+                "odace_table": "fact_offre_emploi",
+                "ttl_days": 7,
+            }
+        }
+    }
+
+    with pytest.raises(PipelineRunError, match="Odace france_travail_live did not produce a usable dataset"):
+        clean_live_jobs(config, MagicMock(spec=PipelineLogger))
+
 
 
 

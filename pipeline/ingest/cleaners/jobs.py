@@ -8,6 +8,7 @@ import time
 from typing import Any, Dict
 
 import pandas as pd
+import polars as pl
 import requests
 
 from pipeline.common import PipelineLogger, load_config
@@ -75,6 +76,176 @@ def clean_live_jobs(
     import pipeline.ingest as ingest
 
     logger.log_step("clean_live_jobs", "STARTED")
+
+    if skip:
+        logger.log_source("france_travail_live", "SKIPPED")
+        logger.log_step("clean_live_jobs", "SKIPPED")
+        return
+
+    source_cfg = config.get("sources", {}).get("france_travail_live") or config.get(
+        "local_files", {}
+    ).get("france_travail_live", {})
+
+    if source_cfg.get("use_odace", False):
+        try:
+            client = ingest.get_odace_client(logger)
+            odace_table = source_cfg.get("odace_table", "fact_offre_emploi")
+            ttl_days = source_cfg.get("ttl_days", 7)
+            df_raw = client.fetch_table(odace_table, ttl_days=ttl_days)
+            if df_raw.empty:
+                raise ValueError(f"Odace export '{odace_table}' is empty")
+
+            output_dir = ingest.OUTPUT_DIR
+            output_dir.mkdir(parents=True, exist_ok=True)
+            jobs_target = output_dir / "odis_ft_jobs_agg.parquet"
+            coverage_target = output_dir / "odis_ft_jobs_coverage.parquet"
+
+            metro_set = list(METROPOLITAN_DEPARTMENTS)
+            lf_raw = (
+                pl.from_pandas(df_raw).lazy()
+                if isinstance(df_raw, pd.DataFrame)
+                else df_raw.lazy()
+            )
+
+            # Filter non-null commune INSEE code and metropolitan departments (96 depts)
+            lf_filtered = lf_raw.filter(
+                pl.col("commune_insee_code").is_not_null()
+                & (pl.col("commune_insee_code").str.len_chars() >= 2)
+                & pl.col("commune_insee_code").str.slice(0, 2).is_in(metro_set)
+            ).with_columns(
+                pl.col("commune_insee_code")
+                .cast(pl.String)
+                .str.strip_chars()
+                .str.zfill(5)
+                .alias("commune_clean"),
+                pl.col("commune_insee_code").str.slice(0, 2).alias("dept"),
+            )
+
+            # Load ROME referential for labels
+            rome_path = context.CLEAN_DIR / "rome.parquet"
+            if not rome_path.exists():
+                rome_path = ingest.CLEAN_DIR / "rome.parquet"
+            if not rome_path.exists():
+                rome_path = context.CACHE_DIR / "odace_ref_rome.parquet"
+
+            if rome_path.exists():
+                df_rome = pl.read_parquet(rome_path).lazy()
+                schema_names = df_rome.collect_schema().names()
+                code_col = next(
+                    (c for c in ["code", "code_rome"] if c in schema_names),
+                    "code",
+                )
+                label_col = next(
+                    (
+                        c
+                        for c in ["label", "libelle_rome", "libelle"]
+                        if c in schema_names
+                    ),
+                    "label",
+                )
+                lf_rome_clean = df_rome.select(
+                    pl.col(code_col).cast(pl.String).alias("rome_code_ref"),
+                    pl.col(label_col).cast(pl.String).alias("rome_label_ref"),
+                )
+                lf_joined = lf_filtered.join(
+                    lf_rome_clean,
+                    left_on="rome_code",
+                    right_on="rome_code_ref",
+                    how="left",
+                )
+            else:
+                lf_joined = lf_filtered.with_columns(
+                    pl.lit("").alias("rome_label_ref")
+                )
+
+            # Aggregate by (commune, romeCode, romeLibelle)
+            lf_agg = (
+                lf_joined.group_by(["commune_clean", "rome_code", "rome_label_ref"])
+                .agg(
+                    [
+                        pl.len().cast(pl.Int64).alias("nb_offres"),
+                        pl.col("postes_nombre")
+                        .fill_null(1)
+                        .cast(pl.Int64)
+                        .sum()
+                        .alias("total_postes"),
+                        pl.col("is_offre_manque_candidats")
+                        .fill_null(False)
+                        .cast(pl.Int64)
+                        .sum()
+                        .alias("nb_offres_tension"),
+                    ]
+                )
+                .with_columns(pl.col("rome_label_ref").fill_null("").cast(pl.String))
+                .rename(
+                    {
+                        "commune_clean": "commune",
+                        "rome_code": "romeCode",
+                        "rome_label_ref": "romeLibelle",
+                    }
+                )
+                .sort(["commune", "romeCode"])
+            )
+            df_agg = lf_agg.collect().to_pandas()
+
+            # Coverage calculation per department
+            df_dept_counts = (
+                lf_filtered.group_by("dept")
+                .agg(pl.len().alias("offers_count"))
+                .collect()
+                .to_pandas()
+            )
+            dept_counts = dict(
+                zip(df_dept_counts["dept"], df_dept_counts["offers_count"])
+            )
+
+            cov_rows = [
+                {
+                    "department": d,
+                    "status": "success",
+                    "offers_count": int(dept_counts.get(d, 0)),
+                    "pages_expected": None,
+                    "pages_retrieved": None,
+                    "error": None,
+                }
+                for d in METROPOLITAN_DEPARTMENTS
+            ]
+            df_coverage = pd.DataFrame(cov_rows)
+
+            df_agg.to_parquet(jobs_target, index=False)
+            df_coverage.to_parquet(coverage_target, index=False)
+
+            # Sync shared cache paths if output_dir differs
+            shared_dir = ingest.FT_SHARED_OUTPUT_PATH.parent
+            if output_dir.resolve() != shared_dir.resolve():
+                shared_dir.mkdir(parents=True, exist_ok=True)
+                df_agg.to_parquet(ingest.FT_SHARED_OUTPUT_PATH, index=False)
+                df_coverage.to_parquet(
+                    ingest.FT_COVERAGE_SHARED_OUTPUT_PATH, index=False
+                )
+
+            logger.log_source(
+                "france_travail_live",
+                "REFRESHED",
+                jobs_target,
+                observed_at=_artifact_observed_at(jobs_target),
+            )
+            logger.log_step(
+                "clean_live_jobs",
+                "COMPLETED",
+                {
+                    "path": str(jobs_target),
+                    "rows": len(df_agg),
+                    "source": "odace",
+                },
+            )
+            return
+        except Exception as e:
+            logging.error(f"❌ [France Travail Live] Failed to fetch from ODAS: {e}")
+            logger.log_step("clean_live_jobs", "FAILED", {"error": str(e)})
+            raise PipelineRunError(
+                f"Odace france_travail_live did not produce a usable dataset: {e}"
+            ) from e
 
     status = ingest.get_live_jobs_status()
     should_run = not skip

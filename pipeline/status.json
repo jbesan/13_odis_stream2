@@ -96,7 +96,7 @@
     },
     "ingest_all": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-12T11:33:48.675646+00:00",
+      "timestamp": "2026-11-12T11:53:22.964814+00:00",
       "details": {}
     },
     "clean_communes": {
@@ -912,8 +912,11 @@
     },
     "clean_live_jobs": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:10:30.181153",
-      "details": {}
+      "timestamp": "2026-11-12T11:53:22.963695+00:00",
+      "details": {
+        "rows": 243154,
+        "path": "pipeline/cache/output/odis_ft_jobs_agg.parquet"
+      }
     },
     "clean_odis_associations": {
       "status": "COMPLETED",
@@ -1353,6 +1356,11 @@
       "status": "refreshed",
       "timestamp": "2026-11-12T10:19:02.175574+00:00",
       "file": "pipeline/cache/output/odis_inclusion_jobs.parquet"
+    },
+    "france_travail_live": {
+      "status": "refreshed",
+      "timestamp": "2026-11-12T11:53:22.941670+00:00",
+      "file": "pipeline/cache/output/odis_ft_jobs_agg.parquet"
     }
   }
 }

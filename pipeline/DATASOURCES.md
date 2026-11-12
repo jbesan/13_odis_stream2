@@ -208,10 +208,12 @@
 
 ## Offres d'emploi en direct (Live Jobs)
 
-- Source: France Travail API (Partenaire)
-- Endpoint: https://api.francetravail.io/partenaire/offresemploi/v2/offres/emploi/search
-- Type: API (JSON)
-- Description: Récupération des offres d'emploi en temps réel filtrées par code ROME et commune. Utilisé pour le calcul de tension et le scoring "Live".
+- Source active: ODAS Silver `fact_offre_emploi` (469 043 offres unitaires, agrégées en ~243 000 paires commune/ROME en métropole)
+- Source historique: API France Travail Partenaire (crawl HTTP sur 96 départements déprécié)
+- Cache ETL brut: `pipeline/cache/raw/odace_fact_offre_emploi.parquet`
+- Sorties générées: `pipeline/cache/output/odis_ft_jobs_agg.parquet` et `odis_ft_jobs_coverage.parquet`
+- Cleaner pipeline: `pipeline/ingest/cleaners/jobs.py::clean_live_jobs`
+- Description: Stock unitaire des offres d'emploi France Travail, agrégé au grain (commune, code ROME, libellé ROME) pour le calcul de tension marché et l'opportunité d'emploi par métier, avec couverture des 96 départements métropolitains.
 
 ## Offres d'emploi en insertion (SIAE Jobs)
 
