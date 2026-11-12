@@ -6,7 +6,11 @@ import pytest
 import yaml
 
 from pipeline.prescoring import scale_series
-from pipeline.quality_gate import QualityGateFailureError, run_quality_gate
+from pipeline.quality_gate import (
+    METROPOLITAN_DEPARTMENTS,
+    QualityGateFailureError,
+    run_quality_gate,
+)
 
 
 def _write_contracts(tmp_path):
@@ -140,6 +144,43 @@ def test_quality_gate_keeps_coverage_as_a_validation_only_artifact(tmp_path):
             scores_config_path=scores_path,
             check_release_artifacts=True,
         )
+
+
+def test_quality_gate_coverage_validates_without_pagination(tmp_path):
+    contracts_path, scores_path = _write_contracts(tmp_path)
+    contracts = yaml.safe_load(contracts_path.read_text(encoding="utf-8"))
+    contracts["release"]["validation_artifacts"] = ["odis_ft_jobs_coverage.parquet"]
+    contracts_path.write_text(yaml.safe_dump(contracts), encoding="utf-8")
+
+    _valid_communes().to_parquet(tmp_path / "odis_communes.parquet", index=False)
+    pd.DataFrame({"bassin_de_vie": ["BV1", "BV2"]}).to_parquet(
+        tmp_path / "odis_bassins_de_vie.parquet", index=False
+    )
+
+    # Coverage with no pages_expected or pages_retrieved columns
+    cov_df = pd.DataFrame(
+        [
+            {"department": d, "status": "success", "offers_count": 10}
+            for d in METROPOLITAN_DEPARTMENTS
+        ]
+    )
+    cov_df.to_parquet(tmp_path / "odis_ft_jobs_coverage.parquet", index=False)
+
+    summary = run_quality_gate(
+        output_dir=tmp_path,
+        contracts_path=contracts_path,
+        scores_config_path=scores_path,
+        check_release_artifacts=True,
+    )
+    assert summary["status"] == "PASSED"
+    coverage_check = next(
+        c
+        for c in summary["checks"]
+        if c["name"] == "coverage.odis_ft_jobs_coverage.parquet"
+    )
+    assert coverage_check["status"] == "PASSED"
+    assert coverage_check["completed_departments"] == 96
+    assert coverage_check["nonempty_departments"] is True
 
 
 def test_quality_gate_never_replaces_failed_candidate(tmp_path):

@@ -181,4 +181,3 @@ def fetch_rome_referential(
     clean_rome(config, logger)
     output_path = context.CLEAN_DIR / "rome.parquet"
     return output_path if output_path.exists() else None
-

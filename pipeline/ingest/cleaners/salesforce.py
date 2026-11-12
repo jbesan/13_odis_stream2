@@ -17,7 +17,15 @@ import pipeline.salesforce_ingest as sf_ingest
 
 
 def clean_salesforce_jaccueille(config: Dict[str, Any], logger: PipelineLogger) -> None:
-    """Extract and aggregate Salesforce J'accueille data by postal code into CLEAN_DIR."""
+    """Extract and aggregate Salesforce J'accueille data by postal code into CLEAN_DIR.
+
+    Args:
+        config: Pipeline configuration dictionary.
+        logger: Pipeline logger instance.
+
+    Raises:
+        PipelineRunError: If ODAS fetch or legacy Salesforce extraction fails.
+    """
     logger.log_step("clean_salesforce_jaccueille", "STARTED")
     source_cfg = config.get("sources", {}).get("salesforce_jaccueille") or config.get(
         "local_files", {}

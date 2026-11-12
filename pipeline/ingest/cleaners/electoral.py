@@ -185,12 +185,13 @@ def clean_electoral_history(config: Dict[str, Any], logger: PipelineLogger) -> N
     if source.get("use_odace", False):
         try:
             client = ingest.get_odace_client(logger)
-            odace_table = source.get(
-                "odace_table", "fact_resultat_election_candidat"
-            )
+            odace_table = source.get("odace_table", "fact_resultat_election_candidat")
             ttl_days = source.get("ttl_days", 365)
-            client.fetch_table(odace_table, ttl_days=ttl_days)
-            odace_path = context.CACHE_DIR / f"odace_{odace_table}.parquet"
+            if hasattr(client, "fetch_table_path"):
+                odace_path = client.fetch_table_path(odace_table, ttl_days=ttl_days)
+            else:
+                client.fetch_table(odace_table, ttl_days=ttl_days)
+                odace_path = context.CACHE_DIR / f"odace_{odace_table}.parquet"
             if odace_path.exists():
                 path = odace_path
         except Exception as e:

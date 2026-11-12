@@ -33,14 +33,13 @@ def clean_communes(config: Dict[str, Any], logger: PipelineLogger) -> None:
             if not df_odace.empty:
                 # 1. Fetch and build EPCI mapping
                 epci_cfg = config.get("sources", {}).get("ref_epci", {})
-                commune_epci_cfg = config.get("sources", {}).get(
-                    "ref_commune_epci", {}
-                )
+                commune_epci_cfg = config.get("sources", {}).get("ref_commune_epci", {})
                 epci_map = {}
 
-                if epci_cfg.get("use_odace", False) or commune_epci_cfg.get(
+                use_odace_epci = epci_cfg.get(
                     "use_odace", False
-                ):
+                ) or commune_epci_cfg.get("use_odace", False)
+                if use_odace_epci:
                     try:
                         commune_epci_table = commune_epci_cfg.get(
                             "odace_table", "ref_commune_epci"
@@ -78,7 +77,10 @@ def clean_communes(config: Dict[str, Any], logger: PipelineLogger) -> None:
                         )
 
                 if not epci_map:
-                    epci_path = ingest.fetch_source("ref_epci", epci_cfg, logger)
+                    fallback_epci_cfg = {**epci_cfg, "use_odace": False}
+                    epci_path = ingest.fetch_source(
+                        "ref_epci", fallback_epci_cfg, logger
+                    )
                     if epci_path and epci_path.exists():
                         try:
                             with open(epci_path, "r", encoding="utf-8") as f:
@@ -92,6 +94,10 @@ def clean_communes(config: Dict[str, Any], logger: PipelineLogger) -> None:
                                         ).zfill(9)
                         except Exception as e:
                             logging.error(f"Error parsing ref_epci mapping: {e}")
+                    if use_odace_epci and not epci_map:
+                        raise ValueError(
+                            "Failed to build EPCI mapping from ODAS and fallback"
+                        )
 
                 # 2. Fetch dim_commune for labels, departement, and region
                 df_commune = client.fetch_dim_commune(source["ttl_days"])

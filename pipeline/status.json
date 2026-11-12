@@ -96,7 +96,7 @@
     },
     "ingest_all": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-12T11:53:22.964814+00:00",
+      "timestamp": "2026-11-12T12:17:54.859722+00:00",
       "details": {}
     },
     "clean_communes": {
@@ -253,7 +253,7 @@
     },
     "apply_prescoring": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-09T13:05:50.289610+00:00",
+      "timestamp": "2026-11-12T13:01:57.031200+00:00",
       "details": {
         "columns": 131,
         "path": "pipeline/cache/output/odis_communes.parquet",
@@ -771,7 +771,6 @@
               "status": "PASSED",
               "completed_departments": 96,
               "expected_departments": 96,
-              "pages_complete": true,
               "nonempty_departments": true
             },
             {
@@ -779,7 +778,6 @@
               "status": "PASSED",
               "completed_departments": 96,
               "expected_departments": 96,
-              "pages_complete": true,
               "nonempty_departments": true
             }
           ]
@@ -804,7 +802,7 @@
     },
     "score_bassins_de_vie": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-09T13:05:50.420981+00:00",
+      "timestamp": "2026-11-12T13:01:57.157776+00:00",
       "details": {
         "rows": 1707
       }
@@ -878,7 +876,7 @@
     },
     "inc_services_core_scaled": {
       "status": "CALCULATED",
-      "timestamp": "2026-11-09T13:05:48.362631+00:00",
+      "timestamp": "2026-11-12T13:01:55.204196+00:00",
       "details": {}
     },
     "clean_regions": {
@@ -1017,7 +1015,7 @@
     },
     "clean_electoral_history": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-09T13:05:11.169295+00:00",
+      "timestamp": "2026-11-12T12:17:54.782836+00:00",
       "details": {
         "rows": 37036,
         "path": "pipeline/cache/clean/electoral_history.parquet"
@@ -1323,9 +1321,9 @@
       "file": "Failed to execute query for 'odace_query_bpe' on Odace: 500 Server Error: Internal Server Error for url: https://odace.services.d4g.fr/api/data/query"
     },
     "electoral_history": {
-      "status": "reused_within_ttl",
-      "timestamp": "2026-11-09T11:00:03.762553+00:00",
-      "file": "pipeline/cache/raw/candidats_results.parquet"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-12T12:17:52.291861+00:00",
+      "file": "managed by Odace"
     },
     "jaccueille_prospects": {
       "status": "CACHED",

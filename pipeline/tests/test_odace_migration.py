@@ -2772,7 +2772,10 @@ def test_clean_communes_epci_odace_success(mock_get_client, temp_cache_dirs):
             return pd.DataFrame(
                 {
                     "code_epci": ["200054781", "200054807"],
-                    "libelle_epci": ["Métropole du Grand Paris", "Métropole d'Aix-Marseille-Provence"],
+                    "libelle_epci": [
+                        "Métropole du Grand Paris",
+                        "Métropole d'Aix-Marseille-Provence",
+                    ],
                 }
             )
         return pd.DataFrame()
@@ -2864,11 +2867,17 @@ def test_clean_electoral_history_odace_success(mock_get_client, temp_cache_dirs)
         ]
     )
 
+    def mock_fetch_table_path(table, ttl_days=None):
+        out_file = raw_dir / f"odace_{table}.parquet"
+        fake_odas_elections.to_parquet(out_file)
+        return out_file
+
     def mock_fetch_table(table, ttl_days=None):
         out_file = raw_dir / f"odace_{table}.parquet"
         fake_odas_elections.to_parquet(out_file)
         return fake_odas_elections
 
+    mock_client.fetch_table_path.side_effect = mock_fetch_table_path
     mock_client.fetch_table.side_effect = mock_fetch_table
 
     config = {
@@ -2904,6 +2913,7 @@ def test_clean_electoral_history_odace_failure(mock_get_client, temp_cache_dirs)
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
     mock_client.fetch_table.side_effect = Exception("ODAS network timeout")
+    mock_client.fetch_table_path.side_effect = Exception("ODAS network timeout")
 
     config = {
         "sources": {
@@ -2915,7 +2925,10 @@ def test_clean_electoral_history_odace_failure(mock_get_client, temp_cache_dirs)
         }
     }
 
-    with pytest.raises(PipelineRunError, match="Odace electoral_history did not produce a usable dataset"):
+    with pytest.raises(
+        PipelineRunError,
+        match="Odace electoral_history did not produce a usable dataset",
+    ):
         clean_electoral_history(config, MagicMock(spec=PipelineLogger))
 
 
@@ -3022,8 +3035,14 @@ def test_clean_inclusion_jobs_odace_success(mock_get_client, tmp_path):
 
     with (
         patch("pipeline.ingest.context.OUTPUT_DIR", out_dir),
-        patch("pipeline.ingest.INCLUSION_OUTPUT_PATH", out_dir / "odis_inclusion_jobs.parquet"),
-        patch("pipeline.ingest.INCLUSION_COVERAGE_SHARED_OUTPUT_PATH", out_dir / "odis_inclusion_jobs_coverage.parquet"),
+        patch(
+            "pipeline.ingest.INCLUSION_OUTPUT_PATH",
+            out_dir / "odis_inclusion_jobs.parquet",
+        ),
+        patch(
+            "pipeline.ingest.INCLUSION_COVERAGE_SHARED_OUTPUT_PATH",
+            out_dir / "odis_inclusion_jobs_coverage.parquet",
+        ),
     ):
         config = {
             "sources": {
@@ -3072,6 +3091,7 @@ def test_clean_inclusion_jobs_odace_failure(mock_get_client, tmp_path):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
     mock_client.fetch_table.side_effect = Exception("ODAS network timeout")
+    mock_client.fetch_table_path.side_effect = Exception("ODAS network timeout")
 
     config = {
         "sources": {
@@ -3083,12 +3103,16 @@ def test_clean_inclusion_jobs_odace_failure(mock_get_client, tmp_path):
         }
     }
 
-    with pytest.raises(PipelineRunError, match="Odace inclusion_jobs did not produce a usable dataset"):
+    with pytest.raises(
+        PipelineRunError, match="Odace inclusion_jobs did not produce a usable dataset"
+    ):
         clean_inclusion_jobs(config, MagicMock(spec=PipelineLogger))
 
 
 @patch("pipeline.ingest.cleaners.salesforce.get_odace_client")
-def test_clean_salesforce_jaccueille_odace_success(mock_get_client, tmp_path, monkeypatch):
+def test_clean_salesforce_jaccueille_odace_success(
+    mock_get_client, tmp_path, monkeypatch
+):
     """Verifies clean_salesforce_jaccueille correctly fetches and formats fact_jaccueille_code_postal."""
     clean_dir = tmp_path / "clean"
     clean_dir.mkdir(parents=True, exist_ok=True)
@@ -3158,7 +3182,9 @@ def test_clean_salesforce_jaccueille_odace_success(mock_get_client, tmp_path, mo
 
 
 @patch("pipeline.ingest.cleaners.salesforce.get_odace_client")
-def test_clean_salesforce_jaccueille_odace_failure(mock_get_client, tmp_path, monkeypatch):
+def test_clean_salesforce_jaccueille_odace_failure(
+    mock_get_client, tmp_path, monkeypatch
+):
     """Verifies clean_salesforce_jaccueille raises PipelineRunError on failure."""
     clean_dir = tmp_path / "clean"
     clean_dir.mkdir(parents=True, exist_ok=True)
@@ -3178,7 +3204,9 @@ def test_clean_salesforce_jaccueille_odace_failure(mock_get_client, tmp_path, mo
         }
     }
 
-    with pytest.raises(PipelineRunError, match="ODAS Salesforce J'accueille cleaner failed"):
+    with pytest.raises(
+        PipelineRunError, match="ODAS Salesforce J'accueille cleaner failed"
+    ):
         clean_salesforce_jaccueille(config, MagicMock(spec=PipelineLogger))
 
 
@@ -3194,8 +3222,14 @@ def test_clean_live_jobs_odace_success(mock_get_client, tmp_path, monkeypatch):
 
     monkeypatch.setattr(ingest, "OUTPUT_DIR", output_dir)
     monkeypatch.setattr("pipeline.ingest.context.CLEAN_DIR", clean_dir)
-    monkeypatch.setattr(ingest, "FT_SHARED_OUTPUT_PATH", output_dir / "odis_ft_jobs_agg.parquet")
-    monkeypatch.setattr(ingest, "FT_COVERAGE_SHARED_OUTPUT_PATH", output_dir / "odis_ft_jobs_coverage.parquet")
+    monkeypatch.setattr(
+        ingest, "FT_SHARED_OUTPUT_PATH", output_dir / "odis_ft_jobs_agg.parquet"
+    )
+    monkeypatch.setattr(
+        ingest,
+        "FT_COVERAGE_SHARED_OUTPUT_PATH",
+        output_dir / "odis_ft_jobs_coverage.parquet",
+    )
 
     # Create mock clean rome referential
     pd.DataFrame(
@@ -3308,6 +3342,7 @@ def test_clean_live_jobs_odace_failure(mock_get_client, tmp_path):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
     mock_client.fetch_table.side_effect = Exception("ODAS network timeout")
+    mock_client.fetch_table_path.side_effect = Exception("ODAS network timeout")
 
     config = {
         "sources": {
@@ -3319,9 +3354,133 @@ def test_clean_live_jobs_odace_failure(mock_get_client, tmp_path):
         }
     }
 
-    with pytest.raises(PipelineRunError, match="Odace france_travail_live did not produce a usable dataset"):
+    with pytest.raises(
+        PipelineRunError,
+        match="Odace france_travail_live did not produce a usable dataset",
+    ):
         clean_live_jobs(config, MagicMock(spec=PipelineLogger))
 
 
+def test_fetch_table_path_cached(tmp_path, monkeypatch):
+    """Verifies fetch_table_path returns Path directly without calling pd.read_parquet when cached."""
+    import pipeline.odace_client as oc
+
+    monkeypatch.setattr(oc, "CACHE_DIR", tmp_path)
+
+    cache_file = tmp_path / "odace_dummy_table.parquet"
+    df = pd.DataFrame({"col": [1, 2, 3]})
+    df.to_parquet(cache_file)
+
+    monkeypatch.setenv("ODAS_API_KEY", "fake_key")
+    monkeypatch.setenv("ODAS_API_URL", "https://fake.url")
+    client = oc.OdasClient(warmup=False)
+
+    with patch.object(pd, "read_parquet") as mock_read_parquet:
+        res_path = client.fetch_table_path("dummy_table", ttl_days=10)
+        assert res_path == cache_file
+        mock_read_parquet.assert_not_called()
 
 
+def test_fetch_table_path_download(tmp_path, monkeypatch):
+    """Verifies fetch_table_path downloads and caches parquet via pyarrow validation without pd.read_parquet."""
+    import pipeline.odace_client as oc
+
+    monkeypatch.setattr(oc, "CACHE_DIR", tmp_path)
+
+    sample_df = pd.DataFrame({"id": ["a", "b"], "val": [10, 20]})
+    parquet_buffer = sample_df.to_parquet()
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.iter_content.return_value = [parquet_buffer]
+
+    monkeypatch.setenv("ODAS_API_KEY", "fake_key")
+    monkeypatch.setenv("ODAS_API_URL", "https://fake.url")
+    client = oc.OdasClient(warmup=False)
+
+    with (
+        patch("requests.get", return_value=mock_resp),
+        patch.object(pd, "read_parquet") as mock_read_parquet,
+    ):
+        res_path = client.fetch_table_path("new_table", ttl_days=10)
+        assert res_path == tmp_path / "odace_new_table.parquet"
+        assert res_path.exists()
+        mock_read_parquet.assert_not_called()
+
+
+def test_fetch_table_path_corrupted_cache_redownloads(tmp_path, monkeypatch):
+    """Verifies fetch_table_path detects a corrupted cache file via PyArrow metadata and re-downloads."""
+    import pipeline.odace_client as oc
+
+    monkeypatch.setattr(oc, "CACHE_DIR", tmp_path)
+
+    cache_file = tmp_path / "odace_corrupt_table.parquet"
+    cache_file.write_bytes(b"NOT_A_PARQUET_FILE")
+
+    sample_df = pd.DataFrame({"id": ["x"], "val": [42]})
+    parquet_buffer = sample_df.to_parquet()
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.iter_content.return_value = [parquet_buffer]
+
+    monkeypatch.setenv("ODAS_API_KEY", "fake_key")
+    monkeypatch.setenv("ODAS_API_URL", "https://fake.url")
+    client = oc.OdasClient(warmup=False)
+
+    with patch("requests.get", return_value=mock_resp) as mock_get:
+        res_path = client.fetch_table_path("corrupt_table", ttl_days=10)
+        assert res_path == cache_file
+        assert mock_get.called
+        repaired_df = pd.read_parquet(res_path)
+        assert len(repaired_df) == 1
+        assert repaired_df.iloc[0]["val"] == 42
+
+
+@patch("pipeline.ingest.fetch_source", return_value=None)
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_communes_epci_odace_failure_fails_closed(
+    mock_get_client, _mock_fetch_source, temp_cache_dirs
+):
+    """Verifies clean_communes raises PipelineRunError when use_odace EPCI fails and fallback is unavailable."""
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+
+    def mock_fetch(table, ttl_days=None):
+        if table == "ref_commune_geo":
+            return pd.DataFrame(
+                {
+                    "commune_insee_code": ["75001"],
+                    "geometrie_geojson": [
+                        json.dumps({"type": "Point", "coordinates": [2.3, 48.8]})
+                    ],
+                }
+            )
+        raise RuntimeError("ODAS EPCI unavailable")
+
+    mock_client.fetch_table.side_effect = mock_fetch
+
+    config = {
+        "sources": {
+            "communes": {
+                "use_odace": True,
+                "odace_table": "ref_commune_geo",
+                "ttl_days": 30,
+            },
+            "ref_epci": {
+                "use_odace": True,
+                "odace_table": "ref_epci",
+                "ttl_days": 90,
+            },
+            "ref_commune_epci": {
+                "use_odace": True,
+                "odace_table": "ref_commune_epci",
+                "ttl_days": 90,
+            },
+        }
+    }
+
+    with pytest.raises(
+        PipelineRunError, match="Odace communes did not produce a usable dataset"
+    ):
+        clean_communes(config, MagicMock(spec=PipelineLogger))

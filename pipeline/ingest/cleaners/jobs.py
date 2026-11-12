@@ -72,7 +72,16 @@ def get_live_jobs_status() -> Dict[str, Any]:
 def clean_live_jobs(
     config: Dict[str, Any], logger: PipelineLogger, skip: bool = False
 ) -> None:
-    """Fetches and aggregates Live Job offers from France Travail."""
+    """Fetches and aggregates Live Job offers from France Travail (ODAS Silver or API fallback).
+
+    Args:
+        config: Pipeline configuration dictionary.
+        logger: Pipeline logger instance.
+        skip: If True, skips ingestion and logs a SKIPPED status.
+
+    Raises:
+        PipelineRunError: If ODAS fetch or legacy France Travail ingestion fails.
+    """
     import pipeline.ingest as ingest
 
     logger.log_step("clean_live_jobs", "STARTED")
@@ -91,9 +100,22 @@ def clean_live_jobs(
             client = ingest.get_odace_client(logger)
             odace_table = source_cfg.get("odace_table", "fact_offre_emploi")
             ttl_days = source_cfg.get("ttl_days", 7)
-            df_raw = client.fetch_table(odace_table, ttl_days=ttl_days)
-            if df_raw.empty:
-                raise ValueError(f"Odace export '{odace_table}' is empty")
+            odace_path = (
+                client.fetch_table_path(odace_table, ttl_days=ttl_days)
+                if hasattr(client, "fetch_table_path")
+                else None
+            )
+            if isinstance(odace_path, Path) and odace_path.exists():
+                lf_raw = pl.scan_parquet(odace_path)
+            else:
+                df_raw = client.fetch_table(odace_table, ttl_days=ttl_days)
+                if df_raw.empty:
+                    raise ValueError(f"Odace export '{odace_table}' is empty")
+                lf_raw = (
+                    pl.from_pandas(df_raw).lazy()
+                    if isinstance(df_raw, pd.DataFrame)
+                    else df_raw.lazy()
+                )
 
             output_dir = ingest.OUTPUT_DIR
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -101,24 +123,28 @@ def clean_live_jobs(
             coverage_target = output_dir / "odis_ft_jobs_coverage.parquet"
 
             metro_set = list(METROPOLITAN_DEPARTMENTS)
-            lf_raw = (
-                pl.from_pandas(df_raw).lazy()
-                if isinstance(df_raw, pd.DataFrame)
-                else df_raw.lazy()
-            )
 
-            # Filter non-null commune INSEE code and metropolitan departments (96 depts)
-            lf_filtered = lf_raw.filter(
-                pl.col("commune_insee_code").is_not_null()
-                & (pl.col("commune_insee_code").str.len_chars() >= 2)
-                & pl.col("commune_insee_code").str.slice(0, 2).is_in(metro_set)
-            ).with_columns(
-                pl.col("commune_insee_code")
-                .cast(pl.String)
-                .str.strip_chars()
-                .str.zfill(5)
-                .alias("commune_clean"),
-                pl.col("commune_insee_code").str.slice(0, 2).alias("dept"),
+            # Normalize commune INSEE code first, then filter to metropolitan departments (96 depts)
+            lf_filtered = (
+                lf_raw.filter(pl.col("commune_insee_code").is_not_null())
+                .with_columns(
+                    pl.col("commune_insee_code")
+                    .cast(pl.String)
+                    .str.strip_chars()
+                    .str.zfill(5)
+                    .alias("commune_clean")
+                )
+                .filter(pl.col("commune_clean").str.len_chars() == 5)
+                .with_columns(
+                    pl.when(
+                        pl.col("commune_clean").str.starts_with("97")
+                        | pl.col("commune_clean").str.starts_with("98")
+                    )
+                    .then(pl.col("commune_clean").str.slice(0, 3))
+                    .otherwise(pl.col("commune_clean").str.slice(0, 2))
+                    .alias("dept")
+                )
+                .filter(pl.col("dept").is_in(metro_set))
             )
 
             # Load ROME referential for labels
@@ -154,9 +180,7 @@ def clean_live_jobs(
                     how="left",
                 )
             else:
-                lf_joined = lf_filtered.with_columns(
-                    pl.lit("").alias("rome_label_ref")
-                )
+                lf_joined = lf_filtered.with_columns(pl.lit("").alias("rome_label_ref"))
 
             # Aggregate by (commune, romeCode, romeLibelle)
             lf_agg = (
@@ -363,7 +387,16 @@ def get_inclusion_jobs_status() -> Dict[str, Any]:
 def clean_inclusion_jobs(
     config: Dict[str, Any], logger: PipelineLogger, skip: bool = False
 ) -> None:
-    """Fetches job openings from Les emplois de l'inclusion."""
+    """Fetches job openings from Les emplois de l'inclusion (ODAS Silver or API fallback).
+
+    Args:
+        config: Pipeline configuration dictionary.
+        logger: Pipeline logger instance.
+        skip: If True, skips ingestion and logs a SKIPPED status.
+
+    Raises:
+        PipelineRunError: If ODAS fetch or legacy inclusion jobs ingestion fails.
+    """
     import pipeline.ingest as ingest
 
     logger.log_step("clean_inclusion_jobs", "STARTED")
@@ -450,16 +483,15 @@ def clean_inclusion_jobs(
                 else None
             )
             if "lieu_commune_insee_code" in df_postes.columns:
-                codgeo = (
-                    df_postes["lieu_commune_insee_code"]
-                    .fillna(commune_from_sk)
-                    .fillna("")
-                    .astype(str)
+                raw_codgeo = df_postes["lieu_commune_insee_code"].fillna(
+                    commune_from_sk
                 )
             elif commune_from_sk is not None:
-                codgeo = commune_from_sk.fillna("").astype(str)
+                raw_codgeo = commune_from_sk
             else:
-                codgeo = pd.Series("", index=df_postes.index)
+                raw_codgeo = pd.Series(None, index=df_postes.index, dtype="object")
+
+            codgeo = ingest.normalize_code(raw_codgeo, 5).fillna("").astype(str)
 
             siae_siret = df_postes["structure_siret"].astype(str)
             siae_type = siae_siret.map(siret_to_type).fillna("").astype(str)
@@ -467,7 +499,9 @@ def clean_inclusion_jobs(
             rome = (
                 df_postes["rome_code"].astype(str)
                 if "rome_code" in df_postes.columns
-                else df_postes.get("rome", pd.Series("", index=df_postes.index)).astype(str)
+                else df_postes.get("rome", pd.Series("", index=df_postes.index)).astype(
+                    str
+                )
             )
             postes = (
                 pd.to_numeric(df_postes.get("postes_nombre", 1), errors="coerce")
@@ -515,9 +549,13 @@ def clean_inclusion_jobs(
             # 3. Mode A sans DOM-TOM: Filter strictly to France métropolitaine
             dept_series = df_jobs["codgeo"].apply(
                 lambda c: (
-                    "2A"
-                    if c.startswith("2A")
-                    else ("2B" if c.startswith("2B") else c[:2])
+                    c[:3]
+                    if c.startswith(("97", "98"))
+                    else (
+                        "2A"
+                        if c.startswith("2A")
+                        else ("2B" if c.startswith("2B") else c[:2])
+                    )
                 )
             )
             is_metro = dept_series.isin(METROPOLITAN_DEPARTMENTS)

@@ -72,9 +72,7 @@ def test_generate_referentiels_falls_back_to_raw_regions(tmp_path, monkeypatch):
         MagicMock(),
     )
 
-    refs = pd.read_parquet(
-        output_dir / "odis_referentiels.parquet"
-    )
+    refs = pd.read_parquet(output_dir / "odis_referentiels.parquet")
     regions = refs.loc[refs["key"] == "regions"].set_index("code")["label"].to_dict()
     assert regions == {
         "01": "Guadeloupe",
