@@ -67,11 +67,26 @@ def _clear_authenticated_context() -> None:
     st.session_state.clear()
 
 
+def _get_request_header(header_name: str) -> Optional[str]:
+    """Safely retrieves a header from st.context.headers if available."""
+    context = getattr(st, "context", None)
+    if not context:
+        return None
+    headers = getattr(context, "headers", None)
+    if not headers:
+        return None
+    try:
+        val = headers.get(header_name)
+        return val.strip() if isinstance(val, str) else None
+    except Exception:
+        return None
+
+
 def _render_oidc_denied() -> None:
     """Show a generic denial without exposing allowlist membership."""
     st.error("🔒 Votre compte n'est pas autorisé à accéder à OD&IS.")
     if st.button("Se déconnecter", key="oidc_denied_logout"):
-        st.logout()
+        logout()
 
 
 def get_login_session_id() -> str:
@@ -119,6 +134,10 @@ def check_password() -> bool:
         "1",
         "yes",
     )
+    is_staging = (
+        getattr(cfg, "ODIS_DEPLOYMENT_ENV", None)
+        or os.environ.get("ODIS_DEPLOYMENT_ENV", "local")
+    ).lower() == "staging"
 
     # 1. Local dev bypass (no Cloud Run, no forced auth)
     if not is_cloud_run and not force_auth:
@@ -148,6 +167,7 @@ def check_password() -> bool:
     oidc_logged_in = bool(user_obj and getattr(user_obj, "is_logged_in", False))
 
     # 2. Re-verify active sessions. Local bypass identities have no OIDC state;
+    # Cloudflare identities are verified against request headers;
     # OIDC identities are re-authorized on every page entry so an existing session
     # cannot retain access after an allowlist change.
     if st.session_state.get("password_correct"):
@@ -156,13 +176,58 @@ def check_password() -> bool:
         if has_user and auth_method == "local":
             get_login_session_id()
             return True
-        if auth_method == "oidc" and not oidc_logged_in:
+        if has_user and auth_method == "cloudflare":
+            if is_staging:
+                cf_email = _get_request_header("cf-access-authenticated-user-email")
+                cf_jwt = _get_request_header("cf-access-jwt-assertion")
+                normalized_email = normalize_email(cf_email) if cf_email else None
+                stored_user = st.session_state.get("user")
+                stored_username = getattr(stored_user, "username", None)
+                if (
+                    normalized_email
+                    and cf_jwt
+                    and normalized_email == stored_username
+                    and is_email_authorized(normalized_email)
+                ):
+                    get_login_session_id()
+                    return True
+            _clear_authenticated_context()
+        elif auth_method == "oidc" and not oidc_logged_in:
             _clear_authenticated_context()
         elif not oidc_logged_in:
             logger.warning("Authenticated session has no verifiable identity context.")
             _clear_authenticated_context()
 
-    # 3. OIDC: Streamlit has authenticated the identity; OD&IS authorizes
+    # 3. Cloudflare Access Staging Auth
+    # In staging, Cloudflare Access terminates authentication at edge and passes
+    # the verified identity via Cf-Access headers.
+    if is_staging:
+        cf_email = _get_request_header("cf-access-authenticated-user-email")
+        cf_jwt = _get_request_header("cf-access-jwt-assertion")
+        if cf_email and cf_jwt:
+            normalized_email = normalize_email(cf_email)
+            if not normalized_email or not is_email_authorized(normalized_email):
+                logger.warning(
+                    "Cloudflare-authenticated identity denied by authorization policy: %s",
+                    normalized_email,
+                )
+                _clear_authenticated_context()
+                _render_oidc_denied()
+                return False
+
+            org = resolve_org_for_oidc(normalized_email)
+            st.session_state["password_correct"] = True
+            st.session_state["auth_method"] = "cloudflare"
+            st.session_state["username"] = normalized_email
+            st.session_state["user"] = User(
+                username=normalized_email,
+                org_id=org.id if org else None,
+            )
+            st.session_state["org"] = org
+            get_login_session_id()
+            return True
+
+    # 4. OIDC: Streamlit has authenticated the identity; OD&IS authorizes
     # it against the allowlist and resolves an organization profile if one is mapped.
     if oidc_logged_in:
         email = getattr(user_obj, "email", None)
@@ -188,7 +253,7 @@ def check_password() -> bool:
         get_login_session_id()
         return True
 
-    # 4. Show login UI (Google Workspace OIDC)
+    # 5. Show login UI (Google Workspace OIDC)
     with st.container(width="stretch", horizontal_alignment="center"):
         with st.container(width=400, border=True, horizontal_alignment="center"):
             st.subheader("Accès ODIS")
