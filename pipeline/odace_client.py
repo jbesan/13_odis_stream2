@@ -1,11 +1,14 @@
-import os
-import requests
 import logging
-import pandas as pd
+import os
 import time
 from pathlib import Path
-from typing import Optional, Dict, Any
-from pipeline.common import PipelineLogger, CACHE_DIR
+from typing import Any, Dict, Literal, Optional, Union, overload
+
+import pandas as pd
+import pyarrow.parquet as pq
+import requests
+
+from pipeline.common import CACHE_DIR, CONFIG_FILE, PipelineLogger, load_config
 
 
 class OdasClient:
@@ -46,8 +49,6 @@ class OdasClient:
         }
 
         # Central configuration lookup for TTL mapping
-        from pipeline.common import CONFIG_FILE, load_config
-
         try:
             self.config = load_config(CONFIG_FILE)
         except Exception as e:
@@ -117,8 +118,41 @@ class OdasClient:
         if self.warmup_enabled and not self._is_warm:
             self.wait_for_ready()
 
-    def _fetch_table_export(self, table_name: str, ttl_seconds: int) -> pd.DataFrame:
-        """Downloads table data via the new export endpoint and reads the Parquet file."""
+    @overload
+    def _fetch_table_export(
+        self,
+        table_name: str,
+        ttl_seconds: int,
+        return_path_only: Literal[False] = False,
+    ) -> pd.DataFrame: ...
+
+    @overload
+    def _fetch_table_export(
+        self,
+        table_name: str,
+        ttl_seconds: int,
+        return_path_only: Literal[True],
+    ) -> Path: ...
+
+    def _fetch_table_export(
+        self,
+        table_name: str,
+        ttl_seconds: int,
+        return_path_only: bool = False,
+    ) -> Union[pd.DataFrame, Path]:
+        """Downloads table data via the export endpoint, caches it, and returns DataFrame or Path.
+
+        Args:
+            table_name: Name of the ODAS Silver table to export.
+            ttl_seconds: Cache validity duration in seconds.
+            return_path_only: If True, returns the validated local Parquet Path without loading into RAM.
+
+        Returns:
+            Either a Pandas DataFrame (when return_path_only is False) or the local cache Path.
+
+        Raises:
+            RuntimeError: When return_path_only is True and both API export and fallback cache fail.
+        """
         cache_file = CACHE_DIR / f"odace_{table_name}.parquet"
 
         # Check cache
@@ -129,6 +163,13 @@ class OdasClient:
                     logging.info(
                         f"OdaceClient: Loading {table_name} from Parquet cache (age: {file_age / 3600:.1f}h, TTL: {ttl_seconds / (24 * 3600):.1f} days)"
                     )
+                    if return_path_only:
+                        meta = pq.ParquetFile(cache_file).metadata
+                        if meta.num_rows == 0:
+                            raise ValueError(
+                                f"Odace cached export '{table_name}' is empty"
+                            )
+                        return cache_file
                     return pd.read_parquet(cache_file)
                 except Exception as e:
                     logging.warning(
@@ -152,19 +193,25 @@ class OdasClient:
                 for chunk in response.iter_content(chunk_size=65536):
                     f.write(chunk)
 
-            downloaded = pd.read_parquet(staging_file)
-            if downloaded.empty:
+            # Validate Parquet file integrity and non-emptiness using PyArrow metadata (instantaneous & 0 RAM)
+            meta = pq.ParquetFile(staging_file).metadata
+            if meta.num_rows == 0:
                 raise ValueError(f"Odace export '{table_name}' is empty")
             os.replace(staging_file, cache_file)
-            logging.info(f"OdaceClient: Cached {table_name} to {cache_file}")
-            return downloaded
+            logging.info(
+                f"OdaceClient: Cached {table_name} to {cache_file} ({meta.num_rows} rows)"
+            )
+
+            if return_path_only:
+                return cache_file
+
+            return pd.read_parquet(cache_file)
 
         except Exception as e:
             if "staging_file" in locals() and staging_file.exists():
                 staging_file.unlink()
             error_msg = f"CRITICAL ERROR: Failed to export {table_name} from Odace API: {str(e)}"
             logging.error(error_msg)
-            print(f"ERROR [OdaceClient]: {error_msg}")
 
             # Fallback to expired cache if available
             if cache_file.exists():
@@ -172,6 +219,13 @@ class OdasClient:
                     f"OdaceClient: API failed for {table_name}, falling back to expired Parquet cache ({cache_file.name})"
                 )
                 try:
+                    if return_path_only:
+                        meta = pq.ParquetFile(cache_file).metadata
+                        if meta.num_rows == 0:
+                            raise ValueError(
+                                f"Odace expired cache '{table_name}' is empty"
+                            )
+                        return cache_file
                     return pd.read_parquet(cache_file)
                 except Exception as cache_err:
                     logging.error(
@@ -180,6 +234,8 @@ class OdasClient:
 
             if self.logger:
                 self.logger.log_source(f"odace_{table_name}", "ERROR", error_msg)
+            if return_path_only:
+                raise RuntimeError(error_msg) from e
             return pd.DataFrame()
 
     def fetch_dim_commune(self, ttl_days: int) -> pd.DataFrame:
@@ -260,7 +316,50 @@ class OdasClient:
         if table_name == "dim_commune":
             return self.fetch_dim_commune(ttl_days)
 
-        return self._fetch_table_export(table_name, ttl_seconds=ttl_days * 24 * 60 * 60)
+        return self._fetch_table_export(
+            table_name, ttl_seconds=ttl_days * 24 * 60 * 60, return_path_only=False
+        )
+
+    def fetch_table_path(
+        self,
+        table_name: str,
+        ttl_days: Optional[int] = None,
+    ) -> Path:
+        """Generic fetch returning the local cache Path of any silver table without loading it into RAM.
+
+        Downloads the Parquet export to local cache if missing or expired, validating its
+        integrity with PyArrow metadata without memory materialization.
+
+        Args:
+            table_name: Silver table name in ODAS.
+            ttl_days: Optional TTL in days. Resolved from sources.yaml if omitted.
+
+        Returns:
+            Path to the verified cached Parquet file.
+
+        Raises:
+            ValueError: If TTL cannot be resolved.
+            RuntimeError: If download fails and no usable cache exists.
+        """
+        if ttl_days is None:
+            # Resolve the table policy exclusively from sources.yaml.
+            if self.config and "sources" in self.config:
+                for name, source_cfg in self.config["sources"].items():
+                    if source_cfg.get("odace_table") == table_name:
+                        ttl_days = source_cfg["ttl_days"]
+                        logging.info(
+                            f"OdaceClient: Resolved TTL for '{table_name}' from sources configuration: {ttl_days} days"
+                        )
+                        break
+        if ttl_days is None:
+            raise ValueError(f"No TTL configured for Odace table '{table_name}'")
+
+        result = self._fetch_table_export(
+            table_name, ttl_seconds=ttl_days * 24 * 60 * 60, return_path_only=True
+        )
+        if isinstance(result, Path):
+            return result
+        raise RuntimeError(f"Failed to resolve cache Path for table '{table_name}'")
 
     def execute_query(
         self, sql: str, cache_name: str, ttl_seconds: int

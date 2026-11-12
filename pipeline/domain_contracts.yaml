@@ -390,6 +390,7 @@ runner:
     - "sante_apl"
     - "mob_durable_share"
     - "ter_insecurite"
+    - "rome"
   step_to_source_map:
     lovac: "logement_vacant"
     rpls: "logement_social"
@@ -409,6 +410,7 @@ runner:
     electoral_history: "electoral_history"
     salesforce_jaccueille: "salesforce_jaccueille"
     bassins_de_vie: "bassins_de_vie"
+    rome: "rome"
   clean_filenames:
     associations: "associations_vertical.parquet"
     nomenclature_waldec: "referentiel_waldec.parquet"
@@ -421,6 +423,7 @@ runner:
     salesforce_jaccueille: "salesforce_jaccueille.parquet"
     regions: "regions.parquet"
     bassins_de_vie: "bassins_de_vie.parquet"
+    rome: "rome.parquet"
   output_dir_steps:
     - "live_jobs"
     - "inclusion_jobs"

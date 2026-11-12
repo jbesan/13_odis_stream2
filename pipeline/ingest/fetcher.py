@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 import zipfile
 
-import pandas as pd
 import requests
 
 from pipeline.common import (
@@ -17,11 +16,8 @@ from pipeline.common import (
     fetch_remote_metadata_datagouv,
     is_cache_valid,
 )
-from pipeline.ft_live_ingest import get_token as get_ft_token
 from pipeline.ingest.config import get_domain_contracts
 from pipeline.ingest import context
-from pipeline.odace_client import get_odace_client
-from pipeline.run_context import PipelineRunError
 
 
 def fetch_source(
@@ -176,120 +172,12 @@ def fetch_source(
 def fetch_rome_referential(
     config: Dict[str, Any], logger: PipelineLogger
 ) -> Optional[Path]:
-    """Fetches the ROME referential using its configured TTL."""
-    local_path = context.CACHE_DIR / "rome_referential_api.parquet"
-    source_cfg = config.get("sources", {}).get("rome", {})
-    ttl_days = source_cfg.get("ttl_days", 365)
+    """Deprecated: Standard cleaner clean_rome() in pipeline.ingest.cleaners.jobs should be used instead.
 
-    if local_path.exists():
-        mtime = datetime.fromtimestamp(local_path.stat().st_mtime)
-        age_days = (datetime.now() - mtime).days
-        if age_days < ttl_days:
-            logging.info(
-                f"[ROME] Referential is {age_days} days old. Using cache (TTL={ttl_days} days)."
-            )
-            return local_path
-        logging.info(f"[ROME] Referential is {age_days} days old. Refreshing...")
+    Executes clean_rome and returns CLEAN_DIR / "rome.parquet" for backwards compatibility.
+    """
+    from pipeline.ingest.cleaners.jobs import clean_rome
 
-    if source_cfg.get("use_odace", False):
-        odace_table = source_cfg.get("odace_table", "ref_rome")
-        try:
-            client = get_odace_client(logger)
-            df = client.fetch_table(odace_table, ttl_days=ttl_days)
-            code_col = next((c for c in ["code_rome", "code"] if c in df.columns), None)
-            label_col = next(
-                (c for c in ["libelle_rome", "label", "libelle"] if c in df.columns),
-                None,
-            )
-
-            if not df.empty and code_col and label_col:
-                df_out = (
-                    pd.DataFrame(
-                        {
-                            "code": df[code_col].astype(str).str.strip(),
-                            "label": df[label_col].astype(str).str.strip(),
-                        }
-                    )
-                    .dropna()
-                    .drop_duplicates()
-                )
-                df_out.to_parquet(local_path)
-                logging.info(
-                    f"✅ [ROME] Saved {len(df_out)} métiers to {local_path} from ODAS {odace_table}"
-                )
-                logger.log_source("rome_referential", "FETCHED", str(local_path))
-                return local_path
-            else:
-                raise ValueError(
-                    f"Unexpected columns or empty data in ODAS {odace_table}: {df.columns}"
-                )
-        except Exception as e:
-            logging.error(f"❌ [ROME] Failed to fetch referential from ODAS: {e}")
-            raise PipelineRunError(
-                f"Odace rome did not produce a usable dataset: {e}"
-            ) from e
-
-    try:
-        token = get_ft_token()
-        url = "https://api.francetravail.io/partenaire/offresdemploi/v2/referentiel/metiers"
-        headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
-
-        logging.info("📡 [ROME] Fetching referential from France Travail API...")
-        response = requests.get(url, headers=headers, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-
-        df = pd.DataFrame(data)
-        if "code" in df.columns and "libelle" in df.columns:
-            df = df[["code", "libelle"]].rename(columns={"libelle": "label"})
-            df.to_parquet(local_path)
-            logging.info(
-                f"✅ [ROME] Saved {len(df)} métiers to {local_path} from France Travail API"
-            )
-            logger.log_source("rome_referential", "FETCHED", str(local_path))
-            return local_path
-        else:
-            raise ValueError(f"Unexpected API data format: {df.columns}")
-
-    except Exception as e:
-        logging.error(
-            f"❌ [ROME] Failed to fetch referential from API: {e}. Attempting static fallback..."
-        )
-        logger.log_source("rome_referential_api_failure", "WARNING", str(e))
-
-        try:
-            rome_cfg = config["sources"].get("rome")
-            if not rome_cfg:
-                raise ValueError("No static 'rome' configuration found in sources.yaml")
-
-            static_json_path = fetch_source("rome", rome_cfg, logger)
-            if not static_json_path or not static_json_path.exists():
-                raise FileNotFoundError(
-                    f"Static ROME source not available at {static_json_path}"
-                )
-
-            logging.info(
-                f"[ROME] Parsing static JSON referential from {static_json_path}..."
-            )
-            df = pd.read_json(static_json_path)
-
-            if "code" in df.columns and "libelle" in df.columns:
-                df = df[["code", "libelle"]].rename(columns={"libelle": "label"})
-                df.to_parquet(local_path)
-                logging.info(
-                    f"✅ [ROME] Saved {len(df)} métiers to {local_path} from static ROME referential"
-                )
-                logger.log_source("rome_referential", "FETCHED", str(local_path))
-                return local_path
-            else:
-                raise ValueError(f"Unexpected static JSON format: {df.columns}")
-        except Exception as fallback_err:
-            logging.error(f"❌ [ROME] Static fallback failed: {fallback_err}")
-            logger.log_source(
-                "rome_referential", "ERROR", f"API: {e}, Fallback: {fallback_err}"
-            )
-
-            if local_path.exists():
-                logging.warning("[ROME] Returning expired cache referential.")
-                return local_path
-            return None
+    clean_rome(config, logger)
+    output_path = context.CLEAN_DIR / "rome.parquet"
+    return output_path if output_path.exists() else None

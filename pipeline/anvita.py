@@ -4,7 +4,7 @@ import re
 import unicodedata
 import logging
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -21,42 +21,50 @@ for parent, children in PLM_PARENTS.items():
     for child in children:
         CHILD_TO_PARENT[child] = parent
 
+
 def clean_and_normalize(name: str) -> str:
     """Normalize names for matching by removing accents, parentheses, and common prefixes."""
     if not isinstance(name, str):
         return ""
     name = name.strip()
-    
+
     # Lowercase
     name = name.lower()
-    
+
     # Handle parentheses
     # E.g. "Percy (Le)" -> "le percy"
     # E.g. "Vigan (Le)" -> "le vigan"
     # E.g. "Diois (Communauté de Communes)" -> "diois"
-    m = re.search(r'\((.*?)\)', name)
+    m = re.search(r"\((.*?)\)", name)
     if m:
         content = m.group(1).strip()
-        if content in ['le', 'la', 'les', 'l\'', "l"]:
-            name = re.sub(r'\s*\(.*?\)', '', name)
+        if content in ["le", "la", "les", "l'", "l"]:
+            name = re.sub(r"\s*\(.*?\)", "", name)
             name = f"{content} {name}"
         else:
-            name = re.sub(r'\s*\(.*?\)', '', name)
-            
+            name = re.sub(r"\s*\(.*?\)", "", name)
+
     # Replace all types of apostrophes with space
     name = name.replace("'", " ").replace("’", " ")
-    
+
     # Remove accents
-    name = "".join(c for c in unicodedata.normalize('NFD', name) if unicodedata.category(c) != 'Mn')
-    
+    name = "".join(
+        c for c in unicodedata.normalize("NFD", name) if unicodedata.category(c) != "Mn"
+    )
+
     # Strip common prefixes/suffixes after type detection
-    name = re.sub(r'^(cr|cd|cc|ca|cu|ville de|mairie de|communaute de communes du|communaute de communes|metropole|region de la|region de l\'|region de|region|departement de la|departement de l\'|departement de|departement)\s+', '', name)
-    name = re.sub(r'\s+(metropole)$', '', name)
-    
+    name = re.sub(
+        r"^(cr|cd|cc|ca|cu|ville de|mairie de|communaute de communes du|communaute de communes|metropole|region de la|region de l\'|region de|region|departement de la|departement de l\'|departement de|departement)\s+",
+        "",
+        name,
+    )
+    name = re.sub(r"\s+(metropole)$", "", name)
+
     # Replace dashes and punctuation with space
-    name = re.sub(r'[-_/,.]', ' ', name)
-    name = re.sub(r'\s+', ' ', name).strip()
+    name = re.sub(r"[-_/,.]", " ", name)
+    name = re.sub(r"\s+", " ", name).strip()
     return name
+
 
 def clean_dept_code(d: Any) -> str:
     """Normalize department codes to standard 2-digit strings (or 3 for DOM-TOM)."""
@@ -70,6 +78,7 @@ def clean_dept_code(d: Any) -> str:
         val = "0" + val
     return val
 
+
 def get_dept_from_pc(pc: Any) -> str:
     """Extract department code from postal code."""
     if not pc or pd.isna(pc):
@@ -77,10 +86,11 @@ def get_dept_from_pc(pc: Any) -> str:
     pc = str(pc).strip().zfill(5)
     if len(pc) >= 5:
         # Check DOM-TOM
-        if pc.startswith(('97', '98')):
+        if pc.startswith(("97", "98")):
             return pc[:3]
         return pc[:2]
     return ""
+
 
 def resolve_entity(
     name: str,
@@ -93,14 +103,18 @@ def resolve_entity(
     epci_to_communes: Dict[str, List[str]] = None,
     commune_lookup: Dict[tuple, str] = None,
     commune_global_lookup: Dict[str, List[tuple]] = None,
-    communes_df: pd.DataFrame = None
+    communes_df: pd.DataFrame = None,
 ) -> Dict[str, Any]:
     """Resolves an ANVITA member entity name to its type and list of constituent codgeo values."""
     orig_name_lower = name.lower().strip()
-    
+
     # Strip accents for keyword detection
-    orig_name_clean = "".join(c for c in unicodedata.normalize('NFD', orig_name_lower) if unicodedata.category(c) != 'Mn')
-    
+    orig_name_clean = "".join(
+        c
+        for c in unicodedata.normalize("NFD", orig_name_lower)
+        if unicodedata.category(c) != "Mn"
+    )
+
     # 1. Determine type using the original name structure before normalization
     entity_type = "Commune"
     if type_hint:
@@ -108,56 +122,77 @@ def resolve_entity(
     else:
         if orig_name_clean.startswith("cd ") or "departement" in orig_name_clean:
             entity_type = "Département"
-        elif orig_name_clean.startswith("cr ") or "region" in orig_name_clean or clean_and_normalize(name) in region_name_to_code:
+        elif (
+            orig_name_clean.startswith("cr ")
+            or "region" in orig_name_clean
+            or clean_and_normalize(name) in region_name_to_code
+        ):
             entity_type = "Région"
-        elif (orig_name_clean.startswith("cc ") or orig_name_clean.startswith("ca ") or orig_name_clean.startswith("cu ") or
-              "metropole" in orig_name_clean or "communaute" in orig_name_clean or "vallees" in orig_name_clean or "pays basque" in orig_name_clean):
+        elif (
+            orig_name_clean.startswith("cc ")
+            or orig_name_clean.startswith("ca ")
+            or orig_name_clean.startswith("cu ")
+            or "metropole" in orig_name_clean
+            or "communaute" in orig_name_clean
+            or "vallees" in orig_name_clean
+            or "pays basque" in orig_name_clean
+        ):
             entity_type = "Intercommunalité"
-            
+
     # 2. Get department code, cleaning and aligning with postal code if available
     dept_code = clean_dept_code(dept_code_input)
     dept_from_pc = get_dept_from_pc(pc_input)
-    
+
     if dept_from_pc:
         dept_code = dept_from_pc
-        
+
     norm_name = clean_and_normalize(name)
-    
+
     # Intercommunalité self-correction fallback:
     # If it was classified as a Commune, but is not in commune_lookup and is an exact match in epci_lookup, reclassify!
-    if entity_type == "Commune" and commune_lookup and (norm_name, dept_code) not in commune_lookup and epci_lookup and norm_name in epci_lookup:
+    if (
+        entity_type == "Commune"
+        and commune_lookup
+        and (norm_name, dept_code) not in commune_lookup
+        and epci_lookup
+        and norm_name in epci_lookup
+    ):
         entity_type = "Intercommunalité"
-        
+
     resolved = False
     codgeo_list = []
     match_method = ""
     resolved_id = ""
-    
+
     # Manual fallback for associated/merged communes
     manual_communes = {
         ("lomme", "59"): "59350",  # Lomme is associated with Lille
     }
-    
+
     if entity_type == "Région":
-        reg_code = region_name_to_code.get(norm_name, '') if region_name_to_code else ''
+        reg_code = region_name_to_code.get(norm_name, "") if region_name_to_code else ""
         if reg_code:
-            coms = communes_df[communes_df['reg_code'] == reg_code]['codgeo'].tolist()
+            coms = communes_df[communes_df["reg_code"] == reg_code]["codgeo"].tolist()
             codgeo_list = coms
             resolved_id = reg_code
             match_method = "region_code"
             resolved = True
-            
+
     elif entity_type == "Département":
-        dept_val = dept_code if dept_code else (dept_name_to_code.get(norm_name, '') if dept_name_to_code else '')
+        dept_val = (
+            dept_code
+            if dept_code
+            else (dept_name_to_code.get(norm_name, "") if dept_name_to_code else "")
+        )
         if dept_val:
-            coms = communes_df[communes_df['dep_code'] == dept_val]['codgeo'].tolist()
+            coms = communes_df[communes_df["dep_code"] == dept_val]["codgeo"].tolist()
             codgeo_list = coms
             resolved_id = dept_val
             match_method = "dept_code"
             resolved = True
-            
+
     elif entity_type == "Intercommunalité":
-        epci_code = epci_lookup.get(norm_name, '') if epci_lookup else ''
+        epci_code = epci_lookup.get(norm_name, "") if epci_lookup else ""
         if not epci_code and epci_lookup:
             # Fuzzy match (substring)
             for epci_n, code in epci_lookup.items():
@@ -170,7 +205,7 @@ def resolve_entity(
             resolved_id = epci_code
             match_method = "epci_siren"
             resolved = True
-            
+
     else:  # Commune
         # Check manual alias first
         if (norm_name, dept_code) in manual_communes:
@@ -186,15 +221,19 @@ def resolve_entity(
             resolved = True
         else:
             # Try fuzzy / substring match in the department first
-            dept_coms = communes_df[communes_df['dep_code'] == dept_code] if communes_df is not None else pd.DataFrame()
+            dept_coms = (
+                communes_df[communes_df["dep_code"] == dept_code]
+                if communes_df is not None
+                else pd.DataFrame()
+            )
             matches = []
             for idx, row in dept_coms.iterrows():
-                if pd.isna(row['commune_name']):
+                if pd.isna(row["commune_name"]):
                     continue
-                c_norm = clean_and_normalize(row['commune_name'])
+                c_norm = clean_and_normalize(row["commune_name"])
                 if norm_name in c_norm or c_norm in norm_name:
-                    matches.append(row['codgeo'])
-            
+                    matches.append(row["codgeo"])
+
             if len(matches) == 1:
                 codgeo_list = [matches[0]]
                 resolved_id = matches[0]
@@ -225,11 +264,11 @@ def resolve_entity(
                     matches_global = []
                     if communes_df is not None:
                         for idx, row in communes_df.iterrows():
-                            if pd.isna(row['commune_name']):
+                            if pd.isna(row["commune_name"]):
                                 continue
-                            c_norm = clean_and_normalize(row['commune_name'])
+                            c_norm = clean_and_normalize(row["commune_name"])
                             if norm_name in c_norm or c_norm in norm_name:
-                                matches_global.append((row['dep_code'], row['codgeo']))
+                                matches_global.append((row["dep_code"], row["codgeo"]))
                     if len(matches_global) == 1:
                         codgeo_list = [matches_global[0][1]]
                         resolved_id = matches_global[0][1]
@@ -237,21 +276,167 @@ def resolve_entity(
                         resolved = True
 
     return {
-        'resolved': resolved,
-        'type': entity_type,
-        'resolved_id': resolved_id,
-        'codgeo_list': codgeo_list,
-        'match_method': match_method
+        "resolved": resolved,
+        "type": entity_type,
+        "resolved_id": resolved_id,
+        "codgeo_list": codgeo_list,
+        "match_method": match_method,
     }
 
-def compute_anvita_scores(
-    communes_df: pd.DataFrame,
+
+def load_territory_referentials(
     cache_raw_dir: Path,
-    excel_path: Path
-) -> pd.Series:
+) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str], Dict[str, List[str]]]:
+    """Loads region, department, and EPCI referentials from ODAS Parquets or legacy JSON cache.
+
+    Args:
+        cache_raw_dir: Directory containing raw cached ODAS Parquets and/or JSON referentials.
+
+    Returns:
+        A 4-tuple of (region_name_to_code, dept_name_to_code, epci_lookup, epci_to_communes).
     """
-    Computes territory score boosts (1.0, 0.5, or 0.0) for ANVITA membership.
-    Reads private Excel trackers and matches them using raw cached referential files.
+    region_name_to_code: Dict[str, str] = {}
+    dept_name_to_code: Dict[str, str] = {}
+    epci_lookup: Dict[str, str] = {}
+    epci_to_communes: Dict[str, List[str]] = {}
+
+    regions_parquet = cache_raw_dir / "odace_ref_region.parquet"
+    regions_file = cache_raw_dir / "referentiel_regions.json"
+    if regions_parquet.exists():
+        try:
+            df_reg = pd.read_parquet(regions_parquet)
+            lbl_col = (
+                "libelle_region" if "libelle_region" in df_reg.columns else "libelle"
+            )
+            code_col = "code_region" if "code_region" in df_reg.columns else "code"
+            region_name_to_code = {
+                clean_and_normalize(str(r[lbl_col])): clean_dept_code(r[code_col])
+                for _, r in df_reg.iterrows()
+                if pd.notna(r.get(lbl_col)) and pd.notna(r.get(code_col))
+            }
+        except Exception as e:
+            logger.warning(f"Failed to parse odace_ref_region.parquet: {e}")
+
+    if not region_name_to_code and regions_file.exists():
+        try:
+            with open(regions_file, "r", encoding="utf-8") as f:
+                regs = json.load(f)
+                region_name_to_code = {
+                    clean_and_normalize(r["LIBELLE"]): clean_dept_code(r["REG"])
+                    for r in regs
+                    if "LIBELLE" in r and "REG" in r
+                }
+        except Exception as e:
+            logger.warning(f"Failed to parse referentiel_regions.json: {e}")
+
+    if region_name_to_code:
+        region_name_to_code[clean_and_normalize("Bourgogne-Franche-Comté")] = "27"
+        region_name_to_code[clean_and_normalize("Centre-Val de Loire")] = "24"
+        region_name_to_code[clean_and_normalize("Occitanie")] = "76"
+        region_name_to_code[clean_and_normalize("Auvergne Rhône-Alpes")] = "84"
+        region_name_to_code[clean_and_normalize("Île-de-France")] = "11"
+
+    depts_parquet = cache_raw_dir / "odace_ref_departement.parquet"
+    depts_file = cache_raw_dir / "referentiel_departements.json"
+    if depts_parquet.exists():
+        try:
+            df_dep = pd.read_parquet(depts_parquet)
+            lbl_col = (
+                "libelle_departement"
+                if "libelle_departement" in df_dep.columns
+                else "libelle"
+            )
+            code_col = (
+                "code_departement" if "code_departement" in df_dep.columns else "code"
+            )
+            dept_name_to_code = {
+                clean_and_normalize(str(r[lbl_col])): clean_dept_code(r[code_col])
+                for _, r in df_dep.iterrows()
+                if pd.notna(r.get(lbl_col)) and pd.notna(r.get(code_col))
+            }
+        except Exception as e:
+            logger.warning(f"Failed to parse odace_ref_departement.parquet: {e}")
+
+    if not dept_name_to_code and depts_file.exists():
+        try:
+            with open(depts_file, "r", encoding="utf-8") as f:
+                depts = json.load(f)
+                dept_name_to_code = {
+                    clean_and_normalize(d["LIBELLE"]): clean_dept_code(d["DEP"])
+                    for d in depts
+                    if "LIBELLE" in d and "DEP" in d
+                }
+        except Exception as e:
+            logger.warning(f"Failed to parse referentiel_departements.json: {e}")
+
+    epci_parquet = cache_raw_dir / "odace_ref_epci.parquet"
+    commune_epci_parquet = cache_raw_dir / "odace_ref_commune_epci.parquet"
+    epci_file = cache_raw_dir / "ref_epci.json"
+
+    if epci_parquet.exists() and commune_epci_parquet.exists():
+        try:
+            df_epci = pd.read_parquet(epci_parquet)
+            df_commune_epci = pd.read_parquet(commune_epci_parquet)
+            label_col = "libelle_epci" if "libelle_epci" in df_epci.columns else "nom"
+            code_col = "code_epci" if "code_epci" in df_epci.columns else "code"
+            epci_lookup = {
+                clean_and_normalize(str(r[label_col])): str(r[code_col])
+                .strip()
+                .zfill(9)
+                for _, r in df_epci.iterrows()
+                if pd.notna(r.get(label_col)) and pd.notna(r.get(code_col))
+            }
+            comm_code_col = (
+                "commune_insee_code"
+                if "commune_insee_code" in df_commune_epci.columns
+                else "code"
+            )
+            epci_code_col = (
+                "code_epci" if "code_epci" in df_commune_epci.columns else "code"
+            )
+            df_ce = df_commune_epci.dropna(subset=[epci_code_col, comm_code_col]).copy()
+            df_ce["_epci"] = df_ce[epci_code_col].astype(str).str.strip().str.zfill(9)
+            df_ce["_comm"] = df_ce[comm_code_col].astype(str).str.strip().str.zfill(5)
+            epci_to_communes = df_ce.groupby("_epci")["_comm"].apply(list).to_dict()
+        except Exception as e:
+            logger.warning(f"Failed to parse EPCI parquets: {e}")
+
+    if not epci_lookup and epci_file.exists():
+        try:
+            with open(epci_file, "r", encoding="utf-8") as f:
+                epcis = json.load(f)
+                epci_lookup = {
+                    clean_and_normalize(e["nom"]): str(e["code"]).strip().zfill(9)
+                    for e in epcis
+                    if "nom" in e and "code" in e
+                }
+                epci_to_communes = {
+                    str(e["code"]).strip().zfill(9): [
+                        str(m["code"]).strip().zfill(5)
+                        for m in e.get("membres", [])
+                        if "code" in m
+                    ]
+                    for e in epcis
+                    if "code" in e
+                }
+        except Exception as e:
+            logger.warning(f"Failed to parse ref_epci.json: {e}")
+
+    return region_name_to_code, dept_name_to_code, epci_lookup, epci_to_communes
+
+
+def compute_anvita_scores(
+    communes_df: pd.DataFrame, cache_raw_dir: Path, excel_path: Path
+) -> pd.Series:
+    """Computes territory score boosts (1.0, 0.5, or 0.0) for ANVITA membership.
+
+    Args:
+        communes_df: DataFrame of communes containing at least codgeo, dep_code, reg_code.
+        cache_raw_dir: Path to raw cache directory containing geographic referentials.
+        excel_path: Path to the ANVITA Excel membership tracker.
+
+    Returns:
+        A float Series indexed like communes_df with values in {0.0, 0.5, 1.0}.
     """
     default_scores = pd.Series(0.0, index=communes_df.index)
 
@@ -265,80 +450,52 @@ def compute_anvita_scores(
     if name_col:
         communes_df["commune_name"] = communes_df[name_col]
     else:
-        logger.warning("No commune name column found in communes_df. Matching may fail.")
-    
+        logger.warning(
+            "No commune name column found in communes_df. Matching may fail."
+        )
+
     # 1. Soft fail check for Excel file
     if not excel_path.exists():
-        logger.warning(f"ANVITA Excel file not found at: {excel_path}. Falling back to 0.0 for all communes.")
+        logger.warning(
+            f"ANVITA Excel file not found at: {excel_path}. Falling back to 0.0 for all communes."
+        )
         return default_scores
-        
+
     try:
-        excel_df = pd.read_excel(excel_path, sheet_name='CT Membres ANVITA V2')
+        excel_df = pd.read_excel(excel_path, sheet_name="CT Membres ANVITA V2")
     except Exception as e:
         logger.error(f"Failed to read ANVITA Excel file: {e}. Falling back to 0.0.")
         return default_scores
 
     # Clean empty rows
-    excel_members = excel_df[excel_df['Collectivité'].notna()]
+    excel_members = excel_df[excel_df["Collectivité"].notna()]
     if excel_members.empty:
         logger.warning("ANVITA Excel sheet has no members listed. Returning 0.0.")
         return default_scores
 
-    # 2. Load reference JSON files from cache
-    region_name_to_code = {}
-    dept_name_to_code = {}
-    epci_lookup = {}
-    epci_to_communes = {}
-
-    regions_file = cache_raw_dir / "referentiel_regions.json"
-    if regions_file.exists():
-        try:
-            with open(regions_file, "r") as f:
-                regs = json.load(f)
-                region_name_to_code = {clean_and_normalize(r['LIBELLE']): r['REG'] for r in regs if 'LIBELLE' in r}
-                # Add aliases
-                region_name_to_code[clean_and_normalize("Bourgogne-Franche-Comté")] = "27"
-                region_name_to_code[clean_and_normalize("Centre-Val de Loire")] = "24"
-                region_name_to_code[clean_and_normalize("Occitanie")] = "76"
-                region_name_to_code[clean_and_normalize("Auvergne Rhône-Alpes")] = "84"
-                region_name_to_code[clean_and_normalize("Île-de-France")] = "11"
-        except Exception as e:
-            logger.warning(f"Failed to parse referentiel_regions.json: {e}")
-
-    depts_file = cache_raw_dir / "referentiel_departements.json"
-    if depts_file.exists():
-        try:
-            with open(depts_file, "r") as f:
-                depts = json.load(f)
-                dept_name_to_code = {clean_and_normalize(d['LIBELLE']): clean_dept_code(d['DEP']) for d in depts if 'LIBELLE' in d}
-        except Exception as e:
-            logger.warning(f"Failed to parse referentiel_departements.json: {e}")
-
-    epci_file = cache_raw_dir / "ref_epci.json"
-    if epci_file.exists():
-        try:
-            with open(epci_file, "r") as f:
-                epcis = json.load(f)
-                epci_lookup = {clean_and_normalize(e['nom']): e['code'] for e in epcis if 'nom' in e}
-                epci_to_communes = {e['code']: [m['code'] for m in e.get('membres', [])] for e in epcis if 'code' in e}
-        except Exception as e:
-            logger.warning(f"Failed to parse ref_epci.json: {e}")
+    # 2. Load reference Parquet / JSON files from cache
+    (
+        region_name_to_code,
+        dept_name_to_code,
+        epci_lookup,
+        epci_to_communes,
+    ) = load_territory_referentials(cache_raw_dir)
 
     # 3. Index communes for fast exact/global lookup
     # Map (normalized_name, dep_code) -> codgeo
     commune_lookup = {}
     commune_global_lookup = {}
-    
+
     if "commune_name" in communes_df.columns:
         for idx, row in communes_df.iterrows():
             c_name = row["commune_name"]
             if pd.isna(c_name):
                 continue
             norm_name = clean_and_normalize(str(c_name))
-            dep = clean_dept_code(row.get('dep_code', ''))
-            cod = str(row['codgeo'])
+            dep = clean_dept_code(row.get("dep_code", ""))
+            cod = str(row["codgeo"])
             commune_lookup[(norm_name, dep)] = cod
-            
+
             if norm_name not in commune_global_lookup:
                 commune_global_lookup[norm_name] = []
             commune_global_lookup[norm_name].append((dep, cod))
@@ -346,9 +503,9 @@ def compute_anvita_scores(
     # 4. Map each Excel member
     codgeo_scores = {}
     for idx, row in excel_members.iterrows():
-        name = str(row['Collectivité']).strip()
-        dept = clean_dept_code(row.get('Département', ''))
-        
+        name = str(row["Collectivité"]).strip()
+        dept = clean_dept_code(row.get("Département", ""))
+
         res = resolve_entity(
             name=name,
             dept_code_input=dept,
@@ -360,25 +517,29 @@ def compute_anvita_scores(
             epci_to_communes=epci_to_communes,
             commune_lookup=commune_lookup,
             commune_global_lookup=commune_global_lookup,
-            communes_df=communes_df
+            communes_df=communes_df,
         )
-        
-        if res['resolved']:
+
+        if res["resolved"]:
             # Communes and EPCIs get 1.0, Departments and Regions get 0.5
-            score_to_assign = 1.0 if res['type'] in ['Commune', 'Intercommunalité'] else 0.5
-            for cod in res['codgeo_list']:
+            score_to_assign = (
+                1.0 if res["type"] in ["Commune", "Intercommunalité"] else 0.5
+            )
+            for cod in res["codgeo_list"]:
                 # Remap child ARR to parent PLM code (Paris, Lyon, Marseille)
                 parent_cod = CHILD_TO_PARENT.get(cod, cod)
                 # Keep maximum score if duplicate
-                codgeo_scores[parent_cod] = max(codgeo_scores.get(parent_cod, 0.0), score_to_assign)
+                codgeo_scores[parent_cod] = max(
+                    codgeo_scores.get(parent_cod, 0.0), score_to_assign
+                )
 
     # 5. Build final Series matching communes_df codgeo values
     # Also handle remapping of children in the input Series to assign their score from parent
     final_scores = []
     for idx, row in communes_df.iterrows():
-        cod = str(row['codgeo'])
+        cod = str(row["codgeo"])
         # If it is a child arrondissement, we look up the score of its parent PLM code
         lookup_cod = CHILD_TO_PARENT.get(cod, cod)
         final_scores.append(codgeo_scores.get(lookup_cod, 0.0))
-        
+
     return pd.Series(final_scores, index=communes_df.index)

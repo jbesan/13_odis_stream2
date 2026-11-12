@@ -130,9 +130,7 @@ def test_salesforce_bdv_release_omits_record_ids(tmp_path, monkeypatch):
     ]
 
 
-def test_salesforce_cleaner_produces_clean_postal_code_artifact(
-    tmp_path, monkeypatch
-):
+def test_salesforce_cleaner_produces_clean_postal_code_artifact(tmp_path, monkeypatch):
     """The ingestion cleaner must produce the postal-code aggregate in CLEAN_DIR."""
     from pipeline.ingest import clean_salesforce_jaccueille
 
@@ -330,7 +328,9 @@ def test_build_salesforce_jaccueille_bdv_cli_integration(tmp_path, monkeypatch):
     assert df.iloc[0]["total_jaccueille_count"] == 5
 
 
-def test_build_salesforce_jaccueille_bdv_missing_clean_file_fails(tmp_path, monkeypatch):
+def test_build_salesforce_jaccueille_bdv_missing_clean_file_fails(
+    tmp_path, monkeypatch
+):
     """Missing clean salesforce parquet must fail the build step."""
     from pipeline.build import build_salesforce_jaccueille_bdv
     import pipeline.build as build_module
@@ -371,7 +371,9 @@ def test_fetch_and_aggregate_salesforce_uses_cache(tmp_path, monkeypatch):
     assert out_target.exists()
 
 
-def test_build_bassins_de_vie_isolated_step_reuses_existing_communes(tmp_path, monkeypatch):
+def test_build_bassins_de_vie_isolated_step_reuses_existing_communes(
+    tmp_path, monkeypatch
+):
     """Running --steps bassins_de_vie when odis_communes_pre.parquet exists must not fail with NoneType."""
     from shapely.geometry import Polygon
     import shapely
@@ -444,7 +446,9 @@ def test_build_salesforce_jaccueille_alias_cli(tmp_path, monkeypatch):
     assert out_file.exists()
 
 
-def test_build_salesforce_jaccueille_bdv_fallback_to_odis_communes(tmp_path, monkeypatch):
+def test_build_salesforce_jaccueille_bdv_fallback_to_odis_communes(
+    tmp_path, monkeypatch
+):
     """When odis_communes_pre.parquet is absent but odis_communes.parquet exists, step uses it."""
     from pipeline.build import build_salesforce_jaccueille_bdv
     import pipeline.build as build_module
@@ -496,9 +500,7 @@ def test_aggregate_by_bassin_de_vie_edge_cases(tmp_path):
     df_cp = pd.DataFrame({"code_postal": ["01000"], "codgeo": ["01053"]})
     df_comm = pd.DataFrame({"codgeo": ["01053"], "bassin_de_vie": ["01053"]})
 
-    res = aggregate_by_bassin_de_vie(
-        df_sf, df_postal_codes=df_cp, df_communes=df_comm
-    )
+    res = aggregate_by_bassin_de_vie(df_sf, df_postal_codes=df_cp, df_communes=df_comm)
     assert len(res) == 1
     assert res.iloc[0]["bassin_de_vie"] == "01053"
     assert res.iloc[0]["lead_count"] == 2
@@ -521,3 +523,38 @@ def test_aggregate_by_bassin_de_vie_edge_cases(tmp_path):
     )
     assert res_no_cp.empty
     assert "bassin_de_vie" in res_no_cp.columns
+
+
+def test_aggregate_by_bassin_de_vie_majority_population():
+    """Verify that a postal code spanning multiple BVs is assigned to the majority BV by population."""
+    df_sf = pd.DataFrame(
+        [
+            {
+                "code_postal": "34400",
+                "lead_count": 3,
+                "contact_count": 6,
+                "total_jaccueille_count": 9,
+            }
+        ]
+    )
+    # Postal code 34400 covers a small commune in Sommières BV and a large commune in Lunel BV
+    df_cp = pd.DataFrame(
+        {
+            "code_postal": ["34400", "34400"],
+            "codgeo": ["30222", "34145"],
+        }
+    )
+    df_comm = pd.DataFrame(
+        {
+            "codgeo": ["30222", "34145"],
+            "bassin_de_vie": ["30321", "34145"],  # Sommières vs Lunel
+            "population": [972.0, 26623.0],
+        }
+    )
+
+    res = aggregate_by_bassin_de_vie(df_sf, df_postal_codes=df_cp, df_communes=df_comm)
+    assert len(res) == 1
+    assert res.iloc[0]["bassin_de_vie"] == "34145"  # Lunel wins
+    assert res.iloc[0]["lead_count"] == 3
+    assert res.iloc[0]["contact_count"] == 6
+    assert res.iloc[0]["total_jaccueille_count"] == 9

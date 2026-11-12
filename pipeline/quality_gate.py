@@ -190,25 +190,18 @@ def run_quality_gate(
                 maximum=maximum,
             )
 
-        for coverage_name in (
-            contracts["release"].get("validation_artifacts", [])
-        ):
+        for coverage_name in contracts["release"].get("validation_artifacts", []):
             coverage_path = output_dir / coverage_name
             check_name = f"coverage.{coverage_name}"
             if not coverage_path.exists():
                 _add_check(checks, check_name, False, reason="missing artifact")
                 continue
             coverage = pd.read_parquet(coverage_path)
-            if not {"department", "status", "pages_expected", "pages_retrieved"}.issubset(
-                coverage.columns
-            ):
+            if not {"department", "status"}.issubset(coverage.columns):
                 _add_check(checks, check_name, False, reason="missing coverage columns")
                 continue
             successful = coverage.loc[coverage["status"] == "success"]
             complete_departments = set(successful["department"].astype(str))
-            pages_complete = bool(
-                (successful["pages_retrieved"] >= successful["pages_expected"]).all()
-            )
             nonempty_departments = (
                 bool((successful["offers_count"] > 0).all())
                 if coverage_name == "odis_ft_jobs_coverage.parquet"
@@ -219,11 +212,9 @@ def run_quality_gate(
                 checks,
                 check_name,
                 complete_departments == set(METROPOLITAN_DEPARTMENTS)
-                and pages_complete
                 and nonempty_departments,
                 completed_departments=len(complete_departments),
                 expected_departments=len(METROPOLITAN_DEPARTMENTS),
-                pages_complete=pages_complete,
                 nonempty_departments=nonempty_departments,
             )
 

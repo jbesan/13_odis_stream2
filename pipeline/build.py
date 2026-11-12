@@ -1561,8 +1561,11 @@ def generate_referentiels(config: Dict[str, Any], logger: PipelineLogger):
         )
 
     try:
-        # ROME Codes (Referential from API)
-        rome_path = CACHE_DIR / "rome_referential_api.parquet"
+        # ROME Codes (Referential from ODAS / Clean cache)
+        rome_path = CLEAN_DIR / "rome.parquet"
+        if not rome_path.exists():
+            # Graceful backward compatibility fallback
+            rome_path = CACHE_DIR / "rome_referential_api.parquet"
         if rome_path.exists():
             rome_df = pd.read_parquet(rome_path)
             # Expected: code, label

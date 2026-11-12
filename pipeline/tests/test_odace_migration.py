@@ -13,12 +13,17 @@ from pipeline.ingest import (
     clean_codes_postaux,
     clean_communes,
     clean_departements,
+    clean_electoral_history,
     clean_formations,
     clean_housing_occupation,
+    clean_inclusion_jobs,
+    clean_live_jobs,
     clean_loyers,
     clean_nomenclature_waldec,
     clean_political,
     clean_regions,
+    clean_rome,
+    clean_salesforce_jaccueille,
     clean_school_effectifs,
     clean_services_inclusion,
     clean_structures_inclusion,
@@ -1150,7 +1155,7 @@ def test_build_generate_referentiels_uses_clean_regions(tmp_path, monkeypatch):
             "code": ["M1805"],
             "label": ["Développement informatique"],
         }
-    ).to_parquet(raw_dir / "rome_referential_api.parquet")
+    ).to_parquet(clean_dir / "rome.parquet")
 
     monkeypatch.setattr(build_module, "CLEAN_DIR", clean_dir)
     monkeypatch.setattr(build_module, "CACHE_DIR", raw_dir)
@@ -2019,10 +2024,10 @@ def test_clean_formations_odace_failure(mock_get_client, temp_cache_dirs):
 # =====================================================================
 
 
-@patch("pipeline.ingest.fetcher.get_odace_client")
-def test_fetch_rome_referential_odace_success(mock_get_client, temp_cache_dirs):
-    """Tests fetch_rome_referential with ODAS ref_rome."""
-    raw_dir, _ = temp_cache_dirs
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_rome_odace_success(mock_get_client, temp_cache_dirs):
+    """Tests clean_rome with ODAS ref_rome."""
+    _, clean_dir = temp_cache_dirs
 
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2046,11 +2051,11 @@ def test_fetch_rome_referential_odace_success(mock_get_client, temp_cache_dirs):
         }
     }
 
-    path = fetch_rome_referential(config, MagicMock(spec=PipelineLogger))
-    assert path is not None
-    assert path.exists()
+    clean_rome(config, MagicMock(spec=PipelineLogger))
+    out_file = clean_dir / "rome.parquet"
+    assert out_file.exists()
 
-    res = pd.read_parquet(path)
+    res = pd.read_parquet(out_file)
     assert len(res) == 2
     assert set(res.columns) == {"code", "label"}
     assert (
@@ -2064,9 +2069,9 @@ def test_fetch_rome_referential_odace_success(mock_get_client, temp_cache_dirs):
     mock_client.fetch_table.assert_called_once_with("ref_rome", ttl_days=365)
 
 
-@patch("pipeline.ingest.fetcher.get_odace_client")
-def test_fetch_rome_referential_odace_failure(mock_get_client, temp_cache_dirs):
-    """Tests fetch_rome_referential fail-closed when ODAS fetch fails."""
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_rome_odace_failure(mock_get_client, temp_cache_dirs):
+    """Tests clean_rome fail-closed when ODAS fetch fails."""
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
     mock_client.fetch_table.side_effect = Exception("ODAS ROME error")
@@ -2082,7 +2087,33 @@ def test_fetch_rome_referential_odace_failure(mock_get_client, temp_cache_dirs):
     }
 
     with pytest.raises(PipelineRunError, match="Odace rome"):
-        fetch_rome_referential(config, MagicMock(spec=PipelineLogger))
+        clean_rome(config, MagicMock(spec=PipelineLogger))
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_fetch_rome_referential_backward_compat(mock_get_client, temp_cache_dirs):
+    """Tests deprecated fetch_rome_referential backward compatibility wrapper."""
+    _, clean_dir = temp_cache_dirs
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.return_value = pd.DataFrame(
+        [{"code_rome": "M1805", "libelle_rome": "Informatique"}]
+    )
+
+    config = {
+        "sources": {
+            "rome": {
+                "use_odace": True,
+                "odace_table": "ref_rome",
+                "ttl_days": 365,
+            }
+        }
+    }
+
+    path = fetch_rome_referential(config, MagicMock(spec=PipelineLogger))
+    assert path == clean_dir / "rome.parquet"
+    assert path.exists()
 
 
 # =====================================================================
@@ -2704,3 +2735,752 @@ def test_clean_population_details_insufficient_years(mock_get_client, temp_cache
 
     with pytest.raises(PipelineRunError, match="requires at least 2 census years"):
         clean_population_details(config, MagicMock(spec=PipelineLogger))
+
+
+# =====================================================================
+# ODAS Migration: EPCI & Electoral History Tests
+# =====================================================================
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_communes_epci_odace_success(mock_get_client, temp_cache_dirs):
+    """Verifies clean_communes uses ODAS ref_commune_epci to map EPCIs."""
+    _, clean_dir = temp_cache_dirs
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+
+    def mock_fetch(table, ttl_days=None):
+        if table == "ref_commune_geo":
+            return pd.DataFrame(
+                {
+                    "commune_insee_code": ["75001", "13054"],
+                    "geometrie_geojson": [
+                        json.dumps({"type": "Point", "coordinates": [2.3, 48.8]}),
+                        json.dumps({"type": "Point", "coordinates": [5.2, 43.4]}),
+                    ],
+                }
+            )
+        elif table == "ref_commune_epci":
+            return pd.DataFrame(
+                {
+                    "commune_insee_code": ["75001", "13054"],
+                    "code_epci": ["200054781", "200054807"],
+                }
+            )
+        elif table == "ref_epci":
+            return pd.DataFrame(
+                {
+                    "code_epci": ["200054781", "200054807"],
+                    "libelle_epci": [
+                        "Métropole du Grand Paris",
+                        "Métropole d'Aix-Marseille-Provence",
+                    ],
+                }
+            )
+        return pd.DataFrame()
+
+    mock_client.fetch_table.side_effect = mock_fetch
+    mock_client.fetch_dim_commune.return_value = pd.DataFrame(
+        {
+            "commune_sk": ["sk-75001", "sk-13054"],
+            "commune_insee_code": ["75001", "13054"],
+            "commune_label": ["Paris 1er", "Marignane"],
+            "departement_code": ["75", "13"],
+            "region_code": ["11", "93"],
+        }
+    )
+
+    config = {
+        "sources": {
+            "communes": {
+                "use_odace": True,
+                "odace_table": "ref_commune_geo",
+                "ttl_days": 30,
+            },
+            "ref_epci": {
+                "use_odace": True,
+                "odace_table": "ref_epci",
+                "ttl_days": 90,
+            },
+            "ref_commune_epci": {
+                "use_odace": True,
+                "odace_table": "ref_commune_epci",
+                "ttl_days": 90,
+            },
+        }
+    }
+
+    clean_communes(config, MagicMock(spec=PipelineLogger))
+
+    result = pd.read_parquet(clean_dir / "communes.parquet")
+    assert len(result) == 2
+    assert "epci" in result.columns
+    assert result.loc[result["codgeo"] == "75001", "epci"].iloc[0] == "200054781"
+    assert result.loc[result["codgeo"] == "13054", "epci"].iloc[0] == "200054807"
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_electoral_history_odace_success(mock_get_client, temp_cache_dirs):
+    """Verifies clean_electoral_history ingests and processes ODAS Silver schema."""
+    raw_dir, clean_dir = temp_cache_dirs
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+
+    # Write ODAS-formatted parquet to raw_dir
+    fake_odas_elections = pd.DataFrame(
+        [
+            {
+                "code_election": "2026_muni_t1",
+                "commune_insee_code": "17347",
+                "code_nuance_politique": "LSOC",
+                "libelle_abrege_liste": "",
+                "nom_candidat": "DUPONT",
+                "nb_voix": 500,
+            },
+            {
+                "code_election": "2026_muni_t1",
+                "commune_insee_code": "17347",
+                "code_nuance_politique": "RN",
+                "libelle_abrege_liste": "",
+                "nom_candidat": "MARTIN",
+                "nb_voix": 200,
+            },
+            {
+                "code_election": "2022_pres_t2",
+                "commune_insee_code": "17347",
+                "code_nuance_politique": "",
+                "libelle_abrege_liste": "",
+                "nom_candidat": "MACRON",
+                "nb_voix": 800,
+            },
+            # Election to filter out (legislatives)
+            {
+                "code_election": "2024_legi_t2",
+                "commune_insee_code": "17347",
+                "code_nuance_politique": "UG",
+                "libelle_abrege_liste": "",
+                "nom_candidat": "DURAND",
+                "nb_voix": 600,
+            },
+        ]
+    )
+
+    def mock_fetch_table_path(table, ttl_days=None):
+        out_file = raw_dir / f"odace_{table}.parquet"
+        fake_odas_elections.to_parquet(out_file)
+        return out_file
+
+    def mock_fetch_table(table, ttl_days=None):
+        out_file = raw_dir / f"odace_{table}.parquet"
+        fake_odas_elections.to_parquet(out_file)
+        return fake_odas_elections
+
+    mock_client.fetch_table_path.side_effect = mock_fetch_table_path
+    mock_client.fetch_table.side_effect = mock_fetch_table
+
+    config = {
+        "sources": {
+            "electoral_history": {
+                "use_odace": True,
+                "odace_table": "fact_resultat_election_candidat",
+                "ttl_days": 365,
+            }
+        }
+    }
+
+    clean_electoral_history(config, MagicMock(spec=PipelineLogger))
+
+    output_path = clean_dir / "electoral_history.parquet"
+    assert output_path.exists()
+
+    df = pd.read_parquet(output_path)
+    assert not df.empty
+    assert "codgeo" in df.columns
+    assert "electoral_history" in df.columns
+    assert df.iloc[0]["codgeo"] == "17347"
+
+    hist = json.loads(df.iloc[0]["electoral_history"])
+    assert "municipales" in hist
+    assert "presidentielles" in hist
+    assert "legislatives" not in hist
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_electoral_history_odace_failure(mock_get_client, temp_cache_dirs):
+    """Verifies clean_electoral_history raises PipelineRunError on ODAS fetch failure."""
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.side_effect = Exception("ODAS network timeout")
+    mock_client.fetch_table_path.side_effect = Exception("ODAS network timeout")
+
+    config = {
+        "sources": {
+            "electoral_history": {
+                "use_odace": True,
+                "odace_table": "fact_resultat_election_candidat",
+                "ttl_days": 365,
+            }
+        }
+    }
+
+    with pytest.raises(
+        PipelineRunError,
+        match="Odace electoral_history did not produce a usable dataset",
+    ):
+        clean_electoral_history(config, MagicMock(spec=PipelineLogger))
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_inclusion_jobs_odace_success(mock_get_client, tmp_path):
+    """Verifies clean_inclusion_jobs ingests ODAS fact_siae_poste in Mode A (metro only)."""
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+
+    # Prepare mock data
+    df_postes_data = pd.DataFrame(
+        [
+            # 1. Metro with explicit lieu
+            {
+                "poste_id": 101,
+                "structure_siret": "12345678900010",
+                "commune_sk": "sk-75001",
+                "lieu_commune_insee_code": "75001",
+                "rome_code": "A1203",
+                "postes_nombre": 2,
+                "intitule_poste": "Ouvrier agricole",
+                "description_poste": "Travail de la terre",
+                "profil_recherche": "Motivation",
+                "contrat_type": "CDD insertion",
+            },
+            # 2. Metro with missing lieu (resolved via commune_sk)
+            {
+                "poste_id": 102,
+                "structure_siret": "98765432100020",
+                "commune_sk": "sk-13054",
+                "lieu_commune_insee_code": None,
+                "rome_code": "M1601",
+                "postes_nombre": 1,
+                "intitule_poste": "Agent d'accueil",
+                "description_poste": "Accueil du public",
+                "profil_recherche": "Sens relationnel",
+                "contrat_type": "GEIQ Alternance",
+            },
+            # 3. DOM-TOM post (should be excluded in Mode A sans DOM-TOM)
+            {
+                "poste_id": 103,
+                "structure_siret": "55555555500010",
+                "commune_sk": "sk-97101",
+                "lieu_commune_insee_code": "97101",
+                "rome_code": "K2205",
+                "postes_nombre": 1,
+                "intitule_poste": "Aide soignant",
+                "description_poste": "Soin",
+                "profil_recherche": "Diplôme",
+                "contrat_type": "CDD",
+            },
+            # 4. Duplicate poste_id 101 (should be deduplicated)
+            {
+                "poste_id": 101,
+                "structure_siret": "12345678900010",
+                "commune_sk": "sk-75001",
+                "lieu_commune_insee_code": "75001",
+                "rome_code": "A1203",
+                "postes_nombre": 2,
+                "intitule_poste": "Ouvrier agricole",
+                "description_poste": "Travail de la terre",
+                "profil_recherche": "Motivation",
+                "contrat_type": "CDD insertion",
+            },
+        ]
+    )
+
+    df_siae_data = pd.DataFrame(
+        [
+            {
+                "siae_structure_siret_code": "12345678900010",
+                "siae_type_code": "ACI",
+                "siae_structure_label": "Ferme Solidaire",
+            },
+            {
+                "siae_structure_siret_code": "98765432100020",
+                "siae_type_code": "GEIQ",
+                "siae_structure_label": "GEIQ Accueil",
+            },
+        ]
+    )
+
+    df_geo_data = pd.DataFrame(
+        [
+            {"commune_sk": "sk-75001", "commune_insee_code": "75001"},
+            {"commune_sk": "sk-13054", "commune_insee_code": "13054"},
+            {"commune_sk": "sk-97101", "commune_insee_code": "97101"},
+        ]
+    )
+
+    def mock_fetch(table, ttl_days=None):
+        if table == "fact_siae_poste":
+            return df_postes_data
+        elif table == "dim_siae_structure":
+            return df_siae_data
+        elif table == "dim_geo":
+            return df_geo_data
+        return pd.DataFrame()
+
+    mock_client.fetch_table.side_effect = mock_fetch
+
+    out_dir = tmp_path / "output"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    with (
+        patch("pipeline.ingest.context.OUTPUT_DIR", out_dir),
+        patch(
+            "pipeline.ingest.INCLUSION_OUTPUT_PATH",
+            out_dir / "odis_inclusion_jobs.parquet",
+        ),
+        patch(
+            "pipeline.ingest.INCLUSION_COVERAGE_SHARED_OUTPUT_PATH",
+            out_dir / "odis_inclusion_jobs_coverage.parquet",
+        ),
+    ):
+        config = {
+            "sources": {
+                "inclusion_jobs": {
+                    "use_odace": True,
+                    "odace_table": "fact_siae_poste",
+                    "ttl_days": 7,
+                }
+            }
+        }
+
+        clean_inclusion_jobs(config, MagicMock(spec=PipelineLogger))
+
+        jobs_file = out_dir / "odis_inclusion_jobs.parquet"
+        struct_file = out_dir / "odis_inclusion_structures.parquet"
+        coverage_file = out_dir / "odis_inclusion_jobs_coverage.parquet"
+
+        assert jobs_file.exists()
+        assert struct_file.exists()
+        assert coverage_file.exists()
+
+        df_jobs = pd.read_parquet(jobs_file)
+        # Exactly 2 unique metropolitan posts (duplicate removed, DOM-TOM removed)
+        assert len(df_jobs) == 2
+        assert set(df_jobs["job_id"]) == {101, 102}
+        assert df_jobs["job_id"].is_unique
+
+        # Check resolution via commune_sk for post 102
+        post_102 = df_jobs[df_jobs["job_id"] == 102].iloc[0]
+        assert post_102["codgeo"] == "13054"
+        assert post_102["siae_type"] == "GEIQ"
+        assert post_102["siae_name"] == "GEIQ Accueil"
+        assert post_102["intitule_poste"] == "Agent d'accueil"
+
+        # Check coverage
+        df_cov = pd.read_parquet(coverage_file)
+        assert len(df_cov) == 96
+        assert (df_cov["status"] == "success").all()
+        assert df_cov.loc[df_cov["department"] == "75", "offers_count"].iloc[0] == 1
+        assert df_cov.loc[df_cov["department"] == "13", "offers_count"].iloc[0] == 1
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_inclusion_jobs_odace_failure(mock_get_client, tmp_path):
+    """Verifies clean_inclusion_jobs raises PipelineRunError on ODAS failure."""
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.side_effect = Exception("ODAS network timeout")
+    mock_client.fetch_table_path.side_effect = Exception("ODAS network timeout")
+
+    config = {
+        "sources": {
+            "inclusion_jobs": {
+                "use_odace": True,
+                "odace_table": "fact_siae_poste",
+                "ttl_days": 7,
+            }
+        }
+    }
+
+    with pytest.raises(
+        PipelineRunError, match="Odace inclusion_jobs did not produce a usable dataset"
+    ):
+        clean_inclusion_jobs(config, MagicMock(spec=PipelineLogger))
+
+
+@patch("pipeline.ingest.cleaners.salesforce.get_odace_client")
+def test_clean_salesforce_jaccueille_odace_success(
+    mock_get_client, tmp_path, monkeypatch
+):
+    """Verifies clean_salesforce_jaccueille correctly fetches and formats fact_jaccueille_code_postal."""
+    clean_dir = tmp_path / "clean"
+    clean_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr("pipeline.ingest.context.CLEAN_DIR", clean_dir)
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+
+    sample_odas = pd.DataFrame(
+        [
+            {
+                "jaccueille_code_postal_sk": "sk1",
+                "commune_sk": "c1",
+                "code_postal": "75015",
+                "nb_communes": 1,
+                "nb_prospects": 4,
+                "nb_contacts": 6,
+                "nb_total": 10,
+            },
+            {
+                "jaccueille_code_postal_sk": "sk2",
+                "commune_sk": None,
+                "code_postal": "01000",
+                "nb_communes": 2,
+                "nb_prospects": 1,
+                "nb_contacts": 2,
+                "nb_total": 3,
+            },
+        ]
+    )
+    mock_client.fetch_table.return_value = sample_odas
+
+    config = {
+        "sources": {
+            "salesforce_jaccueille": {
+                "use_odace": True,
+                "odace_table": "fact_jaccueille_code_postal",
+                "ttl_days": 7,
+            }
+        }
+    }
+
+    logger = MagicMock(spec=PipelineLogger)
+    clean_salesforce_jaccueille(config, logger)
+
+    out_file = clean_dir / "salesforce_jaccueille.parquet"
+    assert out_file.exists()
+
+    df = pd.read_parquet(out_file)
+    assert len(df) == 2
+    assert list(df.columns) == [
+        "code_postal",
+        "lead_count",
+        "contact_count",
+        "total_jaccueille_count",
+    ]
+    # Check sorted by code_postal
+    assert df.iloc[0]["code_postal"] == "01000"
+    assert df.iloc[0]["lead_count"] == 1
+    assert df.iloc[0]["contact_count"] == 2
+    assert df.iloc[0]["total_jaccueille_count"] == 3
+
+    assert df.iloc[1]["code_postal"] == "75015"
+    assert df.iloc[1]["lead_count"] == 4
+    assert df.iloc[1]["contact_count"] == 6
+    assert df.iloc[1]["total_jaccueille_count"] == 10
+
+
+@patch("pipeline.ingest.cleaners.salesforce.get_odace_client")
+def test_clean_salesforce_jaccueille_odace_failure(
+    mock_get_client, tmp_path, monkeypatch
+):
+    """Verifies clean_salesforce_jaccueille raises PipelineRunError on failure."""
+    clean_dir = tmp_path / "clean"
+    clean_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr("pipeline.ingest.context.CLEAN_DIR", clean_dir)
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.side_effect = Exception("ODAS API error")
+
+    config = {
+        "sources": {
+            "salesforce_jaccueille": {
+                "use_odace": True,
+                "odace_table": "fact_jaccueille_code_postal",
+                "ttl_days": 7,
+            }
+        }
+    }
+
+    with pytest.raises(
+        PipelineRunError, match="ODAS Salesforce J'accueille cleaner failed"
+    ):
+        clean_salesforce_jaccueille(config, MagicMock(spec=PipelineLogger))
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_live_jobs_odace_success(mock_get_client, tmp_path, monkeypatch):
+    """Verifies clean_live_jobs correctly aggregates fact_offre_emploi into odis_ft_jobs_agg & coverage."""
+    import pipeline.ingest as ingest
+
+    output_dir = tmp_path / "output"
+    clean_dir = tmp_path / "clean"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    clean_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(ingest, "OUTPUT_DIR", output_dir)
+    monkeypatch.setattr("pipeline.ingest.context.CLEAN_DIR", clean_dir)
+    monkeypatch.setattr(
+        ingest, "FT_SHARED_OUTPUT_PATH", output_dir / "odis_ft_jobs_agg.parquet"
+    )
+    monkeypatch.setattr(
+        ingest,
+        "FT_COVERAGE_SHARED_OUTPUT_PATH",
+        output_dir / "odis_ft_jobs_coverage.parquet",
+    )
+
+    # Create mock clean rome referential
+    pd.DataFrame(
+        [
+            {"code": "M1213", "label": "Comptable"},
+            {"code": "A1208", "label": "Jardinier"},
+        ]
+    ).to_parquet(clean_dir / "rome.parquet")
+
+    sample_offers = pd.DataFrame(
+        [
+            {
+                "offre_emploi_sk": "sk1",
+                "commune_insee_code": "75056",
+                "rome_code": "M1213",
+                "postes_nombre": 2,
+                "is_offre_manque_candidats": True,
+            },
+            {
+                "offre_emploi_sk": "sk2",
+                "commune_insee_code": "75056",
+                "rome_code": "M1213",
+                "postes_nombre": 1,
+                "is_offre_manque_candidats": False,
+            },
+            {
+                "offre_emploi_sk": "sk3",
+                "commune_insee_code": "13055",
+                "rome_code": "A1208",
+                "postes_nombre": 1,
+                "is_offre_manque_candidats": False,
+            },
+            # DOM-TOM offer: should be excluded by metropolitan filter
+            {
+                "offre_emploi_sk": "sk4",
+                "commune_insee_code": "97401",
+                "rome_code": "A1208",
+                "postes_nombre": 5,
+                "is_offre_manque_candidats": True,
+            },
+            # Null commune INSEE offer: should be excluded
+            {
+                "offre_emploi_sk": "sk5",
+                "commune_insee_code": None,
+                "rome_code": "M1213",
+                "postes_nombre": 1,
+                "is_offre_manque_candidats": False,
+            },
+        ]
+    )
+
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.return_value = sample_offers
+
+    config = {
+        "sources": {
+            "france_travail_live": {
+                "use_odace": True,
+                "odace_table": "fact_offre_emploi",
+                "ttl_days": 7,
+            }
+        }
+    }
+
+    logger = MagicMock(spec=PipelineLogger)
+    clean_live_jobs(config, logger)
+
+    jobs_file = output_dir / "odis_ft_jobs_agg.parquet"
+    cov_file = output_dir / "odis_ft_jobs_coverage.parquet"
+
+    assert jobs_file.exists()
+    assert cov_file.exists()
+
+    df_jobs = pd.read_parquet(jobs_file)
+    assert len(df_jobs) == 2
+    assert list(df_jobs.columns) == [
+        "commune",
+        "romeCode",
+        "romeLibelle",
+        "nb_offres",
+        "total_postes",
+        "nb_offres_tension",
+    ]
+
+    row_13 = df_jobs[df_jobs["commune"] == "13055"].iloc[0]
+    assert row_13["romeCode"] == "A1208"
+    assert row_13["romeLibelle"] == "Jardinier"
+    assert row_13["nb_offres"] == 1
+    assert row_13["total_postes"] == 1
+    assert row_13["nb_offres_tension"] == 0
+
+    row_75 = df_jobs[df_jobs["commune"] == "75056"].iloc[0]
+    assert row_75["romeCode"] == "M1213"
+    assert row_75["romeLibelle"] == "Comptable"
+    assert row_75["nb_offres"] == 2
+    assert row_75["total_postes"] == 3
+    assert row_75["nb_offres_tension"] == 1
+
+    df_cov = pd.read_parquet(cov_file)
+    assert len(df_cov) == 96
+    assert (df_cov["status"] == "success").all()
+    assert df_cov.loc[df_cov["department"] == "75", "offers_count"].iloc[0] == 2
+    assert df_cov.loc[df_cov["department"] == "13", "offers_count"].iloc[0] == 1
+
+
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_live_jobs_odace_failure(mock_get_client, tmp_path):
+    """Verifies clean_live_jobs raises PipelineRunError on ODAS failure."""
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+    mock_client.fetch_table.side_effect = Exception("ODAS network timeout")
+    mock_client.fetch_table_path.side_effect = Exception("ODAS network timeout")
+
+    config = {
+        "sources": {
+            "france_travail_live": {
+                "use_odace": True,
+                "odace_table": "fact_offre_emploi",
+                "ttl_days": 7,
+            }
+        }
+    }
+
+    with pytest.raises(
+        PipelineRunError,
+        match="Odace france_travail_live did not produce a usable dataset",
+    ):
+        clean_live_jobs(config, MagicMock(spec=PipelineLogger))
+
+
+def test_fetch_table_path_cached(tmp_path, monkeypatch):
+    """Verifies fetch_table_path returns Path directly without calling pd.read_parquet when cached."""
+    import pipeline.odace_client as oc
+
+    monkeypatch.setattr(oc, "CACHE_DIR", tmp_path)
+
+    cache_file = tmp_path / "odace_dummy_table.parquet"
+    df = pd.DataFrame({"col": [1, 2, 3]})
+    df.to_parquet(cache_file)
+
+    monkeypatch.setenv("ODAS_API_KEY", "fake_key")
+    monkeypatch.setenv("ODAS_API_URL", "https://fake.url")
+    client = oc.OdasClient(warmup=False)
+
+    with patch.object(pd, "read_parquet") as mock_read_parquet:
+        res_path = client.fetch_table_path("dummy_table", ttl_days=10)
+        assert res_path == cache_file
+        mock_read_parquet.assert_not_called()
+
+
+def test_fetch_table_path_download(tmp_path, monkeypatch):
+    """Verifies fetch_table_path downloads and caches parquet via pyarrow validation without pd.read_parquet."""
+    import pipeline.odace_client as oc
+
+    monkeypatch.setattr(oc, "CACHE_DIR", tmp_path)
+
+    sample_df = pd.DataFrame({"id": ["a", "b"], "val": [10, 20]})
+    parquet_buffer = sample_df.to_parquet()
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.iter_content.return_value = [parquet_buffer]
+
+    monkeypatch.setenv("ODAS_API_KEY", "fake_key")
+    monkeypatch.setenv("ODAS_API_URL", "https://fake.url")
+    client = oc.OdasClient(warmup=False)
+
+    with (
+        patch("requests.get", return_value=mock_resp),
+        patch.object(pd, "read_parquet") as mock_read_parquet,
+    ):
+        res_path = client.fetch_table_path("new_table", ttl_days=10)
+        assert res_path == tmp_path / "odace_new_table.parquet"
+        assert res_path.exists()
+        mock_read_parquet.assert_not_called()
+
+
+def test_fetch_table_path_corrupted_cache_redownloads(tmp_path, monkeypatch):
+    """Verifies fetch_table_path detects a corrupted cache file via PyArrow metadata and re-downloads."""
+    import pipeline.odace_client as oc
+
+    monkeypatch.setattr(oc, "CACHE_DIR", tmp_path)
+
+    cache_file = tmp_path / "odace_corrupt_table.parquet"
+    cache_file.write_bytes(b"NOT_A_PARQUET_FILE")
+
+    sample_df = pd.DataFrame({"id": ["x"], "val": [42]})
+    parquet_buffer = sample_df.to_parquet()
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.iter_content.return_value = [parquet_buffer]
+
+    monkeypatch.setenv("ODAS_API_KEY", "fake_key")
+    monkeypatch.setenv("ODAS_API_URL", "https://fake.url")
+    client = oc.OdasClient(warmup=False)
+
+    with patch("requests.get", return_value=mock_resp) as mock_get:
+        res_path = client.fetch_table_path("corrupt_table", ttl_days=10)
+        assert res_path == cache_file
+        assert mock_get.called
+        repaired_df = pd.read_parquet(res_path)
+        assert len(repaired_df) == 1
+        assert repaired_df.iloc[0]["val"] == 42
+
+
+@patch("pipeline.ingest.fetch_source", return_value=None)
+@patch("pipeline.ingest.get_odace_client")
+def test_clean_communes_epci_odace_failure_fails_closed(
+    mock_get_client, _mock_fetch_source, temp_cache_dirs
+):
+    """Verifies clean_communes raises PipelineRunError when use_odace EPCI fails and fallback is unavailable."""
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+
+    def mock_fetch(table, ttl_days=None):
+        if table == "ref_commune_geo":
+            return pd.DataFrame(
+                {
+                    "commune_insee_code": ["75001"],
+                    "geometrie_geojson": [
+                        json.dumps({"type": "Point", "coordinates": [2.3, 48.8]})
+                    ],
+                }
+            )
+        raise RuntimeError("ODAS EPCI unavailable")
+
+    mock_client.fetch_table.side_effect = mock_fetch
+
+    config = {
+        "sources": {
+            "communes": {
+                "use_odace": True,
+                "odace_table": "ref_commune_geo",
+                "ttl_days": 30,
+            },
+            "ref_epci": {
+                "use_odace": True,
+                "odace_table": "ref_epci",
+                "ttl_days": 90,
+            },
+            "ref_commune_epci": {
+                "use_odace": True,
+                "odace_table": "ref_commune_epci",
+                "ttl_days": 90,
+            },
+        }
+    }
+
+    with pytest.raises(
+        PipelineRunError, match="Odace communes did not produce a usable dataset"
+    ):
+        clean_communes(config, MagicMock(spec=PipelineLogger))

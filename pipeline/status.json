@@ -96,12 +96,12 @@
     },
     "ingest_all": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-09T13:05:11.173938+00:00",
+      "timestamp": "2026-11-12T12:17:54.859722+00:00",
       "details": {}
     },
     "clean_communes": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-09T12:30:41.659492+00:00",
+      "timestamp": "2026-11-12T09:49:49.874588+00:00",
       "details": {
         "rows": 35014,
         "path": "pipeline/cache/clean/communes.parquet"
@@ -194,7 +194,7 @@
     },
     "build_all": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-09T13:05:44.623107+00:00",
+      "timestamp": "2026-11-12T11:45:13.187874+00:00",
       "details": {}
     },
     "clean_voisins": {
@@ -253,7 +253,7 @@
     },
     "apply_prescoring": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-09T13:05:50.289610+00:00",
+      "timestamp": "2026-11-12T13:01:57.031200+00:00",
       "details": {
         "columns": 131,
         "path": "pipeline/cache/output/odis_communes.parquet",
@@ -771,7 +771,6 @@
               "status": "PASSED",
               "completed_departments": 96,
               "expected_departments": 96,
-              "pages_complete": true,
               "nonempty_departments": true
             },
             {
@@ -779,7 +778,6 @@
               "status": "PASSED",
               "completed_departments": 96,
               "expected_departments": 96,
-              "pages_complete": true,
               "nonempty_departments": true
             }
           ]
@@ -804,7 +802,7 @@
     },
     "score_bassins_de_vie": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-09T13:05:50.420981+00:00",
+      "timestamp": "2026-11-12T13:01:57.157776+00:00",
       "details": {
         "rows": 1707
       }
@@ -878,7 +876,7 @@
     },
     "inc_services_core_scaled": {
       "status": "CALCULATED",
-      "timestamp": "2026-11-09T13:05:48.362631+00:00",
+      "timestamp": "2026-11-12T13:01:55.204196+00:00",
       "details": {}
     },
     "clean_regions": {
@@ -912,8 +910,11 @@
     },
     "clean_live_jobs": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:10:30.181153",
-      "details": {}
+      "timestamp": "2026-11-12T11:53:22.963695+00:00",
+      "details": {
+        "rows": 243154,
+        "path": "pipeline/cache/output/odis_ft_jobs_agg.parquet"
+      }
     },
     "clean_odis_associations": {
       "status": "COMPLETED",
@@ -946,8 +947,11 @@
     },
     "clean_inclusion_jobs": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:20:51.652667",
-      "details": {}
+      "timestamp": "2026-11-12T10:19:02.191965+00:00",
+      "details": {
+        "rows": 12006,
+        "path": "pipeline/cache/output/odis_inclusion_jobs.parquet"
+      }
     },
     "clean_hebergement_rna": {
       "status": "COMPLETED",
@@ -1011,7 +1015,7 @@
     },
     "clean_electoral_history": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-09T13:05:11.169295+00:00",
+      "timestamp": "2026-11-12T12:17:54.782836+00:00",
       "details": {
         "rows": 37036,
         "path": "pipeline/cache/clean/electoral_history.parquet"
@@ -1024,18 +1028,18 @@
     },
     "clean_salesforce_jaccueille": {
       "status": "COMPLETED",
-      "timestamp": "2026-10-05T10:55:57.599544+00:00",
+      "timestamp": "2026-11-12T11:33:48.674867+00:00",
       "details": {
-        "rows": 1,
+        "rows": 1069,
         "path": "pipeline/cache/clean/salesforce_jaccueille.parquet"
       }
     },
     "build_salesforce_jaccueille_bdv": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-09T13:05:44.622183+00:00",
+      "timestamp": "2026-11-12T11:45:13.187101+00:00",
       "details": {
         "path": "pipeline/cache/output/salesforce_jaccueille_bdv.parquet",
-        "rows": 462
+        "rows": 480
       }
     },
     "clean_bassins_de_vie": {
@@ -1045,12 +1049,20 @@
         "rows": 34876,
         "path": "pipeline/cache/clean/bassins_de_vie.parquet"
       }
+    },
+    "clean_rome": {
+      "status": "COMPLETED",
+      "timestamp": "2026-11-12T08:59:58.967869+00:00",
+      "details": {
+        "rows": 1923,
+        "path": "pipeline/cache/clean/rome.parquet"
+      }
     }
   },
   "sources": {
     "communes": {
       "status": "skipped_optional",
-      "timestamp": "2026-11-09T12:30:41.067877+00:00",
+      "timestamp": "2026-11-12T09:49:46.530567+00:00",
       "file": "managed by Odace"
     },
     "population": {
@@ -1124,9 +1136,9 @@
       "file": "Source file not found: /Users/jacques/dev/13_odis_stream2/csv/annuaire_sante_finess.parquet"
     },
     "rome": {
-      "status": "skipped_optional",
-      "timestamp": "2026-11-05T11:17:59.486843+00:00",
-      "file": "managed by Odace"
+      "status": "fetched",
+      "timestamp": "2026-11-12T08:59:58.966482+00:00",
+      "file": "pipeline/cache/clean/rome.parquet"
     },
     "population_active": {
       "status": "CACHED",
@@ -1309,9 +1321,9 @@
       "file": "Failed to execute query for 'odace_query_bpe' on Odace: 500 Server Error: Internal Server Error for url: https://odace.services.d4g.fr/api/data/query"
     },
     "electoral_history": {
-      "status": "reused_within_ttl",
-      "timestamp": "2026-11-09T11:00:03.762553+00:00",
-      "file": "pipeline/cache/raw/candidats_results.parquet"
+      "status": "skipped_optional",
+      "timestamp": "2026-11-12T12:17:52.291861+00:00",
+      "file": "managed by Odace"
     },
     "jaccueille_prospects": {
       "status": "CACHED",
@@ -1324,8 +1336,8 @@
       "file": "No URL provided"
     },
     "salesforce_jaccueille": {
-      "status": "reused_within_ttl",
-      "timestamp": "2026-10-05T10:55:37.150403+00:00",
+      "status": "refreshed",
+      "timestamp": "2026-11-12T11:33:48.673240+00:00",
       "file": "pipeline/cache/clean/salesforce_jaccueille.parquet"
     },
     "odace_dim_siae_structure": {
@@ -1337,6 +1349,16 @@
       "status": "error",
       "timestamp": "2026-11-09T13:05:44.419802+00:00",
       "file": "CRITICAL ERROR: Failed to export ref_service_inclusion from Odace API: 429 Client Error: Too Many Requests for url: https://odas-app-trlhxf55uq-ew.a.run.app/api/data/export/ref_service_inclusion?format=parquet"
+    },
+    "inclusion_jobs": {
+      "status": "refreshed",
+      "timestamp": "2026-11-12T10:19:02.175574+00:00",
+      "file": "pipeline/cache/output/odis_inclusion_jobs.parquet"
+    },
+    "france_travail_live": {
+      "status": "refreshed",
+      "timestamp": "2026-11-12T11:53:22.941670+00:00",
+      "file": "pipeline/cache/output/odis_ft_jobs_agg.parquet"
     }
   }
 }

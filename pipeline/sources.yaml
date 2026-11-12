@@ -6,11 +6,19 @@ sources:
     description: "Contours administratifs des communes (simplifiés)"
 
   ref_epci:
+    use_odace: true
+    odace_table: "ref_epci"
+    ttl_days: 90
+    description: "Référentiel des EPCI (ODAS Silver)"
     datagouv_resource_id: "4f02ce39-2a91-4a8b-85cb-c6a0f912516b"
     format: "json"
     local_name: "ref_epci.json"
+
+  ref_commune_epci:
+    use_odace: true
+    odace_table: "ref_commune_epci"
     ttl_days: 90
-    description: "Référentiel des EPCI (Data.gouv)"
+    description: "Appartenance communes-EPCI (ODAS Silver)"
 
   population:
     use_odace: true
@@ -65,18 +73,20 @@ sources:
       - nuance_politique
 
   electoral_history:
+    use_odace: true
+    odace_table: "fact_resultat_election_candidat"
+    ttl_days: 365
+    description: "Résultats électoraux par bureau de vote (pour historique, ODAS Silver)"
+    used_columns:
+      - code_election
+      - commune_insee_code
+      - code_nuance_politique
+      - libelle_abrege_liste
+      - nom_candidat
+      - nb_voix
     datagouv_resource_id: "4d3b35f6-0b22-4415-a24c-419a676312e2"
     format: "parquet"
     local_name: "candidats_results.parquet"
-    ttl_days: 365
-    description: "Résultats électoraux par bureau de vote (pour historique)"
-    used_columns:
-      - id_election
-      - code_commune
-      - nuance
-      - libelle_abrege_liste
-      - nom
-      - voix
 
   associations:
     use_odace: true
@@ -277,6 +287,12 @@ sources:
     ttl_days: 30
     description: "Structures de l'insertion par l'activité économique (SIAE)"
 
+  inclusion_jobs:
+    use_odace: true
+    odace_table: "fact_siae_poste"
+    ttl_days: 7
+    description: "Les emplois de l'inclusion — Postes ouverts en SIAE"
+
   population_details:
     use_odace: true
     odace_table: "fact_demographie"
@@ -341,6 +357,8 @@ sources:
 local_files:
 
   france_travail_live:
+    use_odace: true
+    odace_table: "fact_offre_emploi"
     url: "https://api.francetravail.io/partenaire/offresemploi/v2/offres/emploi/search"
     format: "api"
     ttl_days: 7
@@ -358,12 +376,16 @@ local_files:
     format: "api"
     ttl_days: 7
     description: "Les emplois de l'inclusion API - Offres d'emploi"
+    use_odace: true
+    odace_table: "fact_siae_poste"
     used_columns:
       - id
       - structure_siret
       - code_insee_commune
 
   salesforce_jaccueille:
+    use_odace: true
+    odace_table: "fact_jaccueille_code_postal"
     format: "api"
     ttl_days: 7
     description: "API Salesforce J'accueille - Extraction en direct des Prospects et Contacts"

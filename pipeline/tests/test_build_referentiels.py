@@ -55,7 +55,7 @@ def test_generate_referentiels_falls_back_to_raw_regions(tmp_path, monkeypatch):
             "code": ["M1805", "K1302"],
             "label": ["Développement informatique", "Aide à domicile"],
         }
-    ).to_parquet(raw_dir / "rome_referential_api.parquet")
+    ).to_parquet(clean_dir / "rome.parquet")
     monkeypatch.setattr(build, "CLEAN_DIR", clean_dir)
     monkeypatch.setattr(build, "CACHE_DIR", raw_dir)
     monkeypatch.setattr(build, "OUTPUT_DIR", output_dir)
@@ -72,12 +72,57 @@ def test_generate_referentiels_falls_back_to_raw_regions(tmp_path, monkeypatch):
         MagicMock(),
     )
 
-    refs = pd.read_parquet(
-        output_dir / "odis_referentiels.parquet"
-    )
+    refs = pd.read_parquet(output_dir / "odis_referentiels.parquet")
     regions = refs.loc[refs["key"] == "regions"].set_index("code")["label"].to_dict()
     assert regions == {
         "01": "Guadeloupe",
         "11": "Île-de-France",
         "84": "Auvergne-Rhône-Alpes",
     }
+    rome = refs.loc[refs["key"] == "rome_codes"].set_index("code")["label"].to_dict()
+    assert rome == {
+        "M1805": "Développement informatique",
+        "K1302": "Aide à domicile",
+    }
+
+
+def test_generate_referentiels_falls_back_to_legacy_rome(tmp_path, monkeypatch):
+    clean_dir = tmp_path / "clean"
+    raw_dir = tmp_path / "raw"
+    output_dir = tmp_path / "output"
+    clean_dir.mkdir()
+    raw_dir.mkdir()
+    output_dir.mkdir()
+
+    pd.DataFrame({"codgeo": ["75056"], "nom": ["Paris"]}).to_parquet(
+        clean_dir / "communes.parquet"
+    )
+    pd.DataFrame(
+        {
+            "code": ["75"],
+            "label": ["Paris"],
+            "reg_code": ["11"],
+        }
+    ).to_parquet(clean_dir / "departements.parquet")
+    pd.DataFrame(
+        {
+            "code": ["11"],
+            "label": ["Île-de-France"],
+        }
+    ).to_parquet(clean_dir / "regions.parquet")
+    pd.DataFrame(
+        {
+            "code": ["M1805"],
+            "label": ["Développement informatique"],
+        }
+    ).to_parquet(raw_dir / "rome_referential_api.parquet")
+
+    monkeypatch.setattr(build, "CLEAN_DIR", clean_dir)
+    monkeypatch.setattr(build, "CACHE_DIR", raw_dir)
+    monkeypatch.setattr(build, "OUTPUT_DIR", output_dir)
+
+    build.generate_referentiels({}, MagicMock())
+
+    refs = pd.read_parquet(output_dir / "odis_referentiels.parquet")
+    rome = refs.loc[refs["key"] == "rome_codes"].set_index("code")["label"].to_dict()
+    assert rome == {"M1805": "Développement informatique"}

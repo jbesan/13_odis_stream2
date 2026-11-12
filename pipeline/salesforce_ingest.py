@@ -48,7 +48,8 @@ def get_salesforce_status(cache_path: Optional[Path] = None) -> Dict[str, Any]:
         legacy_path = Path("pipeline/cache/output/salesforce_jaccueille.parquet")
         if (
             cache_path is None
-            and target_path == Path("pipeline/cache/clean/salesforce_jaccueille.parquet")
+            and target_path
+            == Path("pipeline/cache/clean/salesforce_jaccueille.parquet")
             and legacy_path.exists()
         ):
             target_path = legacy_path
@@ -308,8 +309,6 @@ def aggregate_by_bassin_de_vie(
         )
         return empty_bdv_df
 
-    df_cp = df_cp.drop_duplicates(subset=["code_postal"], keep="first")
-
     if df_communes is not None:
         df_comm = df_communes.copy()
     elif communes_path.exists():
@@ -326,9 +325,20 @@ def aggregate_by_bassin_de_vie(
         )
         return empty_bdv_df
 
-    df_comm = df_comm[["codgeo", "bassin_de_vie"]].drop_duplicates(
-        subset=["codgeo"], keep="first"
-    )
+    has_population = "population" in df_comm.columns
+    comm_cols = ["codgeo", "bassin_de_vie"]
+    if has_population:
+        comm_cols.append("population")
+
+    df_comm = df_comm[comm_cols].drop_duplicates(subset=["codgeo"], keep="first").copy()
+    df_comm["codgeo"] = df_comm["codgeo"].astype(str).str.strip()
+    df_comm["bassin_de_vie"] = df_comm["bassin_de_vie"].astype(str).str.strip()
+    if has_population:
+        df_comm["population"] = pd.to_numeric(
+            df_comm["population"], errors="coerce"
+        ).fillna(0.0)
+    else:
+        df_comm["population"] = 1.0
 
     df_sf = df_cp_sf.copy()
     df_sf["code_postal"] = df_sf["code_postal"].astype(str).str.strip().str.zfill(5)
@@ -336,13 +346,26 @@ def aggregate_by_bassin_de_vie(
         if col not in df_sf.columns:
             df_sf[col] = 0
 
+    df_cp = df_cp.copy()
     df_cp["code_postal"] = df_cp["code_postal"].astype(str).str.strip().str.zfill(5)
     df_cp["codgeo"] = df_cp["codgeo"].astype(str).str.strip()
-    df_comm["codgeo"] = df_comm["codgeo"].astype(str).str.strip()
-    df_comm["bassin_de_vie"] = df_comm["bassin_de_vie"].astype(str).str.strip()
+    df_cp = df_cp.drop_duplicates(subset=["code_postal", "codgeo"])
 
-    merged = df_sf.merge(df_cp[["code_postal", "codgeo"]], on="code_postal", how="inner")
-    merged_bdv = merged.merge(df_comm[["codgeo", "bassin_de_vie"]], on="codgeo", how="inner")
+    # Resolve each postal code to its majority Bassin de Vie by resident population
+    cp_comm_merged = df_cp.merge(df_comm, on="codgeo", how="inner")
+    if cp_comm_merged.empty:
+        return empty_bdv_df
+
+    cp_bv_pop = cp_comm_merged.groupby(
+        ["code_postal", "bassin_de_vie"], as_index=False
+    )["population"].sum()
+    best_cp_bv = cp_bv_pop.sort_values(
+        ["population", "bassin_de_vie"], ascending=[False, True]
+    ).drop_duplicates(subset=["code_postal"], keep="first")[
+        ["code_postal", "bassin_de_vie"]
+    ]
+
+    merged_bdv = df_sf.merge(best_cp_bv, on="code_postal", how="inner")
 
     bdv_rows = []
     for bdv, group in merged_bdv.groupby("bassin_de_vie"):
@@ -388,7 +411,11 @@ def fetch_and_aggregate_salesforce(
     target_output_path = output_path or OUTPUT_PATH
     target_raw_path = raw_output_path or RAW_OUTPUT_PATH
     status = get_salesforce_status(target_output_path)
-    if not force and not status["within_ttl"] and target_output_path.resolve() != OUTPUT_PATH.resolve():
+    if (
+        not force
+        and not status["within_ttl"]
+        and target_output_path.resolve() != OUTPUT_PATH.resolve()
+    ):
         status = get_salesforce_status(OUTPUT_PATH)
 
     if not force and status["within_ttl"]:

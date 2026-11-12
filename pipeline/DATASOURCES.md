@@ -6,6 +6,14 @@
 - URL Stable: https://www.data.gouv.fr/api/1/datasets/r/12f8cdc9-5844-4666-a4b5-6385d5415f67
 - Typ de fichier: geojson
 
+## Référentiel EPCI & Commune-EPCI (SIREN)
+
+- Source active: ODAS Silver `ref_epci` (1 255 EPCI) et `ref_commune_epci` (34 871 mappings)
+- Source historique: data.gouv.fr (`ref_epci.json` déprécié)
+- Cache ETL: `pipeline/cache/raw/odace_ref_epci.parquet` et `odace_ref_commune_epci.parquet`
+- Sortie: Injecté dans `pipeline/cache/clean/communes.parquet` (colonne `epci`) et consommé par `pipeline/ctai.py` et `pipeline/anvita.py`
+- Description: Référentiel des EPCI et table relationnelle commune-EPCI (SIREN) pour le rattachement territorial et les délais d'attribution USH.
+
 ## Population
 
 - Données: https://www.data.gouv.fr/datasets/population-municipale-des-communes-france-entiere/#/resources/630e7917-02db-4838-8856-09235719551c
@@ -83,10 +91,12 @@
 
 ## Historique électoral
 
-- Données: https://www.data.gouv.fr/fr/datasets/resultats-des-elections-en-france-par-commune-et-par-bureau-de-vote/
-- Cache ETL généré: pipeline/cache/raw/candidats_results.parquet (non versionné)
-- Type de fichier: parquet (optimisé, ~27.5 millions de lignes, 161 Mo)
-- Description: Résultats électoraux par bureau de vote. Utilisé pour compiler l'historique des 5 derniers scrutins majeurs de chaque commune (enregistré au format JSON).
+- Source active: ODAS Silver `fact_resultat_election_candidat` (~27,5 millions de lignes)
+- Source historique: data.gouv.fr (`candidats_results.parquet` déprécié)
+- Cache ETL: `pipeline/cache/raw/odace_fact_resultat_election_candidat.parquet`
+- Sortie propre: `pipeline/cache/clean/electoral_history.parquet`
+- Cleaner pipeline: `pipeline/ingest/cleaners/electoral.py::clean_electoral_history`
+- Description: Résultats électoraux par bureau de vote agrégés via Polars lazy scan (filtrage sur les 5 derniers scrutins municipaux et présidentiels, calcul des pourcentages et vainqueurs au format JSON par commune).
 
 ## Associations
 
@@ -191,15 +201,37 @@
 
 ## Référentiel emploi ROME
 
-- Données: https://www.data.gouv.fr/datasets/repertoire-operationnel-des-metiers-et-des-emplois-rome/
-  NE MARCHE PAS
+- Source active: ODAS Silver `ref_rome` (1 923 métiers normalisés)
+- Cleaner pipeline: `pipeline/ingest/cleaners/jobs.py::clean_rome`
+- Cache propre: `pipeline/cache/clean/rome.parquet` (colonnes `code`, `label`)
+- Description: Référentiel unifié des métiers et emplois ROME (v4), normalisé, dédupliqué et standardisé dans le DAG d'ingestion.
 
 ## Offres d'emploi en direct (Live Jobs)
 
-- Source: France Travail API (Partenaire)
-- Endpoint: https://api.francetravail.io/partenaire/offresemploi/v2/offres/emploi/search
-- Type: API (JSON)
-- Description: Récupération des offres d'emploi en temps réel filtrées par code ROME et commune. Utilisé pour le calcul de tension et le scoring "Live".
+- Source active: ODAS Silver `fact_offre_emploi` (469 043 offres unitaires, agrégées en ~243 000 paires commune/ROME en métropole)
+- Source historique: API France Travail Partenaire (crawl HTTP sur 96 départements déprécié)
+- Cache ETL brut: `pipeline/cache/raw/odace_fact_offre_emploi.parquet`
+- Sorties générées: `pipeline/cache/output/odis_ft_jobs_agg.parquet` et `odis_ft_jobs_coverage.parquet`
+- Cleaner pipeline: `pipeline/ingest/cleaners/jobs.py::clean_live_jobs`
+- Description: Stock unitaire des offres d'emploi France Travail, agrégé au grain (commune, code ROME, libellé ROME) pour le calcul de tension marché et l'opportunité d'emploi par métier, avec couverture des 96 départements métropolitains.
+
+## Offres d'emploi en insertion (SIAE Jobs)
+
+- Source active: ODAS Silver `fact_siae_poste` (13 000 postes uniques, 12 006 filtrés métropole)
+- Tables auxiliaires: `dim_siae_structure` (typologies ACI/AI/EI/ETTI/EITI/GEIQ/OPCS) et `dim_geo` (résolution commune)
+- Cache ETL brut: `pipeline/cache/raw/odace_fact_siae_poste.parquet`
+- Sorties générées: `pipeline/cache/output/odis_inclusion_jobs.parquet`, `odis_inclusion_structures.parquet`, `odis_inclusion_jobs_coverage.parquet`
+- Cleaner pipeline: `pipeline/ingest/cleaners/jobs.py::clean_inclusion_jobs`
+- Description: Offres d'emploi issues de la plateforme "Les emplois de l'inclusion", dédoublonnées sur `job_id`, enrichies des titres, descriptions, profils et types de contrat, rattachées géographiquement à la commune du lieu ou du siège employeur.
+
+## Salesforce J'accueille (Accueillants & Prospects)
+
+- Source active: ODAS Silver `fact_jaccueille_code_postal` (1 069 codes postaux)
+- Source historique: API REST Salesforce (authentification JWT avec clé privée RSA dépréciée)
+- Cache ETL brut: `pipeline/cache/raw/odace_fact_jaccueille_code_postal.parquet`
+- Sorties générées: `pipeline/cache/clean/salesforce_jaccueille.parquet` (grain code postal), projeté ensuite dans `pipeline/cache/output/salesforce_jaccueille_bdv.parquet` (grain Bassin de Vie)
+- Cleaner pipeline: `pipeline/ingest/cleaners/salesforce.py::clean_salesforce_jaccueille`
+- Description: Décompte des particuliers accueillants (`contact_count`) et prospects (`lead_count`) engagés dans le programme J'accueille, agrégés par code postal puis consolidés par Bassin de Vie pour l'indicateur territorial et les liens de reporting Salesforce.
 
 ## Formations Annuaire
 
