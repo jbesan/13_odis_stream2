@@ -35,6 +35,7 @@ from pipeline.ingest.cleaners import (
     clean_population_details,
     clean_refugee_associations,
     clean_regions,
+    clean_rome,
     clean_rpls,
     clean_salesforce_jaccueille,
     clean_sante_apl,
@@ -45,7 +46,7 @@ from pipeline.ingest.cleaners import (
 )
 from pipeline.ingest import context
 from pipeline.ingest.config import get_domain_contracts
-from pipeline.ingest.fetcher import fetch_rome_referential, fetch_source
+from pipeline.ingest.fetcher import fetch_source
 from pipeline.ingest.cleaners.rna_rag import fetch_rna_rag_stats
 from pipeline.ingest.runner import run_clean_step_safely
 
@@ -111,12 +112,10 @@ def main(argv: Sequence[str] | None = None) -> None:
         "mob_durable": clean_mob_durable,
         "ter_insecurite": clean_ter_insecurite,
         "salesforce_jaccueille": clean_salesforce_jaccueille,
+        "rome": clean_rome,
     }
 
     selected_steps = args.steps.split(",") if args.steps else list(steps_map.keys())
-
-    if not args.steps or "rome" in selected_steps:
-        fetch_rome_referential(config, logger)
 
     if not args.steps or any(
         s in selected_steps for s in ["associations", "refugee_associations", "rna"]

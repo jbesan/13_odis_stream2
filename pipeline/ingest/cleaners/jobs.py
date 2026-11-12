@@ -7,9 +7,13 @@ from pathlib import Path
 import time
 from typing import Any, Dict
 
+import pandas as pd
+import requests
+
 from pipeline.common import PipelineLogger, load_config
 from pipeline.emplois_inclusion_ingest import run_ingestion as run_inclusion_ingest
 from pipeline.ft_live_ingest import run_etl
+from pipeline.ingest import context
 from pipeline.ingest.helpers import (
     _artifact_observed_at,
     _materialize_employment_output_pair,
@@ -259,3 +263,149 @@ def clean_inclusion_jobs(
             raise PipelineRunError(
                 f"Inclusion Jobs {reason}; refresh is required before publication"
             )
+
+
+def clean_rome(config: Dict[str, Any], logger: PipelineLogger) -> None:
+    """Cleans and standardizes the France Travail ROME referential.
+
+    Uses ODAS Silver table ref_rome by default, with fallbacks to France Travail API
+    or static ROME json referential when configured.
+
+    Outputs:
+        CLEAN_DIR / "rome.parquet" with columns ['code', 'label'].
+
+    Raises:
+        PipelineRunError: If referential extraction fails or produces invalid data.
+    """
+    import pipeline.ingest as ingest
+
+    logger.log_step("clean_rome", "STARTED")
+    source_cfg = config.get("sources", {}).get("rome", {})
+    output_path = context.CLEAN_DIR / "rome.parquet"
+    ttl_days = source_cfg.get("ttl_days", 365)
+
+    if source_cfg.get("use_odace", False):
+        odace_table = source_cfg.get("odace_table", "ref_rome")
+        try:
+            client = ingest.get_odace_client(logger)
+            df = client.fetch_table(odace_table, ttl_days=ttl_days)
+            code_col = next((c for c in ["code_rome", "code"] if c in df.columns), None)
+            label_col = next(
+                (c for c in ["libelle_rome", "label", "libelle"] if c in df.columns),
+                None,
+            )
+
+            if not df.empty and code_col and label_col:
+                df_out = (
+                    pd.DataFrame(
+                        {
+                            "code": df[code_col].astype(str).str.strip(),
+                            "label": df[label_col].astype(str).str.strip(),
+                        }
+                    )
+                    .dropna()
+                    .drop_duplicates()
+                )
+                df_out.to_parquet(output_path)
+                logger.log_source("rome", "FETCHED", str(output_path))
+                logger.log_step(
+                    "clean_rome",
+                    "COMPLETED",
+                    {"path": str(output_path), "rows": len(df_out), "source": "odace"},
+                )
+                return
+            else:
+                raise ValueError(
+                    f"Unexpected columns or empty data in ODAS {odace_table}: {df.columns}"
+                )
+        except Exception as e:
+            logging.error(f"❌ [ROME] Failed to fetch referential from ODAS: {e}")
+            raise PipelineRunError(
+                f"Odace rome did not produce a usable dataset: {e}"
+            ) from e
+
+    # Fallback to France Travail API
+    try:
+        token = ingest.get_ft_token()
+        url = "https://api.francetravail.io/partenaire/offresdemploi/v2/referentiel/metiers"
+        headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+
+        logging.info("📡 [ROME] Fetching referential from France Travail API...")
+        response = requests.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+
+        df = pd.DataFrame(data)
+        if "code" in df.columns and "libelle" in df.columns:
+            df_out = (
+                pd.DataFrame(
+                    {
+                        "code": df["code"].astype(str).str.strip(),
+                        "label": df["libelle"].astype(str).str.strip(),
+                    }
+                )
+                .dropna()
+                .drop_duplicates()
+            )
+            df_out.to_parquet(output_path)
+            logger.log_source("rome", "FETCHED", str(output_path))
+            logger.log_step(
+                "clean_rome",
+                "COMPLETED",
+                {"path": str(output_path), "rows": len(df_out), "source": "api"},
+            )
+            return
+        else:
+            raise ValueError(f"Unexpected API data format: {df.columns}")
+
+    except Exception as e:
+        logging.error(
+            f"❌ [ROME] Failed to fetch referential from API: {e}. Attempting static fallback..."
+        )
+        logger.log_source("rome_api_failure", "WARNING", str(e))
+
+        try:
+            from pipeline.ingest.fetcher import fetch_source
+
+            rome_cfg = config.get("sources", {}).get("rome")
+            if not rome_cfg:
+                raise ValueError("No static 'rome' configuration found in sources.yaml")
+
+            static_json_path = fetch_source("rome", rome_cfg, logger)
+            if not static_json_path or not static_json_path.exists():
+                raise FileNotFoundError(
+                    f"Static ROME source not available at {static_json_path}"
+                )
+
+            logging.info(
+                f"[ROME] Parsing static JSON referential from {static_json_path}..."
+            )
+            df = pd.read_json(static_json_path)
+
+            if "code" in df.columns and "libelle" in df.columns:
+                df_out = (
+                    pd.DataFrame(
+                        {
+                            "code": df["code"].astype(str).str.strip(),
+                            "label": df["libelle"].astype(str).str.strip(),
+                        }
+                    )
+                    .dropna()
+                    .drop_duplicates()
+                )
+                df_out.to_parquet(output_path)
+                logger.log_source("rome", "FETCHED", str(output_path))
+                logger.log_step(
+                    "clean_rome",
+                    "COMPLETED",
+                    {"path": str(output_path), "rows": len(df_out), "source": "static"},
+                )
+                return
+            else:
+                raise ValueError(f"Unexpected static JSON format: {df.columns}")
+        except Exception as fallback_err:
+            logging.error(f"❌ [ROME] Static fallback failed: {fallback_err}")
+            logger.log_source("rome", "ERROR", f"API: {e}, Fallback: {fallback_err}")
+            raise PipelineRunError(
+                f"ROME referential failed via both API ({e}) and static fallback ({fallback_err})"
+            ) from fallback_err

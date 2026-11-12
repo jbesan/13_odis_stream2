@@ -83,8 +83,32 @@ def compute_ctai_scores(
         except Exception as e:
             logger.warning(f"Failed to parse referentiel_departements.json: {e}")
 
+    epci_parquet = cache_raw_dir / "odace_ref_epci.parquet"
+    commune_epci_parquet = cache_raw_dir / "odace_ref_commune_epci.parquet"
     epci_file = cache_raw_dir / "ref_epci.json"
-    if epci_file.exists():
+
+    if epci_parquet.exists() and commune_epci_parquet.exists():
+        try:
+            df_epci = pd.read_parquet(epci_parquet)
+            df_commune_epci = pd.read_parquet(commune_epci_parquet)
+            label_col = "libelle_epci" if "libelle_epci" in df_epci.columns else "nom"
+            code_col = "code_epci" if "code_epci" in df_epci.columns else "code"
+            epci_lookup = {
+                clean_and_normalize(str(r[label_col])): str(r[code_col])
+                for _, r in df_epci.iterrows()
+                if pd.notna(r.get(label_col))
+            }
+            comm_code_col = "commune_insee_code" if "commune_insee_code" in df_commune_epci.columns else "code"
+            epci_code_col = "code_epci" if "code_epci" in df_commune_epci.columns else "code_epci"
+            epci_to_communes = (
+                df_commune_epci.groupby(epci_code_col)[comm_code_col]
+                .apply(lambda s: [str(x) for x in s.dropna()])
+                .to_dict()
+            )
+        except Exception as e:
+            logger.warning(f"Failed to parse EPCI parquets: {e}")
+
+    if not epci_lookup and epci_file.exists():
         try:
             with open(epci_file, "r") as f:
                 epcis = json.load(f)

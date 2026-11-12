@@ -32,29 +32,66 @@ def clean_communes(config: Dict[str, Any], logger: PipelineLogger) -> None:
             df_odace = client.fetch_table(source.get("odace_table", "ref_commune_geo"))
             if not df_odace.empty:
                 # 1. Fetch and build EPCI mapping
-                epci_cfg = config["sources"].get(
-                    "ref_epci",
-                    {
-                        "datagouv_resource_id": "4f02ce39-2a91-4a8b-85cb-c6a0f912516b",
-                        "local_name": "ref_epci.json",
-                        "ttl_days": 90,
-                    },
+                epci_cfg = config.get("sources", {}).get("ref_epci", {})
+                commune_epci_cfg = config.get("sources", {}).get(
+                    "ref_commune_epci", {}
                 )
-                epci_path = ingest.fetch_source("ref_epci", epci_cfg, logger)
                 epci_map = {}
-                if epci_path and epci_path.exists():
+
+                if epci_cfg.get("use_odace", False) or commune_epci_cfg.get(
+                    "use_odace", False
+                ):
                     try:
-                        with open(epci_path, "r", encoding="utf-8") as f:
-                            epci_data = json.load(f)
-                        for epci in epci_data:
-                            epci_code = epci.get("code")
-                            for m in epci.get("membres", []):
-                                if m.get("code"):
-                                    epci_map[str(m["code"]).zfill(5)] = str(
-                                        epci_code
-                                    ).zfill(9)
+                        commune_epci_table = commune_epci_cfg.get(
+                            "odace_table", "ref_commune_epci"
+                        )
+                        ttl = commune_epci_cfg.get(
+                            "ttl_days", epci_cfg.get("ttl_days", 90)
+                        )
+                        df_commune_epci = client.fetch_table(
+                            commune_epci_table, ttl_days=ttl
+                        )
+                        if (
+                            not df_commune_epci.empty
+                            and "commune_insee_code" in df_commune_epci.columns
+                            and "code_epci" in df_commune_epci.columns
+                        ):
+                            epci_map = dict(
+                                zip(
+                                    df_commune_epci["commune_insee_code"]
+                                    .astype(str)
+                                    .str.zfill(5),
+                                    df_commune_epci["code_epci"]
+                                    .astype(str)
+                                    .str.zfill(9),
+                                )
+                            )
+                            # Also cache ref_epci for downstream consumers (CTAI, ANVITA)
+                            ref_epci_table = epci_cfg.get("odace_table", "ref_epci")
+                            client.fetch_table(
+                                ref_epci_table,
+                                ttl_days=epci_cfg.get("ttl_days", 90),
+                            )
                     except Exception as e:
-                        logging.error(f"Error parsing ref_epci mapping: {e}")
+                        logging.warning(
+                            f"Error fetching EPCI from ODAS: {e}. Attempting fallback..."
+                        )
+
+                if not epci_map:
+                    epci_path = ingest.fetch_source("ref_epci", epci_cfg, logger)
+                    if epci_path and epci_path.exists():
+                        try:
+                            with open(epci_path, "r", encoding="utf-8") as f:
+                                epci_data = json.load(f)
+                            for epci in epci_data:
+                                epci_code = epci.get("code")
+                                for m in epci.get("membres", []):
+                                    if m.get("code"):
+                                        epci_map[str(m["code"]).zfill(5)] = str(
+                                            epci_code
+                                        ).zfill(9)
+                        except Exception as e:
+                            logging.error(f"Error parsing ref_epci mapping: {e}")
 
                 # 2. Fetch dim_commune for labels, departement, and region
                 df_commune = client.fetch_dim_commune(source["ttl_days"])

@@ -29,9 +29,10 @@ def test_domain_contracts_load_and_validate():
     assert "Transports en commun" in contracts.mobility.sustainable_modes
     assert "ccas" in contracts.inclusion.ccas_keywords
     assert contracts.rna_rag.output_dimensionality == 128
-    assert len(contracts.runner.cleaned_sources) == 30
+    assert len(contracts.runner.cleaned_sources) == 31
     assert "bassins_de_vie" in contracts.runner.cleaned_sources
     assert "salesforce_jaccueille" in contracts.runner.cleaned_sources
+    assert "rome" in contracts.runner.cleaned_sources
     assert len(contracts.geography.plm_communes) == 3
     assert "75056" in contracts.geography.plm_communes
     assert "salesforce_jaccueille" not in contracts.runner.output_dir_steps
@@ -39,6 +40,7 @@ def test_domain_contracts_load_and_validate():
         contracts.runner.clean_filenames["salesforce_jaccueille"]
         == "salesforce_jaccueille.parquet"
     )
+    assert contracts.runner.clean_filenames["rome"] == "rome.parquet"
 
 
 def test_domain_contracts_invalid_schema():

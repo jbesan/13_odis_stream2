@@ -47,6 +47,7 @@ from pipeline.ingest.cleaners.inclusion import (
 from pipeline.ingest.cleaners.jobs import (
     clean_inclusion_jobs,
     clean_live_jobs,
+    clean_rome,
     get_inclusion_jobs_status,
     get_live_jobs_status,
 )
@@ -90,6 +91,7 @@ __all__ = [
     "clean_population_details",
     "clean_refugee_associations",
     "clean_regions",
+    "clean_rome",
     "clean_rpls",
     "clean_salesforce_jaccueille",
     "clean_sante_apl",

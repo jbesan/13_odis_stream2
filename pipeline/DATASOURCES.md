@@ -6,6 +6,14 @@
 - URL Stable: https://www.data.gouv.fr/api/1/datasets/r/12f8cdc9-5844-4666-a4b5-6385d5415f67
 - Typ de fichier: geojson
 
+## Référentiel EPCI & Commune-EPCI (SIREN)
+
+- Source active: ODAS Silver `ref_epci` (1 255 EPCI) et `ref_commune_epci` (34 871 mappings)
+- Source historique: data.gouv.fr (`ref_epci.json` déprécié)
+- Cache ETL: `pipeline/cache/raw/odace_ref_epci.parquet` et `odace_ref_commune_epci.parquet`
+- Sortie: Injecté dans `pipeline/cache/clean/communes.parquet` (colonne `epci`) et consommé par `pipeline/ctai.py` et `pipeline/anvita.py`
+- Description: Référentiel des EPCI et table relationnelle commune-EPCI (SIREN) pour le rattachement territorial et les délais d'attribution USH.
+
 ## Population
 
 - Données: https://www.data.gouv.fr/datasets/population-municipale-des-communes-france-entiere/#/resources/630e7917-02db-4838-8856-09235719551c
@@ -83,10 +91,12 @@
 
 ## Historique électoral
 
-- Données: https://www.data.gouv.fr/fr/datasets/resultats-des-elections-en-france-par-commune-et-par-bureau-de-vote/
-- Cache ETL généré: pipeline/cache/raw/candidats_results.parquet (non versionné)
-- Type de fichier: parquet (optimisé, ~27.5 millions de lignes, 161 Mo)
-- Description: Résultats électoraux par bureau de vote. Utilisé pour compiler l'historique des 5 derniers scrutins majeurs de chaque commune (enregistré au format JSON).
+- Source active: ODAS Silver `fact_resultat_election_candidat` (~27,5 millions de lignes)
+- Source historique: data.gouv.fr (`candidats_results.parquet` déprécié)
+- Cache ETL: `pipeline/cache/raw/odace_fact_resultat_election_candidat.parquet`
+- Sortie propre: `pipeline/cache/clean/electoral_history.parquet`
+- Cleaner pipeline: `pipeline/ingest/cleaners/electoral.py::clean_electoral_history`
+- Description: Résultats électoraux par bureau de vote agrégés via Polars lazy scan (filtrage sur les 5 derniers scrutins municipaux et présidentiels, calcul des pourcentages et vainqueurs au format JSON par commune).
 
 ## Associations
 
@@ -191,8 +201,10 @@
 
 ## Référentiel emploi ROME
 
-- Données: https://www.data.gouv.fr/datasets/repertoire-operationnel-des-metiers-et-des-emplois-rome/
-  NE MARCHE PAS
+- Source active: ODAS Silver `ref_rome` (1 923 métiers normalisés)
+- Cleaner pipeline: `pipeline/ingest/cleaners/jobs.py::clean_rome`
+- Cache propre: `pipeline/cache/clean/rome.parquet` (colonnes `code`, `label`)
+- Description: Référentiel unifié des métiers et emplois ROME (v4), normalisé, dédupliqué et standardisé dans le DAG d'ingestion.
 
 ## Offres d'emploi en direct (Live Jobs)
 

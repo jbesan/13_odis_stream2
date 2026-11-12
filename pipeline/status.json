@@ -96,12 +96,12 @@
     },
     "ingest_all": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-09T13:05:11.173938+00:00",
+      "timestamp": "2026-11-12T09:49:49.875921+00:00",
       "details": {}
     },
     "clean_communes": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-09T12:30:41.659492+00:00",
+      "timestamp": "2026-11-12T09:49:49.874588+00:00",
       "details": {
         "rows": 35014,
         "path": "pipeline/cache/clean/communes.parquet"
@@ -1045,12 +1045,20 @@
         "rows": 34876,
         "path": "pipeline/cache/clean/bassins_de_vie.parquet"
       }
+    },
+    "clean_rome": {
+      "status": "COMPLETED",
+      "timestamp": "2026-11-12T08:59:58.967869+00:00",
+      "details": {
+        "rows": 1923,
+        "path": "pipeline/cache/clean/rome.parquet"
+      }
     }
   },
   "sources": {
     "communes": {
       "status": "skipped_optional",
-      "timestamp": "2026-11-09T12:30:41.067877+00:00",
+      "timestamp": "2026-11-12T09:49:46.530567+00:00",
       "file": "managed by Odace"
     },
     "population": {
@@ -1124,9 +1132,9 @@
       "file": "Source file not found: /Users/jacques/dev/13_odis_stream2/csv/annuaire_sante_finess.parquet"
     },
     "rome": {
-      "status": "skipped_optional",
-      "timestamp": "2026-11-05T11:17:59.486843+00:00",
-      "file": "managed by Odace"
+      "status": "fetched",
+      "timestamp": "2026-11-12T08:59:58.966482+00:00",
+      "file": "pipeline/cache/clean/rome.parquet"
     },
     "population_active": {
       "status": "CACHED",

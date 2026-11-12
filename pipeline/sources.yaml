@@ -6,11 +6,19 @@ sources:
     description: "Contours administratifs des communes (simplifiés)"
 
   ref_epci:
+    use_odace: true
+    odace_table: "ref_epci"
+    ttl_days: 90
+    description: "Référentiel des EPCI (ODAS Silver)"
     datagouv_resource_id: "4f02ce39-2a91-4a8b-85cb-c6a0f912516b"
     format: "json"
     local_name: "ref_epci.json"
+
+  ref_commune_epci:
+    use_odace: true
+    odace_table: "ref_commune_epci"
     ttl_days: 90
-    description: "Référentiel des EPCI (Data.gouv)"
+    description: "Appartenance communes-EPCI (ODAS Silver)"
 
   population:
     use_odace: true
@@ -65,18 +73,20 @@ sources:
       - nuance_politique
 
   electoral_history:
+    use_odace: true
+    odace_table: "fact_resultat_election_candidat"
+    ttl_days: 365
+    description: "Résultats électoraux par bureau de vote (pour historique, ODAS Silver)"
+    used_columns:
+      - code_election
+      - commune_insee_code
+      - code_nuance_politique
+      - libelle_abrege_liste
+      - nom_candidat
+      - nb_voix
     datagouv_resource_id: "4d3b35f6-0b22-4415-a24c-419a676312e2"
     format: "parquet"
     local_name: "candidats_results.parquet"
-    ttl_days: 365
-    description: "Résultats électoraux par bureau de vote (pour historique)"
-    used_columns:
-      - id_election
-      - code_commune
-      - nuance
-      - libelle_abrege_liste
-      - nom
-      - voix
 
   associations:
     use_odace: true
