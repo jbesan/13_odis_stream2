@@ -21,13 +21,13 @@ def test_cloud_run_json_log_is_single_line(monkeypatch):
 
 
 def test_setup_logfire_prod():
-    # Test that setup_logfire configures environment as 'prod' and disables remote sending on GCP (GDPR compliance)
+    # Test that setup_logfire disables remote sending in production (GDPR compliance)
     mock_logfire = MagicMock()
     mock_logfire.DEFAULT_LOGFIRE_INSTANCE.config.environment = None
 
     env_mock = os.environ.copy()
-    env_mock.pop("ODIS_DEPLOYMENT_ENV", None)
-    env_mock["K_SERVICE"] = "my-cloud-run-service"
+    env_mock["ODIS_DEPLOYMENT_ENV"] = "production"
+    env_mock["K_SERVICE"] = "odis-app"
     env_mock["LOGFIRE_TOKEN"] = "some-token"
 
     with patch("utils.logger.logfire", mock_logfire), patch("os.environ", env_mock):
@@ -35,12 +35,51 @@ def test_setup_logfire_prod():
 
         mock_logfire.configure.assert_called_once_with(
             service_name="odis-stream2",
-            environment="prod",
+            environment="production",
             send_to_logfire=False,
             console=False,
         )
         mock_logfire.instrument_pydantic_ai.assert_called_once()
         mock_logfire.instrument_httpx.assert_called_once()
+
+
+def test_setup_logfire_staging():
+    # Test that setup_logfire enables remote sending in staging even when K_SERVICE is set
+    mock_logfire = MagicMock()
+    mock_logfire.DEFAULT_LOGFIRE_INSTANCE.config.environment = None
+
+    env_mock = os.environ.copy()
+    env_mock["ODIS_DEPLOYMENT_ENV"] = "staging"
+    env_mock["K_SERVICE"] = "odis-app-staging"
+    env_mock["LOGFIRE_TOKEN"] = "some-token"
+
+    with patch("utils.logger.logfire", mock_logfire), patch("os.environ", env_mock):
+        setup_logfire()
+
+        mock_logfire.configure.assert_called_once_with(
+            service_name="odis-stream2",
+            environment="staging",
+            send_to_logfire="if-token-present",
+            console=False,
+        )
+        mock_logfire.instrument_pydantic_ai.assert_called_once()
+        mock_logfire.instrument_httpx.assert_called_once()
+
+
+def test_config_logfire_helpers(monkeypatch):
+    import config as cfg
+
+    monkeypatch.delenv("ODIS_DEPLOYMENT_ENV", raising=False)
+    assert cfg.get_deployment_env() == "local"
+    assert cfg.is_logfire_enabled() is True
+
+    monkeypatch.setenv("ODIS_DEPLOYMENT_ENV", "staging")
+    assert cfg.get_deployment_env() == "staging"
+    assert cfg.is_logfire_enabled() is True
+
+    for prod_env in ("production", "prod", "unknown"):
+        monkeypatch.setenv("ODIS_DEPLOYMENT_ENV", prod_env)
+        assert cfg.is_logfire_enabled() is False
 
 
 def test_setup_logfire_local():

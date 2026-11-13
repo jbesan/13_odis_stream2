@@ -7,6 +7,7 @@ import logfire
 import zoneinfo
 from datetime import datetime
 from typing import Optional, Any
+import config as cfg
 from core.models import SearchCriterias, SearchResultsData
 
 logger = logging.getLogger(__name__)
@@ -210,17 +211,11 @@ def setup_logfire() -> None:
         return
 
     try:
-        # Cloud Run staging and production receive an explicit deployment label.
-        is_cloud_run = os.environ.get("K_SERVICE") is not None
-        logfire_env = os.getenv("ODIS_DEPLOYMENT_ENV") or (
-            "prod" if is_cloud_run else "local"
-        )
+        logfire_env = cfg.get_deployment_env()
 
-        # GDPR Constraint: Disable sending telemetry to Logfire cloud on GCP/Cloud Run
+        # GDPR Constraint: Allow remote telemetry only in 'local' and 'staging' (fail-closed in prod)
         send_to_logfire = (
-            False
-            if (is_cloud_run or logfire_env in ("prod", "staging"))
-            else "if-token-present"
+            "if-token-present" if cfg.is_logfire_enabled() else False
         )
 
         logfire.configure(
