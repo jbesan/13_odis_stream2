@@ -65,9 +65,10 @@ steps:
       - --ingress=all
       - --timeout=3600
       - --concurrency=80
-      - --cpu=2
+      - --cpu=4
       - --memory=4Gi
       - --max-instances=1
+      - --no-cpu-throttling
       - --session-affinity
       - --cpu-boost
       - --set-env-vars=STREAMLIT_CLIENT_TOOLBAR_MODE=minimal,ODIS_FORCE_AUTH=True,ODIS_IDLE_DISCONNECT_ENABLED=False,ODIS_AGENT_GCP_PROJECT=${_DATA_PROJECT},ODIS_AGENT_GCP_LOCATION=eu,ODIS_AI_FREE_MODE=False,ODIS_AUTO_ANALYSE_TOP_CITIES=True,ODIS_ENABLE_INTERACTIVE_CHAT=False,ODIS_CAPABILITY_DEFERRED_LOADING=False,GOOGLE_CLOUD_PROJECT=${_PROJECT_ID},ODIS_DEPLOYMENT_ENV=${_ENV},ODIS_DATA_PROJECT=${_DATA_PROJECT},GCS_DATASETS_BUCKET=${_DATA_BUCKET},GCS_SHARED_SEARCHES_BUCKET=${_SHARES_BUCKET},ODIS_APP_VERSION=${_IMAGE_TAG}
