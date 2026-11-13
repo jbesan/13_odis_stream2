@@ -90,7 +90,11 @@ class AgentSettings(BaseSettings):
         default_factory=lambda: NodeConfig(temperature=0.0, thinking=False)
     )
     synthesizer: NodeConfig = Field(
-        default_factory=lambda: NodeConfig(temperature=0.7, thinking="low")
+        default_factory=lambda: NodeConfig(
+            model="google:gemini-3.5-flash-lite",
+            temperature=0.0,
+            thinking=False,
+        )
     )
     refiner: NodeConfig = Field(
         default_factory=lambda: NodeConfig(
