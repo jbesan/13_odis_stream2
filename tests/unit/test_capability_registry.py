@@ -337,7 +337,7 @@ def test_registry_get_existing_capabilities():
     assert healthcare.contexts == ["commune.health"]
     assert healthcare.loading_policy == "eager_only"
 
-    # Job Hunter adequation territoire (all 5 tools declared)
+    # Job Hunter adequation territoire (4 tools declared)
     job = registry.get("job_adequation_territoire")
     assert job.id == "job_adequation_territoire"
     assert job.name == "Adéquation Territoriale - Emploi"
@@ -346,7 +346,6 @@ def test_registry_get_existing_capabilities():
         "search_job_offers_batch_tool",
         "get_job_details_tool",
         "search_inclusion_jobs_batch_tool",
-        "get_inclusion_job_details_tool",
         "search_referentiels_batch_tool",
     ]
     assert job.contexts == ["commune.employment"]
@@ -478,7 +477,6 @@ def test_registry_expert_tools_alignment_with_agents():
             "search_job_offers_batch_tool",
             "get_job_details_tool",
             "search_inclusion_jobs_batch_tool",
-            "get_inclusion_job_details_tool",
             "search_referentiels_batch_tool",
         },
         "healthcare_expert": {
@@ -987,7 +985,7 @@ def test_registry_build_capabilities_multi_capability_tool_deduplication():
 
     # First capability gets its declared tools
     cap1_tools = [t.__name__ for t in caps[0].tools]
-    assert len(cap1_tools) == 5
+    assert len(cap1_tools) == 4
 
     # Second capability has duplicate tools omitted so no tool name collision occurs in PydanticAI
     cap2_tools = [t.__name__ for t in caps[1].tools]

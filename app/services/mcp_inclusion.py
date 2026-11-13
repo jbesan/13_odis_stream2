@@ -287,50 +287,67 @@ def _search_inclusion_jobs_logic(
         return {"error": str(e), "offres": []}
 
 
-def _get_inclusion_job_details_logic(siae_id: str) -> Dict[str, Any]:
-    """Fetch details for a specific SIAE structure using public API department lookup fallback.
+def _extract_dept_from_codgeo(codgeo: Any) -> Optional[str]:
+    """Extracts the French department code from a 5-character INSEE commune code.
 
     Args:
-        siae_id: The SIAE structure SIRET (14 digits), UUID, or job ID.
+        codgeo: Raw commune INSEE code value.
 
     Returns:
-        Dict[str, Any]: A dictionary containing details of the SIAE structure and its posts.
+        Optional[str]: Department code (2 chars, '2A'/'2B', or 3 chars for 97x/98x), or None if empty.
     """
-    dept = None
-    siae_id_str = str(siae_id)
+    code = str(codgeo or "").strip().upper()
+    if len(code) < 2:
+        return None
+    if code.startswith(("97", "98")) and len(code) >= 3:
+        return code[:3]
+    return code[:2]
+
+
+def _get_inclusion_job_details_logic(siae_id: str) -> Dict[str, Any]:
+    """Fetch details for a specific SIAE structure using public API department lookup.
+
+    Fails closed when the department cannot be resolved from the local SIAE parquet
+    cache (no hardcoded department fallback).
+
+    Args:
+        siae_id: The SIAE structure SIRET (14 digits) or numeric job ID.
+
+    Returns:
+        Dict[str, Any]: A dictionary containing details of the SIAE structure and its posts,
+            or an error dictionary if resolution/lookup fails.
+    """
+    dept: Optional[str] = None
+    siae_id_str = str(siae_id).strip()
     df_cache = None
     try:
         df_cache = load_parquet(cfg.SIAE_JOBS_FILE)
     except Exception as e:
-        logger.warning(f"[Inclusion] Parquet dataset cache load failed: {e}")
+        logger.error(f"❌ [Inclusion] Parquet dataset cache load failed: {e}")
 
     # 1. If siae_id is a SIRET (14 digits)
-    if len(siae_id_str) == 14 and siae_id_str.isdigit():
-        if df_cache is not None:
-            match = df_cache[df_cache["siae_siret"] == siae_id_str]
-            if not match.empty:
-                codgeo = str(match.iloc[0]["codgeo"])
-                dept = codgeo[:2]
-        if not dept:
-            dept = siae_id_str[:2]
+    if df_cache is not None and len(siae_id_str) == 14 and siae_id_str.isdigit():
+        match = df_cache[df_cache["siae_siret"] == siae_id_str]
+        if not match.empty:
+            dept = _extract_dept_from_codgeo(match.iloc[0]["codgeo"])
 
     # 2. If siae_id is a numeric job ID
-    elif siae_id_str.isdigit():
-        if df_cache is not None:
-            try:
-                match = df_cache[df_cache["job_id"] == int(siae_id_str)]
-                if not match.empty:
-                    codgeo = str(match.iloc[0]["codgeo"])
-                    dept = codgeo[:2]
-            except Exception as e:
-                logger.warning(f"[Inclusion] Parquet job ID lookup failed: {e}")
+    elif df_cache is not None and siae_id_str.isdigit():
+        try:
+            match = df_cache[df_cache["job_id"] == int(siae_id_str)]
+            if not match.empty:
+                dept = _extract_dept_from_codgeo(match.iloc[0]["codgeo"])
+        except Exception as e:
+            logger.error(f"❌ [Inclusion] Parquet job ID lookup failed: {e}")
 
-    # Fallback to default '33' if not resolved
+    # Fail closed if department cannot be resolved
     if not dept:
-        logger.warning(
-            f"[Inclusion] Could not resolve department for {siae_id_str}. Defaulting to '33'."
+        logger.error(
+            f"❌ [Inclusion] Could not resolve department for SIAE identifier '{siae_id_str}'. Failing closed."
         )
-        dept = "33"
+        return {
+            "error": f"Impossible de résoudre le département pour l'identifiant SIAE '{siae_id_str}'."
+        }
 
     headers = {"Accept": "application/json"}
     params = {"postes_dans_le_departement": dept, "page_size": 100}
@@ -351,7 +368,7 @@ def _get_inclusion_job_details_logic(siae_id: str) -> Dict[str, Any]:
                 if str(p.get("id")) == siae_id_str:
                     return _prune_inclusion_structure(siae)
 
-        # If not found in the list, construct a basic fallback stub using the already loaded parquet cache
+        # If not found in live results, construct a fallback stub from the verified parquet cache
         logger.warning(
             f"[Inclusion] Structure/job {siae_id_str} not found in live results for dept {dept}."
         )
@@ -383,14 +400,8 @@ def _get_inclusion_job_details_logic(siae_id: str) -> Dict[str, Any]:
             except Exception as e:
                 logger.warning(f"[Inclusion] Cache stub generation failed: {e}")
 
-        # Ultimate fallback stub so agent doesn't crash
         return {
-            "id": siae_id_str,
-            "name": f"Structure {siae_id_str}",
-            "type": "SIAE",
-            "siret": siae_id_str if len(siae_id_str) == 14 else "",
-            "description": "Détails indisponibles (recherche publique hors-département).",
-            "postes": [],
+            "error": f"Structure ou offre SIAE '{siae_id_str}' introuvable (dept {dept})."
         }
     except Exception as e:
         logger.error(

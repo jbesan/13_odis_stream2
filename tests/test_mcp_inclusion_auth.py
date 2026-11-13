@@ -113,6 +113,70 @@ def test_get_inclusion_job_details_not_found_returns_cache_stub(mock_parquet_dat
         assert res["postes"][0]["rome"] == "A1203"
 
 
+def test_get_inclusion_job_details_fails_closed_for_uuid(mock_parquet_data):
+    """Verify that an unresolvable UUID fails closed without defaulting to dept '33' or hitting the API."""
+    with (
+        patch(
+            "services.mcp_inclusion.load_parquet",
+            return_value=mock_parquet_data,
+        ),
+        patch("requests.get") as mock_get,
+    ):
+        res = _get_inclusion_job_details_logic("78309e22-3521-499d-aa33-8ad2eab723bb")
+
+        assert "error" in res
+        assert "78309e22-3521-499d-aa33-8ad2eab723bb" in res["error"]
+        mock_get.assert_not_called()
+
+
+def test_get_inclusion_job_details_fails_closed_for_unknown_siret(mock_parquet_data):
+    """Verify that a SIRET missing from parquet cache fails closed (no siret[:2] guess, no API call)."""
+    with (
+        patch(
+            "services.mcp_inclusion.load_parquet",
+            return_value=mock_parquet_data,
+        ),
+        patch("requests.get") as mock_get,
+    ):
+        res = _get_inclusion_job_details_logic("99999999900099")
+
+        assert "error" in res
+        mock_get.assert_not_called()
+
+
+def test_get_inclusion_job_details_resolves_numeric_job_id(mock_parquet_data):
+    """Verify that a numeric job_id present in parquet resolves department and fetches structure."""
+    with (
+        patch(
+            "services.mcp_inclusion.load_parquet",
+            return_value=mock_parquet_data,
+        ),
+        patch("requests.get") as mock_get,
+    ):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "results": [
+                {
+                    "id": "mock-uuid",
+                    "enseigne": "Mock SIAE",
+                    "type": "ETTI",
+                    "siret": "40231751500037",
+                    "description": "Live details",
+                    "postes": [{"id": 12345, "rome": "A1203"}],
+                }
+            ]
+        }
+        mock_get.return_value = mock_response
+
+        res = _get_inclusion_job_details_logic("12345")
+
+        assert res["siret"] == "40231751500037"
+        assert res["description"] == "Live details"
+        _, kwargs = mock_get.call_args
+        assert kwargs["params"]["postes_dans_le_departement"] == "33"
+
+
 def test_prune_inclusion_structure_and_job_truncation():
     """Verify that structure descriptions and individual job descriptions/profils are truncated to 500 chars."""
     from services.mcp_inclusion import _prune_inclusion_structure, _prune_inclusion_job

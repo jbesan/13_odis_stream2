@@ -748,6 +748,29 @@ def is_interactive_chat_enabled(
     return False
 
 
+def get_deployment_env() -> str:
+    """Returns the normalized runtime deployment environment name.
+
+    Reads ``ODIS_DEPLOYMENT_ENV`` dynamically so runtime/test overrides take effect.
+
+    Returns:
+        str: Lowercase environment identifier (e.g. 'local', 'staging', 'production').
+    """
+    return os.getenv("ODIS_DEPLOYMENT_ENV", "local").strip().lower() or "local"
+
+
+def is_logfire_enabled() -> bool:
+    """Checks whether remote Logfire telemetry export is permitted in this environment.
+
+    Allowed only in 'local' and 'staging' environments; fails closed (False)
+    for 'production'/'prod' or any unrecognized environment to preserve GDPR compliance.
+
+    Returns:
+        bool: True if remote Logfire telemetry is enabled when a token is present.
+    """
+    return get_deployment_env() in ("local", "staging")
+
+
 def is_capability_deferred_loading_enabled() -> bool:
     """Checks if capability deferred loading is enabled.
 

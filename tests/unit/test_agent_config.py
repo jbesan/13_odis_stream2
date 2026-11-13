@@ -9,7 +9,7 @@ from app.agents.agent_config import (
 
 
 def test_agent_settings_default_model():
-    """Verify that all nodes default to AgentSettings.default_model when model is None."""
+    """Verify default_model inheritance and explicit synthesizer override."""
     settings = AgentSettings(default_model="google:gemini-3.1-flash-lite")
 
     agent_names = [
@@ -23,7 +23,6 @@ def test_agent_settings_default_model():
         "social_integration_expert",
         "job_hunter",
         "job_curator",
-        "synthesizer",
         "refiner",
     ]
     for name in agent_names:
@@ -33,13 +32,16 @@ def test_agent_settings_default_model():
         resolved_model = cfg.model or settings.default_model
         assert resolved_model == "google:gemini-3.1-flash-lite"
 
+    synth_cfg = settings.get_config("synthesizer")
+    assert synth_cfg.model == "google:gemini-3.5-flash-lite"
+
 
 def test_toggle_default_model_to_3_5():
     """Verify that changing default_model affects all agents without custom model overrides."""
     settings = AgentSettings(default_model="google:gemini-3.5-flash-lite")
 
     assert settings.default_model == "google:gemini-3.5-flash-lite"
-    for name in ["router", "ts_agent", "synthesizer", "refiner"]:
+    for name in ["router", "ts_agent", "refiner"]:
         cfg = settings.get_config(name)
         resolved_model = cfg.model or settings.default_model
         assert resolved_model == "google:gemini-3.5-flash-lite"
@@ -77,8 +79,9 @@ def test_thinking_levels_preserved():
     assert settings.ts_agent.thinking is False
     assert settings.ts_agent.temperature == 0.0
 
-    assert settings.synthesizer.thinking == "low"
-    assert settings.synthesizer.temperature == 0.7
+    assert settings.synthesizer.model == "google:gemini-3.5-flash-lite"
+    assert settings.synthesizer.thinking is False
+    assert settings.synthesizer.temperature == 0.0
 
     assert settings.refiner.thinking is False
     assert settings.refiner.temperature == 0.0
@@ -89,14 +92,15 @@ def test_get_model_and_settings_helper():
     """Verify get_model and get_model_settings module helper functions."""
     with patch(
         "app.agents.agent_config.agent_settings",
-        AgentSettings(default_model="google:gemini-3.5-flash-lite"),
+        AgentSettings(default_model="google:gemini-3.1-flash-lite"),
     ):
-        assert get_model("router") == "google:gemini-3.5-flash-lite"
-        assert get_model("ts_agent") == "google:gemini-3.5-flash-lite"
+        assert get_model("router") == "google:gemini-3.1-flash-lite"
+        assert get_model("ts_agent") == "google:gemini-3.1-flash-lite"
+        assert get_model("synthesizer") == "google:gemini-3.5-flash-lite"
 
         ms = get_model_settings("synthesizer")
-        assert ms.get("thinking") == "low"
-        assert ms.get("temperature") == 0.7
+        assert ms.get("thinking") is False
+        assert ms.get("temperature") == 0.0
 
 
 def test_env_var_default_model_override():

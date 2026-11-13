@@ -137,7 +137,6 @@ EXPERT_CONFIGS = [
         "search_job_offers_batch_tool",
         "get_job_details_tool",
         "search_inclusion_jobs_batch_tool",
-        "get_inclusion_job_details_tool",
         "search_referentiels_batch_tool",
     ]),
     ("mobility_expert", mobility_expert_agent, mobility_expert_instructions, ["search_places_batch_tool", "compute_routes_tool"]),

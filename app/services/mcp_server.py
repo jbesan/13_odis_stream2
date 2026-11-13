@@ -554,7 +554,6 @@ def _call_google_v1(
 
 
 async def _search_places_logic(queries: List[str], location: str) -> Dict[str, Any]:
-    ensure_data_context()
     try:
         # Google Places V1 - Text Search (New)
         endpoint = "https://places.googleapis.com/v1/places:searchText"
@@ -709,7 +708,6 @@ def search_refugee_associations(
 def _compute_routes_logic(
     origin: str, destination: str, mode: str = "transit"
 ) -> Dict[str, Any]:
-    ensure_data_context()
     try:
         # Routes V1 mapping
         mode_map = {

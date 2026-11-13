@@ -75,7 +75,7 @@ def capture_usage(result: Any, node_name: str, model_id: str) -> UsageStats:
 
 
 # --- Graph Nodes ---
-@logfire.instrument("Node: triage")
+@logfire.instrument("Node: triage", extract_args=False)
 async def triage_step(
     ctx: StepContext[GraphState, ODISDeps, None],
 ) -> ExpertList | End[str]:
@@ -211,7 +211,7 @@ async def extract_domains(
 
 
 
-@logfire.instrument("Expert Node: {ctx.inputs}")
+@logfire.instrument("Expert Node", extract_args=False)
 async def expert_worker_step(
     ctx: StepContext[GraphState, ODISDeps, str],
 ) -> AgentArtifact:
@@ -470,7 +470,7 @@ async def expert_worker_step(
         )
 
 
-@logfire.instrument("Node: synthesizer")
+@logfire.instrument("Node: synthesizer", extract_args=False)
 async def synthesizer_step(
     ctx: StepContext[GraphState, ODISDeps, list[AgentArtifact]],
 ) -> End[str]:

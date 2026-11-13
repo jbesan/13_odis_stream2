@@ -1,5 +1,6 @@
 """Unit tests for app data loader and session state cache."""
 
+import pytest
 import pandas as pd
 import config as cfg
 from utils import data_loader
@@ -177,3 +178,40 @@ def test_pois_loads_without_artificial_geometry(monkeypatch):
     assert "lat" in pois_result.columns
     assert "lon" in pois_result.columns
     assert "geometry" not in pois_result.columns
+
+
+@pytest.mark.asyncio
+async def test_ensure_data_initialized_injects_mcp_data_context_and_places_non_blocking(
+    monkeypatch,
+):
+    """ensure_data_initialized populates mcp_server.DATA_CONTEXT and Places/Routes avoid ensure_data_context."""
+    import services.mcp_server as mcp_server
+
+    fake_bundle = {"odis": pd.DataFrame({"codgeo": ["33063"]}), "_load_errors": []}
+    fake_session = {"app_data": fake_bundle, "heavy_data_toast_shown": True}
+
+    monkeypatch.setattr(data_loader.st, "session_state", fake_session)
+    monkeypatch.setattr(data_loader, "initialize_session_state", lambda: None)
+    monkeypatch.setattr(mcp_server, "DATA_CONTEXT", {})
+
+    result = data_loader.ensure_data_initialized()
+    assert result is fake_bundle
+    assert mcp_server.DATA_CONTEXT is fake_bundle
+
+    # Places and Routes do not depend on DATA_CONTEXT and must never block the event loop
+    monkeypatch.setattr(
+        mcp_server,
+        "ensure_data_context",
+        lambda: (_ for _ in ()).throw(AssertionError("ensure_data_context must not be called")),
+    )
+    monkeypatch.setattr(
+        mcp_server,
+        "_call_google_v1",
+        lambda endpoint, body, field_mask: {"places": []},
+    )
+
+    places_res = await mcp_server._search_places_logic(["gare"], "Thiers")
+    assert places_res == {"type": "places", "data": []}
+
+    routes_res = mcp_server._compute_routes_logic("Thiers", "Clermont-Ferrand")
+    assert "error" in routes_res  # routes=[] -> no route found, without touching DATA_CONTEXT
