@@ -119,3 +119,40 @@ def test_setup_logfire_skips_when_test():
         mock_logfire.configure.assert_not_called()
         mock_logfire.instrument_pydantic_ai.assert_not_called()
         mock_logfire.instrument_httpx.assert_not_called()
+
+
+def test_heavy_logfire_instrument_decorators_disable_extract_args():
+    """Verify graph steps and scoring decorators do not serialize large context/DataFrame args."""
+    import ast
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    targets = {
+        root / "app" / "agents" / "graph.py": {
+            "triage_step",
+            "expert_worker_step",
+            "synthesizer_step",
+        },
+        root / "app" / "core" / "scoring.py": {"_compute_weighted_score"},
+    }
+
+    for path, fn_names in targets.items():
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        found: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in fn_names:
+                found.add(node.name)
+                inst_calls = [
+                    dec
+                    for dec in node.decorator_list
+                    if isinstance(dec, ast.Call)
+                    and isinstance(dec.func, ast.Attribute)
+                    and dec.func.attr == "instrument"
+                ]
+                assert inst_calls, f"Missing @logfire.instrument on {path.name}:{node.name}"
+                for call in inst_calls:
+                    extract_kw = [kw for kw in call.keywords if kw.arg == "extract_args"]
+                    assert extract_kw and isinstance(extract_kw[0].value, ast.Constant) and extract_kw[0].value.value is False, (
+                        f"{path.name}:{node.name} must pass extract_args=False to @logfire.instrument"
+                    )
+        assert found == fn_names

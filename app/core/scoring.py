@@ -569,7 +569,7 @@ class ScoringEngine:
 
         return df.copy()
 
-    @logfire.instrument("_compute_weighted_score: {config}")
+    @logfire.instrument("_compute_weighted_score", extract_args=False)
     def _compute_weighted_score(
         self, df: pd.DataFrame, config: SearchCriterias
     ) -> pd.Series:
