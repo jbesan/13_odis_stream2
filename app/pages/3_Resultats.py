@@ -280,9 +280,8 @@ else:
 
 # This page deliberately does not render the form except inside the dialog.
 # Keep native widget keys alive across full Results-page reruns so Streamlit's
-# multipage cleanup cannot turn an unsaved draft back into defaults.
-if not is_immutable_snapshot or is_editing_snapshot:
-    FormState(st.session_state).preserve_widgets_across_steps()
+# multipage cleanup cannot turn an unsaved draft or restored snapshot back into defaults.
+FormState(st.session_state).preserve_widgets_across_steps()
 
 search_results: SearchResultsData = st.session_state.get("search_results")
 if search_results and search_results.results and not is_immutable_snapshot:
@@ -374,15 +373,24 @@ with st.sidebar:
 
     # --- Action de modification des critères ---
     if not is_immutable_snapshot or is_editing_snapshot:
-        if st.button(
+        clicked_edit = st.button(
             "Modifier la recherche",
             width="stretch",
             type="primary",
             icon=":material/edit:",
             key="open_results_criteria_editor",
-        ):
-            prepare_search_criteria_editor(app_data)
-            edit_search_criteria_dialog(app_data)
+        )
+        open_after_fork = bool(
+            st.session_state.pop("open_criteria_editor_after_fork", False)
+        )
+        if clicked_edit or open_after_fork:
+            editor_data = (
+                app_data
+                if app_data is not None
+                else data_loader.ensure_data_initialized()
+            )
+            prepare_search_criteria_editor(editor_data)
+            edit_search_criteria_dialog(editor_data)
     else:
         if st.button(
             "Modifier les critères",
@@ -392,6 +400,7 @@ with st.sidebar:
             icon=":material/edit:",
         ):
             search_controller.begin_snapshot_edit()
+            st.session_state["open_criteria_editor_after_fork"] = True
             st.rerun()
 
 
@@ -421,6 +430,12 @@ if st.session_state.get("processed_gdf") is not None:
         else None
     )
     snapshot_mode = bool(st.session_state.get("immutable_shared_snapshot"))
+    active_pois_df = (
+        app_data.get("pois")
+        if (app_data and app_data.get("pois") is not None)
+        else st.session_state.get("snapshot_pois_df")
+    )
+    has_pois = isinstance(active_pois_df, pd.DataFrame) and not active_pois_df.empty
     current_map_context = st.session_state.get("snapshot_current_map_context")
     if not isinstance(current_map_context, pd.DataFrame):
         current_map_context = st.session_state.processed_gdf
@@ -443,7 +458,7 @@ if st.session_state.get("processed_gdf") is not None:
         pill_specs = [
             # ("🥇 Top 5", "top_5"),
         ]
-        if not snapshot_mode:
+        if not snapshot_mode or has_pois:
             pill_specs.append(("🏛️ Mairies", "mairie"))
             if config:
                 if config.nb_enfants > 0:
@@ -482,7 +497,7 @@ if st.session_state.get("processed_gdf") is not None:
         legend_markers.append(("#D63E2A", "Top 5"))
         if search_results and search_results.commune_pressentie:
             legend_markers.append(("#F5D819", "Ville pressentie"))
-    if not snapshot_mode:
+    if not snapshot_mode or has_pois:
         if "mairie" in selected_ids:
             legend_markers.append(("#F5D819", "Mairies"))
         if "edu" in selected_ids:
@@ -573,7 +588,7 @@ if st.session_state.get("processed_gdf") is not None:
             zoom=st.session_state.get("zoom"),
             search_results=search_results,
             config=config,
-            pois_df=app_data.get("pois") if (app_data and not snapshot_mode) else None,
+            pois_df=active_pois_df,
             selected_ids=selected_ids,
             highlighted_rank=highlighted_index if is_highlighted else None,
             show_top_5=show_top_5,

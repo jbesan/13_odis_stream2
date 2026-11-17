@@ -9,7 +9,7 @@ import time
 import uuid
 from contextlib import suppress
 from dataclasses import dataclass
-from typing import Any, Dict, Literal, Optional, TYPE_CHECKING, cast
+from typing import Any, Callable, Dict, Literal, Optional, TYPE_CHECKING, cast
 
 import logfire
 import pandas as pd
@@ -445,6 +445,7 @@ def launch_background_city_analysis(
     timeout_seconds: Optional[float] = None,
     retry: bool = False,
     trigger: str = "user_modal",
+    on_terminal: Optional[Callable[[], None]] = None,
 ) -> dict[str, Any]:
     """
     Launch one attempt-safe, bounded background city analysis.
@@ -543,7 +544,10 @@ def launch_background_city_analysis(
         run_cancel_event: threading.Event,
         run_timeout_seconds: float,
     ) -> None:
+        from services.server_activity import record_server_activity
+
         deadline_monotonic = time.monotonic() + run_timeout_seconds
+        record_server_activity()
 
         try:
             logging.info(
@@ -613,6 +617,34 @@ def launch_background_city_analysis(
                 error="L'analyse IA a rencontré une erreur technique. Réessayez.",
                 error_code="graph_run_failed",
             )
+        finally:
+            record_server_activity()
+            if on_terminal is not None:
+                try:
+                    on_terminal()
+                except Exception as exc:
+                    logging.warning(
+                        "[BG-ANALYSIS] on_terminal callback failed for %s: %s",
+                        task_key,
+                        exc,
+                    )
+            else:
+                entry = results_store.get(h)
+                if isinstance(entry, dict) and entry.get("snapshot_meta"):
+                    try:
+                        from services.share_service import (
+                            auto_persist_search_snapshot,
+                            should_schedule_auto_persist,
+                        )
+
+                        if should_schedule_auto_persist():
+                            auto_persist_search_snapshot(h)
+                    except Exception as exc:
+                        logging.warning(
+                            "[BG-ANALYSIS] Snapshot refresh failed for %s: %s",
+                            h,
+                            exc,
+                        )
 
     thread = threading.Thread(
         target=bg_analysis_task,

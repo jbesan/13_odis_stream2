@@ -45,6 +45,9 @@ class AppSession:
         "shared_snapshot_created_at",
         "shared_snapshot_has_map",
         "snapshot_current_map_context",
+        "snapshot_pois_df",
+        "snapshot_ccas_df",
+        "open_criteria_editor_after_fork",
     }
 
     RESULT_VIEW_DEFAULTS = {
@@ -130,6 +133,8 @@ class AppSession:
         has_map: bool,
         center: list[float],
         zoom: int,
+        pois_df: Any = None,
+        ccas_df: Any = None,
     ) -> None:
         """Publish an immutable shared result without creating live workers."""
         self._retire_current_run()
@@ -149,6 +154,8 @@ class AppSession:
                 "shared_snapshot_created_at": created_at,
                 "shared_snapshot_has_map": has_map,
                 "snapshot_current_map_context": current_map_context,
+                "snapshot_pois_df": pois_df,
+                "snapshot_ccas_df": ccas_df,
                 "center": center,
                 "initial_center": center,
                 "zoom": zoom,

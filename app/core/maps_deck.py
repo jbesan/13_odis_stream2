@@ -12,6 +12,7 @@ Features:
 from __future__ import annotations
 
 import logging
+import math
 from html import escape
 from typing import Any, List, Optional, Sequence, Tuple, Union
 
@@ -125,22 +126,44 @@ def _get_geom(
     for ctx in contexts:
         if codgeo in ctx.index:
             try:
-                if field == "centroid" and "centroid" not in ctx.columns:
-                    poly_wkb = ctx.loc[codgeo, "polygon"]
-                    poly = (
-                        wkb.loads(bytes(poly_wkb))
-                        if isinstance(poly_wkb, (bytes, bytearray))
-                        else poly_wkb
-                    )
-                    return poly.centroid if poly else None
+                if field == "centroid":
+                    if "centroid" in ctx.columns:
+                        val = ctx.loc[codgeo, "centroid"]
+                        if isinstance(val, pd.Series):
+                            val = val.iloc[0]
+                        if val is not None and not (
+                            isinstance(val, float) and math.isnan(val)
+                        ):
+                            if isinstance(val, (bytes, bytearray)):
+                                return wkb.loads(bytes(val))
+                            return val
+                    if "polygon" in ctx.columns:
+                        poly_wkb = ctx.loc[codgeo, "polygon"]
+                        if isinstance(poly_wkb, pd.Series):
+                            poly_wkb = poly_wkb.iloc[0]
+                        if poly_wkb is None or (
+                            isinstance(poly_wkb, float) and math.isnan(poly_wkb)
+                        ):
+                            return None
+                        poly = (
+                            wkb.loads(bytes(poly_wkb))
+                            if isinstance(poly_wkb, (bytes, bytearray))
+                            else poly_wkb
+                        )
+                        return poly.centroid if poly else None
+                    return None
 
                 val = ctx.loc[codgeo, field]
+                if val is None or (isinstance(val, float) and math.isnan(val)):
+                    return None
                 if isinstance(val, (bytes, bytearray)):
                     return wkb.loads(bytes(val))
                 return val
             except KeyError:
                 alt_field = "geometry" if field == "polygon" else "polygon"
                 val = ctx.loc[codgeo].get(alt_field)
+                if val is None or (isinstance(val, float) and math.isnan(val)):
+                    return None
                 geom = wkb.loads(bytes(val)) if isinstance(val, (bytes, bytearray)) else val
                 if field == "centroid" and geom and not hasattr(geom, "x"):
                     return geom.centroid

@@ -93,3 +93,45 @@ def test_enter_page_routes_shared_search_after_authentication():
         )
 
     assert events == ["auth", "restore", "switch:pages/3_Resultats.py"]
+
+
+def test_enter_page_records_server_activity_except_for_idle_probe():
+    from ui import dialog_state
+
+    state = {"username": "user", "user": object(), "org": object()}
+    with (
+        patch.object(page_shell.auth, "check_password", return_value=True),
+        patch.object(page_shell.ui_telemetry, "log_page_view"),
+        patch.object(page_shell, "record_server_activity") as record_activity,
+        patch.object(page_shell.st, "session_state", state),
+        patch.object(page_shell.st, "query_params", {}),
+    ):
+        page_shell.enter_page("Formulaire")
+        record_activity.assert_called_once()
+
+        record_activity.reset_mock()
+        state["_odis_idle_check_rerun"] = True
+        page_shell.enter_page("Formulaire")
+        record_activity.assert_not_called()
+        assert "_odis_idle_check_rerun" not in state
+
+    with patch.object(dialog_state, "record_server_activity") as dialog_record:
+        dialog_state.request_dialog(state, "active_details_index", "33063")
+        dialog_record.assert_called_once()
+
+
+def test_enter_page_records_activity_for_unauthenticated_login_screen():
+    state = {}
+    with (
+        patch.object(page_shell.auth, "check_password", return_value=False),
+        patch.object(page_shell, "record_server_activity") as record_activity,
+        patch.object(page_shell, "_mount_idle_disconnect_when_configured"),
+        patch.object(page_shell.st, "session_state", state),
+        patch.object(page_shell.st, "stop", side_effect=RuntimeError("stopped")),
+    ):
+        try:
+            page_shell.enter_page("Accueil")
+        except RuntimeError as exc:
+            assert str(exc) == "stopped"
+        record_activity.assert_called_once()
+

@@ -1,6 +1,7 @@
 import logging
 import time
 from typing import Optional
+import pandas as pd
 import streamlit as st
 
 import config as cfg
@@ -524,6 +525,13 @@ def _display_result_details(commune: CommuneResult) -> None:
         with c2:
             if not cfg.is_ai_free_mode(st.session_state.get("org")):
                 render_ai_trigger_button(commune, h)
+        is_snapshot = bool(st.session_state.get("immutable_shared_snapshot"))
+        snapshot_ccas = st.session_state.get("snapshot_ccas_df")
+        has_snapshot_ccas = (
+            isinstance(snapshot_ccas, pd.DataFrame) and not snapshot_ccas.empty
+        )
+        has_live_ccas = bool(st.session_state.get("app_data"))
+        ccas_disabled = is_snapshot and not (has_snapshot_ccas or has_live_ccas)
         # with c3:
         if st.button(
             "Contact local",
@@ -532,11 +540,11 @@ def _display_result_details(commune: CommuneResult) -> None:
             type="tertiary",
             width="stretch",
             wrap=True,
-            disabled=bool(st.session_state.get("immutable_shared_snapshot")),
+            disabled=ccas_disabled,
             help=(
                 "Les coordonnées locales en direct ne font pas partie de "
                 "cet instantané partagé."
-                if st.session_state.get("immutable_shared_snapshot")
+                if ccas_disabled
                 else None
             ),
         ):

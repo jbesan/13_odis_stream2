@@ -8,12 +8,25 @@ from typing import Optional
 import streamlit as st
 
 from services.app_session import AppSession
+from services.server_activity import record_server_activity
 from ui import components, ui_telemetry
 from ui.idle_sleep import inject_idle_disconnect
 from utils import auth, common
 
 
-IDLE_DISCONNECT_TIMEOUT_MINUTES = 10
+IDLE_DISCONNECT_TIMEOUT_MINUTES = 30
+
+
+def _resolve_idle_timeout_minutes() -> int:
+    raw = os.environ.get("ODIS_IDLE_DISCONNECT_TIMEOUT_MINUTES")
+    if raw:
+        try:
+            parsed = int(raw)
+            if parsed > 0:
+                return parsed
+        except ValueError:
+            pass
+    return IDLE_DISCONNECT_TIMEOUT_MINUTES
 
 
 def _mount_idle_disconnect_when_configured() -> None:
@@ -25,7 +38,7 @@ def _mount_idle_disconnect_when_configured() -> None:
         "yes",
     )
     if is_cloud_run and enabled:
-        inject_idle_disconnect(timeout_minutes=IDLE_DISCONNECT_TIMEOUT_MINUTES)
+        inject_idle_disconnect(timeout_minutes=_resolve_idle_timeout_minutes())
 
 
 def _inject_common_styles() -> None:
@@ -60,6 +73,9 @@ def enter_page(
     redirect_shared_to_results: bool = False,
 ) -> None:
     """Apply the common authenticated page lifecycle after page config."""
+    is_idle_check = bool(st.session_state.pop("_odis_idle_check_rerun", False))
+    if not is_idle_check:
+        record_server_activity()
     authenticated = auth.check_password()
     # Mount on the login screen too: an abandoned unauthenticated tab also owns
     # a WebSocket and would otherwise keep a Cloud Run request active.

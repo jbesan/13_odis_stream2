@@ -124,8 +124,8 @@ def test_save_and_load_shared_search_roundtrip(monkeypatch):
 
     assert isinstance(share_id, str)
     assert len(share_id) == 8
-    assert f"searches/{share_id}.json" in stored_objects
-    assert stored_preconditions[f"searches/{share_id}.json"] == 0
+    assert f"local/searches/{share_id}.json" in stored_objects
+    assert stored_preconditions[f"local/searches/{share_id}.json"] == 0
 
     # 2. Load with matching org
     loaded_config, loaded_results = load_shared_search(share_id, caller_org_id="test_org")
@@ -154,6 +154,9 @@ def test_save_and_load_shared_search_roundtrip(monkeypatch):
     assert snapshot.map_view == {"center": [46.0, 3.0], "zoom": 8}
     assert snapshot.has_map_context
     assert snapshot.map_context[0]["codgeo"] == "69123"
+    assert "polygon_wkb_b64" not in snapshot.map_context[0]
+    assert snapshot.map_context[0]["centroid_lat"] == pytest.approx(45.7640)
+    assert snapshot.map_context[0]["centroid_lon"] == pytest.approx(4.8357)
 
 
 def test_shared_search_cross_org_access_denied(monkeypatch):
@@ -545,7 +548,7 @@ def test_save_snapshot_includes_app_version_and_schema_version(monkeypatch):
         org_id="test_org",
     )
 
-    blob_path = f"searches/{share_id}.json"
+    blob_path = f"local/searches/{share_id}.json"
     assert blob_path in stored_payloads
     payload = stored_payloads[blob_path]
     assert "version" not in payload
@@ -780,7 +783,7 @@ def test_snapshot_custom_time_set_on_save_and_refreshed_on_authorized_load(monke
         org_id="test_org_123",
         username="test_user",
     )
-    blob_key = f"searches/{share_id}.json"
+    blob_key = f"local/searches/{share_id}.json"
     assert blob_key in stored_blobs
     created_blob = stored_blobs[blob_key]
     assert created_blob.custom_time is not None
@@ -863,4 +866,260 @@ def test_snapshot_load_resilient_to_patch_failure(monkeypatch):
     )
     assert outcome.status == OutcomeStatus.SUCCESS
     assert outcome.value is not None
+
+
+def test_snapshot_roundtrips_pois_ccas_ai_analysis_and_auto_persist_overwrite(
+    monkeypatch,
+):
+    """Verify pois_context, ccas_context, AI synthesis sync, and auto_persist overwrites."""
+    import threading
+    from services.share_service import auto_persist_search_snapshot
+
+    stored_blobs = {}
+    preconditions_seen = []
+    telemetry_events = []
+
+    class FakeBlob:
+        def __init__(self, name):
+            self.name = name
+            self.content_encoding = None
+            self.custom_time = None
+            self.data = None
+
+        def upload_from_string(self, data, content_type=None, if_generation_match=None):
+            preconditions_seen.append(if_generation_match)
+            self.data = data
+            stored_blobs[self.name] = self
+
+        def exists(self):
+            return self.name in stored_blobs
+
+        def download_as_bytes(self):
+            return stored_blobs[self.name].data
+
+        def patch(self):
+            pass
+
+    class FakeBucket:
+        def blob(self, name):
+            return stored_blobs.get(name) or FakeBlob(name)
+
+    class FakeGcsClient:
+        def bucket(self, name):
+            return FakeBucket()
+
+    monkeypatch.setattr("services.share_service._get_gcs_client", lambda: FakeGcsClient())
+    monkeypatch.setattr(
+        "services.telemetry.log_saved_search_event",
+        lambda **kwargs: telemetry_events.append(kwargs),
+    )
+
+    config = SearchCriterias(
+        commune_actuelle=CriteriaItem(code="75056", label="Paris"),
+        inc_services_selection=[CriteriaItem(code="fle", label="Apprendre le français")],
+    )
+    top_city = CommuneResult(codgeo="33063", name="Bordeaux", global_score=0.92)
+    other_city = CommuneResult(codgeo="69123", name="Lyon", global_score=0.80)
+    search_results = SearchResultsData(
+        search_hash="search_hash_1",
+        execution_id="exec_key_1",
+        results=[top_city],
+    )
+
+    pois_df = pd.DataFrame(
+        [
+            {
+                "codgeo": "33063",
+                "category": "mairie",
+                "name": "Mairie de Bordeaux",
+                "type": "mairie",
+                "lat": 44.8378,
+                "lon": -0.5792,
+            },
+            {
+                "codgeo": "33063",
+                "category": "incl_services",
+                "name": "Atelier FLE",
+                "type": "fle",
+                "lat": 44.84,
+                "lon": -0.58,
+            },
+            {
+                "codgeo": "69123",
+                "category": "mairie",
+                "name": "Mairie de Lyon",
+                "type": "mairie",
+                "lat": 45.764,
+                "lon": 4.8357,
+            },
+        ]
+    )
+    structures_ccas_df = pd.DataFrame(
+        [
+            {
+                "codgeo": "33063",
+                "commune": "Bordeaux",
+                "nom": "CCAS Bordeaux",
+                "adresse": "1 Place Pey Berland",
+                "telephone": "0556000000",
+                "courriel": "ccas@bordeaux.fr",
+                "site_web": "https://bordeaux.fr",
+            },
+            {
+                "codgeo": "33522",
+                "commune": "Talence",
+                "nom": "CCAS Talence Binome",
+                "adresse": "Rue Pasteur",
+                "telephone": "0556111111",
+                "courriel": None,
+                "site_web": None,
+            },
+            {
+                "codgeo": "69123",
+                "commune": "Lyon",
+                "nom": "CCAS Lyon",
+                "adresse": "Place Bellecour",
+                "telephone": "0472000000",
+                "courriel": None,
+                "site_web": None,
+            },
+        ]
+    )
+    odis_df = pd.DataFrame(
+        [{"binome": True, "codgeo_binome": "33522"}],
+        index=pd.Index(["33063"], name="codgeo"),
+    )
+    incl_index = pd.DataFrame(
+        [{"label": "Apprendre le français"}],
+        index=pd.Index(["fle"], name="code"),
+    )
+
+    bg_store = {
+        "exec_key_1": {
+            "snapshot_meta": {
+                "share_id": "auto1234",
+                "created": False,
+                "lock": threading.Lock(),
+                "config": config,
+                "search_results": search_results,
+                "processed_gdf": None,
+                "selected_geo": None,
+                "pois_df": pois_df,
+                "structures_ccas_df": structures_ccas_df,
+                "odis_df": odis_df,
+                "inclusion_services_index": incl_index,
+                "data_release": "rel-1",
+                "center": [44.84, -0.58],
+                "zoom": 10,
+                "username": "alice",
+                "org_id": "jaccueille",
+            }
+        }
+    }
+    monkeypatch.setattr("agents.utils.get_odis_bg_store", lambda: bg_store)
+    monkeypatch.setattr("services.share_service.get_odis_bg_store", lambda: bg_store)
+    monkeypatch.setattr("core.postscoring.get_odis_bg_store", lambda: bg_store)
+
+    # 1. Initial auto-persist creates blob with if_generation_match=0 and 'create' BQ event
+    saved_id = auto_persist_search_snapshot("exec_key_1", is_initial=True)
+    assert saved_id == "auto1234"
+    assert preconditions_seen == [0]
+    assert [e["event_type"] for e in telemetry_events] == ["create"]
+    assert telemetry_events[0]["env"] == "local"
+    assert telemetry_events[0]["gcs_uri"].endswith("local/searches/auto1234.json")
+
+    # 2. Complete background AI analysis for Bordeaux and refresh snapshot in-place
+    ai_city = other_city.model_copy(
+        update={
+            "codgeo": "33063",
+            "name": "Bordeaux",
+            "odis_synthesis": [{"role": "assistant", "content": "Synthèse IA Bordeaux"}],
+        }
+    )
+    bg_store["analysis_exec_key_1_33063"] = {
+        "status": "done",
+        "result": SearchResultsData(
+            search_hash="search_hash_1",
+            results=[ai_city],
+        ),
+    }
+
+    refreshed_id = auto_persist_search_snapshot("exec_key_1", is_initial=False)
+    assert refreshed_id == "auto1234"
+    assert preconditions_seen == [0, None]
+    assert [e["event_type"] for e in telemetry_events] == ["create", "update"]
+    assert telemetry_events[1]["env"] == "local"
+    assert telemetry_events[1]["gcs_uri"].endswith("local/searches/auto1234.json")
+
+    # 3. Load and restore snapshot; check POIs, CCAS (with binome), and merged AI synthesis
+    outcome = load_shared_search_snapshot_outcome(
+        "auto1234", caller_org_id="jaccueille"
+    )
+    assert outcome.status == OutcomeStatus.SUCCESS
+    snap = outcome.value
+    assert snap is not None
+    assert snap.search_results.results[0].odis_synthesis == [
+        {"role": "assistant", "content": "Synthèse IA Bordeaux"}
+    ]
+    assert {r["codgeo"] for r in snap.pois_context} == {"33063"}
+    fle_row = next(r for r in snap.pois_context if r["category"] == "incl_services")
+    assert fle_row["type"] == "fle"
+    assert fle_row["type_label"] == "Apprendre le français"
+    assert {r["codgeo"] for r in snap.ccas_context} == {"33063", "33522"}
+
+    restored_state = {}
+    with (
+        patch("streamlit.session_state", restored_state),
+        patch("utils.data_loader.initialize_session_state"),
+        patch("utils.data_loader.apply_search_criteria_to_ui"),
+    ):
+        restore_shared_search_to_session_state(
+            snap.config, snap.search_results, "auto1234", snap
+        )
+
+    assert len(restored_state["snapshot_pois_df"]) == 2
+    assert set(restored_state["snapshot_ccas_df"]["codgeo"]) == {"33063", "33522"}
+
+
+def test_load_snapshot_falls_back_to_legacy_unprefixed_path(monkeypatch):
+    """Snapshots saved before env-compartmentalization under searches/<id>.json remain readable."""
+    import gzip
+
+    legacy_payload = {
+        "share_id": "legac999",
+        "schema_version": "1.0",
+        "org_id": "jaccueille",
+        "config": {"nb_adultes": 1},
+        "search_results": {"search_hash": "h", "results": []},
+    }
+    compressed = gzip.compress(json.dumps(legacy_payload).encode("utf-8"))
+
+    class FakeBlob:
+        def __init__(self, path):
+            self.path = path
+            self.custom_time = None
+
+        def exists(self):
+            return self.path == "searches/legac999.json"
+
+        def download_as_bytes(self):
+            return compressed
+
+        def patch(self):
+            pass
+
+    class FakeBucket:
+        def blob(self, path):
+            return FakeBlob(path)
+
+    class FakeClient:
+        def bucket(self, _name):
+            return FakeBucket()
+
+    monkeypatch.setattr("services.share_service._get_gcs_client", lambda: FakeClient())
+    outcome = load_shared_search_snapshot_outcome("legac999", caller_org_id="jaccueille")
+    assert outcome.status == OutcomeStatus.SUCCESS
+    assert outcome.value is not None
+    assert outcome.value.gcs_path == "searches/legac999.json"
+
 

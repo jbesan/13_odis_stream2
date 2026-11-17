@@ -18,6 +18,7 @@ from agents.source_registry import (
     is_vertex_grounding_redirect,
     source_references_for_result,
 )
+from core.postscoring import merge_agent_results_into_commune
 from ui.dialog_state import clear_dialog
 
 logger = logging.getLogger("ui.ai_analysis_dialog")
@@ -29,67 +30,12 @@ def _on_ia_dialog_dismiss():
 
 def _merge_agent_results(final_state_results, codgeo: str, commune: CommuneResult):
     """Helper to merge graph state results back into session state."""
-    if not final_state_results:
-        return
-
-    # 🧪 SOTA: Robust merging with type checking to prevent page-level crashes
-    def _get_field(obj, field, default=None):
-        if isinstance(obj, dict):
-            return obj.get(field, default)
-        return getattr(obj, field, default)
-
-    # 1. Update Global Brief (Sync to config)
-    if st.session_state.get("config"):
-        st.session_state.config.odis_brief = _get_field(
-            final_state_results, "odis_brief", st.session_state.config.odis_brief
-        )
-
-    # 2. Find and update the specific focus city
-    target_city = None
-    if hasattr(final_state_results, "get_by_code"):
-        target_city = final_state_results.get_by_code(codgeo)
-    if not target_city:
-        new_results = _get_field(final_state_results, "results", []) or []
-        for city_data in new_results:
-            if str(_get_field(city_data, "codgeo")) == str(codgeo):
-                target_city = city_data
-                break
-        if not target_city and _get_field(final_state_results, "commune_pressentie"):
-            cp = _get_field(final_state_results, "commune_pressentie")
-            if str(_get_field(cp, "codgeo")) == str(codgeo):
-                target_city = cp
-        if not target_city and _get_field(final_state_results, "current_geo"):
-            cg = _get_field(final_state_results, "current_geo")
-            if str(_get_field(cg, "codgeo")) == str(codgeo):
-                target_city = cg
-
-    if target_city:
-        new_synth = _get_field(target_city, "odis_synthesis", [])
-        if new_synth:
-            commune.odis_synthesis = new_synth
-
-        expert_data = _get_field(target_city, "expert_analysis", {})
-        if expert_data and isinstance(expert_data, dict):
-            commune.expert_analysis.update(expert_data)
-
-        artifact_data = _get_field(target_city, "expert_artifacts", {})
-        if artifact_data and isinstance(artifact_data, dict):
-            commune.expert_artifacts.update(artifact_data)
-
-        source_data = _get_field(target_city, "expert_sources", {})
-        if source_data and isinstance(source_data, dict):
-            commune.expert_sources.update(source_data)
-
-        new_pitch = _get_field(target_city, "refiner_pitch")
-        if new_pitch:
-            commune.refiner_pitch = new_pitch
-
-        new_report = _get_field(target_city, "analysis_report")
-        if new_report:
-            if isinstance(new_report, dict):
-                commune.analysis_report = CityAnalysisReport.model_validate(new_report)
-            else:
-                commune.analysis_report = new_report
+    merge_agent_results_into_commune(
+        final_state_results,
+        str(codgeo),
+        commune,
+        config=st.session_state.get("config"),
+    )
 
 
 @st.fragment(run_every=2.0)

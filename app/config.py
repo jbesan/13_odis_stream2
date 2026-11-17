@@ -786,3 +786,12 @@ def is_capability_deferred_loading_enabled() -> bool:
         "yes",
     )
 
+
+def is_auto_persist_searches_enabled() -> bool:
+    """Return True when searches should be automatically persisted to GCS."""
+    return os.environ.get("ODIS_AUTO_PERSIST_SEARCHES", "False").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+

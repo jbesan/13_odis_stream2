@@ -378,6 +378,26 @@ def share_search_modal():
             st.session_state["active_share_id"] = share_id
     else:
         share_id = st.session_state.get("active_share_id")
+        if share_id and not st.session_state.get("immutable_shared_snapshot"):
+            from services import share_service
+
+            if share_service.should_schedule_auto_persist():
+                with st.spinner("Actualisation du lien de partage..."):
+                    try:
+                        share_service.save_shared_search(
+                            config=config,
+                            search_results=search_results,
+                            processed_gdf=st.session_state.get("processed_gdf"),
+                            selected_geo=st.session_state.get("selected_geo"),
+                            data_release=st.session_state.get("active_data_release"),
+                            map_center=st.session_state.get("center"),
+                            map_zoom=st.session_state.get("zoom"),
+                            share_id=share_id,
+                            allow_overwrite=True,
+                        )
+                    except RuntimeError as exc:
+                        st.error(str(exc))
+                        return
 
     # Construct public shareable URL
     base_url = "https://myapp.fr"

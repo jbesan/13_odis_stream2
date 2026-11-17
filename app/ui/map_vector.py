@@ -272,7 +272,12 @@ def prepare_map_payload(
                             else r.get("lon")
                         )
                         raw_type = str(r.get("type", "Inclusion"))
-                        display_type = raw_type
+                        label_override = r.get("type_label")
+                        display_type = (
+                            str(label_override)
+                            if isinstance(label_override, str) and label_override
+                            else raw_type
+                        )
                         if (
                             inclusion_services_index is not None
                             and not inclusion_services_index.empty

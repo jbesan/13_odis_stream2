@@ -19,6 +19,7 @@ from core.enrichment_status import (
 )
 from core.models import (
     AssociationDetail,
+    CityAnalysisReport,
     CommuneResult,
     InclusionServiceDetail,
     JobOfferDetail,
@@ -1266,10 +1267,72 @@ class PostScoringRun:
             city.codgeo: {"status": "waiting" if auto_analysis else "skipped"}
             for city in self.results.results[:5]
         }
+        self._postscoring_persisted = False
         hydration.store[hydration.key]["auto_analysis_steps"] = self.steps
+
+    def _prepare_snapshot_update(self) -> bool:
+        """Merge latest completed hydrations, pitches, and AI reports into snapshot metadata."""
+        bg = self.hydration.store.get(self.hydration.key)
+        if not isinstance(bg, dict) or not bg.get("snapshot_meta"):
+            return False
+        for city in self.results.results:
+            if self.hydration.ready(city.codgeo):
+                try:
+                    self.hydration.reduce_into(city)
+                except Exception:
+                    logger.debug(
+                        "Snapshot hydration reduce skipped for %s", city.codgeo
+                    )
+        if self.results.commune_pressentie and self.hydration.ready(
+            self.results.commune_pressentie.codgeo
+        ):
+            try:
+                self.hydration.reduce_into(self.results.commune_pressentie)
+            except Exception:
+                logger.debug(
+                    "Snapshot hydration reduce skipped for pressentie %s",
+                    self.results.commune_pressentie.codgeo,
+                )
+        sync_search_results_data(
+            self.results,
+            {
+                "pitches": bg.get("pitches", {}),
+                "odis_brief": bg.get("odis_brief", ""),
+            },
+            self.config,
+        )
+        meta = bg["snapshot_meta"]
+        meta["search_results"] = self.results.model_copy(deep=True)
+        meta["config"] = self.config.model_copy(deep=True)
+        return True
+
+    def _schedule_snapshot_persist(self) -> None:
+        """Persist updated snapshot metadata in background."""
+        from services.share_service import (
+            auto_persist_search_snapshot,
+            should_schedule_auto_persist,
+        )
+
+        if not should_schedule_auto_persist():
+            return
+
+        try:
+            submit_background_work(
+                lambda h=self.hydration.key: auto_persist_search_snapshot(h)
+            )
+        except Exception:
+            auto_persist_search_snapshot(self.hydration.key)
+
+    def on_city_analysis_terminal(self) -> None:
+        """Refresh the auto-saved snapshot when an auto-triggered city analysis finishes."""
+        with self._lock:
+            should_persist = self._prepare_snapshot_update()
+        if should_persist:
+            self._schedule_snapshot_persist()
 
     def advance(self) -> None:
         """Dispatch each eligible city once, after both prerequisite stages."""
+        should_persist = False
         with self._lock:
             bg = self.hydration.store.get(self.hydration.key, {})
             if bg.get("hydration_run") is not self.hydration:
@@ -1310,6 +1373,7 @@ class PostScoringRun:
                         search_results=self.results,
                         h=self.hydration.key,
                         trigger="post_scoring_auto",
+                        on_terminal=self.on_city_analysis_terminal,
                         **self.context,
                     )
                 except Exception:
@@ -1317,6 +1381,18 @@ class PostScoringRun:
                         "Automatic city analysis dispatch failed: %s", city.codgeo
                     )
                     step["status"] = "error"
+
+            if (
+                not self._postscoring_persisted
+                and all(
+                    self.hydration.ready(code)
+                    for code in self.hydration.plan.codgeos
+                )
+            ):
+                self._postscoring_persisted = True
+                should_persist = self._prepare_snapshot_update()
+        if should_persist:
+            self._schedule_snapshot_persist()
 
 
 def launch_post_scoring_tasks(
@@ -1554,6 +1630,97 @@ def _sync_legacy_commune_data(
             logger.debug("✨ [SYNC] Commune %s marked hydrated", commune.codgeo)
 
 
+def merge_agent_results_into_commune(
+    final_state_results: Any,
+    codgeo: str,
+    commune: CommuneResult,
+    config: Optional[SearchCriterias] = None,
+) -> bool:
+    """Merge completed AI graph output into a target ``CommuneResult`` and optional config."""
+    if not final_state_results:
+        return False
+
+    def _get_field(obj: Any, field: str, default: Any = None) -> Any:
+        if isinstance(obj, dict):
+            return obj.get(field, default)
+        return getattr(obj, field, default)
+
+    if config is not None:
+        config.odis_brief = _get_field(
+            final_state_results, "odis_brief", config.odis_brief
+        )
+
+    target_city = None
+    if hasattr(final_state_results, "get_by_code"):
+        target_city = final_state_results.get_by_code(codgeo)
+    if not target_city:
+        new_results = _get_field(final_state_results, "results", []) or []
+        for city_data in new_results:
+            if str(_get_field(city_data, "codgeo")) == str(codgeo):
+                target_city = city_data
+                break
+        if not target_city and _get_field(final_state_results, "commune_pressentie"):
+            cp = _get_field(final_state_results, "commune_pressentie")
+            if str(_get_field(cp, "codgeo")) == str(codgeo):
+                target_city = cp
+        if not target_city and _get_field(final_state_results, "current_geo"):
+            cg = _get_field(final_state_results, "current_geo")
+            if str(_get_field(cg, "codgeo")) == str(codgeo):
+                target_city = cg
+
+    if not target_city:
+        return False
+
+    new_synth = _get_field(target_city, "odis_synthesis", [])
+    if new_synth:
+        commune.odis_synthesis = new_synth
+
+    expert_data = _get_field(target_city, "expert_analysis", {})
+    if expert_data and isinstance(expert_data, dict):
+        commune.expert_analysis.update(expert_data)
+
+    artifact_data = _get_field(target_city, "expert_artifacts", {})
+    if artifact_data and isinstance(artifact_data, dict):
+        commune.expert_artifacts.update(artifact_data)
+
+    source_data = _get_field(target_city, "expert_sources", {})
+    if source_data and isinstance(source_data, dict):
+        commune.expert_sources.update(source_data)
+
+    new_pitch = _get_field(target_city, "refiner_pitch")
+    if new_pitch:
+        commune.refiner_pitch = new_pitch
+
+    new_report = _get_field(target_city, "analysis_report")
+    if new_report:
+        if isinstance(new_report, dict):
+            commune.analysis_report = CityAnalysisReport.model_validate(new_report)
+        else:
+            commune.analysis_report = new_report
+
+    return True
+
+
+def sync_ai_analysis_for_commune(
+    commune: CommuneResult,
+    h: Optional[str],
+    store: Optional[dict[str, Any]] = None,
+    config: Optional[SearchCriterias] = None,
+) -> bool:
+    """Sync completed background city AI analysis from store into ``commune``."""
+    if not h:
+        return False
+    bg_store = store if store is not None else get_odis_bg_store()
+    if not isinstance(bg_store, dict):
+        return False
+    task_data = bg_store.get(f"analysis_{h}_{commune.codgeo}")
+    if not isinstance(task_data, dict) or task_data.get("status") != "done":
+        return False
+    return merge_agent_results_into_commune(
+        task_data.get("result"), str(commune.codgeo), commune, config=config
+    )
+
+
 def sync_search_results_data(
     search_results: SearchResultsData,
     bg_res: Optional[dict[str, Any]],
@@ -1566,27 +1733,34 @@ def sync_search_results_data(
         bg_res: The background execution store dictionary for this search run.
         config: Optional search criteria model to hydrate with refined briefing if present.
     """
-    if not isinstance(bg_res, dict):
-        return
+    h = getattr(search_results, "background_key", None)
+    if isinstance(bg_res, dict):
+        # Sync all candidate cities
+        for commune in search_results.results:
+            sync_commune_data(commune, bg_res)
 
-    # Sync all candidate cities
-    for commune in search_results.results:
-        sync_commune_data(commune, bg_res)
+        # Sync commune pressentie if present
+        if search_results.commune_pressentie:
+            sync_commune_data(search_results.commune_pressentie, bg_res)
 
-    # Sync commune pressentie if present
-    if search_results.commune_pressentie:
-        sync_commune_data(search_results.commune_pressentie, bg_res)
+        # Sync Global Pitch
+        if "pitches" in bg_res:
+            pitches_data = bg_res["pitches"]
+            if isinstance(pitches_data, dict) and "global" in pitches_data:
+                if not search_results.global_pitch:
+                    search_results.global_pitch = pitches_data["global"]
 
-    # Sync Global Pitch
-    if "pitches" in bg_res:
-        pitches_data = bg_res["pitches"]
-        if isinstance(pitches_data, dict) and "global" in pitches_data:
-            if not search_results.global_pitch:
-                search_results.global_pitch = pitches_data["global"]
+        # Sync Unified Briefing
+        if "odis_brief" in bg_res and config is not None:
+            brief_val = bg_res["odis_brief"]
+            if brief_val and config.odis_brief != brief_val:
+                logger.debug("✨ [SYNC] Unified Briefing sync")
+                config.odis_brief = brief_val
 
-    # Sync Unified Briefing
-    if "odis_brief" in bg_res and config is not None:
-        brief_val = bg_res["odis_brief"]
-        if brief_val and config.odis_brief != brief_val:
-            logger.debug("✨ [SYNC] Unified Briefing sync")
-            config.odis_brief = brief_val
+    if h:
+        for commune in search_results.results:
+            sync_ai_analysis_for_commune(commune, h, config=config)
+        if search_results.commune_pressentie:
+            sync_ai_analysis_for_commune(
+                search_results.commune_pressentie, h, config=config
+            )

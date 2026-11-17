@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import MutableMapping
 from typing import Any
 
+from services.server_activity import record_server_activity
+
 
 ACTIVE_DIALOG_STATE_KEYS = (
     "active_ia_city_index",
@@ -30,6 +32,7 @@ def request_dialog(
         ValueError: If ``state_key`` is not a registered dialog state key.
     """
     _validate_dialog_state_key(state_key)
+    record_server_activity()
     for active_key in ACTIVE_DIALOG_STATE_KEYS:
         state[active_key] = None
     state[state_key] = value

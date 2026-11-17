@@ -14,6 +14,13 @@ def reset_app_state():
     logger.info("🧹 [MEMORY] Resetting session state...")
 
     cleared_count = AppSession(st.session_state).reset_for_home()
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+
+        if get_script_run_ctx(suppress_warning=True) is not None:
+            st.query_params.pop("search", None)
+    except Exception:
+        pass
 
     if cleared_count > 0:
         logger.info(f"🧹 [MEMORY] Removed {cleared_count} objects from session state.")

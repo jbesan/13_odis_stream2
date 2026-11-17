@@ -7,7 +7,8 @@ import math
 import ast
 import re
 import copy
-from dataclasses import dataclass
+from contextlib import nullcontext
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Tuple, Optional, Any, Dict, List
 
@@ -15,10 +16,16 @@ import zoneinfo
 
 import gzip
 import pandas as pd
+from shapely import wkb
+from shapely.geometry import Point
 
 import streamlit as st
+from streamlit.runtime.scriptrunner import get_script_run_ctx
+
 import config as cfg
+from agents.utils import get_odis_bg_store
 from core.models import SearchCriterias, SearchResultsData
+from core.postscoring import sync_search_results_data
 from services.app_session import AppSession
 from services.search_controller import SearchController
 from services.service_outcomes import OutcomeStatus, ServiceOutcome
@@ -67,6 +74,9 @@ class SharedSearchSnapshot:
     username: Optional[str] = None
     schema_version: str = SHARE_SCHEMA_VERSION
     app_version: Optional[str] = None
+    pois_context: List[Dict[str, Any]] = field(default_factory=list)
+    ccas_context: List[Dict[str, Any]] = field(default_factory=list)
+    gcs_path: Optional[str] = None
 
     @property
     def has_map_context(self) -> bool:
@@ -216,7 +226,12 @@ def _decompress_payload_bytes(data_bytes: bytes) -> Dict[str, Any]:
 def _session_value(key: str, default: Any = None) -> Any:
     """Read optional Streamlit state without making serialization context-bound."""
     try:
-        return st.session_state.get(key, default)
+        state = st.session_state
+        if isinstance(state, dict):
+            return state.get(key, default)
+        if get_script_run_ctx(suppress_warning=True) is None:
+            return default
+        return state.get(key, default)
     except (AttributeError, RuntimeError):
         return default
     except Exception as exc:
@@ -224,31 +239,78 @@ def _session_value(key: str, default: Any = None) -> Any:
         return default
 
 
-def _encode_wkb(value: Any) -> Optional[str]:
-    """Encode a geometry/WKB value in a JSON-safe, deterministic form."""
-    if value is None:
-        return None
-    if hasattr(value, "wkb"):
-        value = value.wkb
-    if isinstance(value, memoryview):
-        value = value.tobytes()
-    if not isinstance(value, (bytes, bytearray)):
-        return None
-    return base64.b64encode(bytes(value)).decode("ascii")
+def should_schedule_auto_persist() -> bool:
+    """Return True when background auto-snapshot uploads should be scheduled."""
+    return bool(os.getenv("GCS_SHARED_SEARCHES_BUCKET")) and (
+        cfg.is_auto_persist_searches_enabled()
+    )
+
+
+def get_snapshot_blob_path(share_id: str, env: Optional[str] = None) -> str:
+    """Return the environment-compartmentalized GCS object path for a snapshot."""
+    resolved_env = (env or cfg.get_deployment_env() or "local").strip().lower() or "local"
+    return f"{resolved_env}/searches/{share_id}.json"
+
+
+def _extract_centroid_lat_lon(row: Any) -> Optional[Tuple[float, float]]:
+    """Extract WGS84 (lat, lon) centroid from a map row without shipping polygons."""
+    centroid_val = row.get("centroid")
+    if centroid_val is not None and not (
+        isinstance(centroid_val, float) and math.isnan(centroid_val)
+    ):
+        try:
+            geom = (
+                wkb.loads(bytes(centroid_val))
+                if isinstance(centroid_val, (bytes, bytearray, memoryview))
+                else centroid_val
+            )
+            if hasattr(geom, "x") and hasattr(geom, "y"):
+                lat, lon = float(geom.y), float(geom.x)
+                if math.isfinite(lat) and math.isfinite(lon):
+                    return lat, lon
+        except Exception:
+            pass
+
+    poly_val = row.get("polygon")
+    if poly_val is None:
+        poly_val = row.get("geometry")
+    if poly_val is not None and not (
+        isinstance(poly_val, float) and math.isnan(poly_val)
+    ):
+        try:
+            geom = (
+                wkb.loads(bytes(poly_val))
+                if isinstance(poly_val, (bytes, bytearray, memoryview))
+                else poly_val
+            )
+            if geom is not None:
+                pt = geom if hasattr(geom, "x") and hasattr(geom, "y") else geom.centroid
+                lat, lon = float(pt.y), float(pt.x)
+                if math.isfinite(lat) and math.isfinite(lon):
+                    return lat, lon
+        except Exception:
+            pass
+
+    return None
 
 
 def _serialize_map_context(
-    frame: Any, *, require_weighted_score: bool = True
+    frame: Any,
+    *,
+    require_weighted_score: bool = True,
+    centroid_codgeos: Optional[set[str]] = None,
 ) -> List[Dict[str, Any]]:
-    """Persist only the immutable fields required to render the score map."""
+    """Persist lightweight choropleth scores and centroids only for marker communes."""
     if frame is None or not isinstance(frame, pd.DataFrame) or frame.empty:
         return []
 
     records: List[Dict[str, Any]] = []
     for index, row in frame.iterrows():
         codgeo = row.get("codgeo", index)
-        polygon = _encode_wkb(row.get("polygon"))
-        if codgeo is None or polygon is None:
+        if codgeo is None:
+            continue
+        codgeo_str = str(codgeo).strip()
+        if not codgeo_str:
             continue
 
         try:
@@ -260,44 +322,314 @@ def _serialize_map_context(
         if require_weighted_score and not math.isfinite(weighted_score):
             continue
 
-        records.append(
-            {
-                "codgeo": str(codgeo),
-                "libgeo": str(row.get("libgeo", "")),
-                "weighted_score": weighted_score,
-                "polygon_wkb_b64": polygon,
-            }
-        )
+        record: Dict[str, Any] = {
+            "codgeo": codgeo_str,
+            "libgeo": "" if pd.isna(row.get("libgeo")) else str(row.get("libgeo", "")),
+            "weighted_score": weighted_score,
+        }
+        if centroid_codgeos is None or codgeo_str in centroid_codgeos:
+            coords = _extract_centroid_lat_lon(row)
+            if coords is not None:
+                record["centroid_lat"] = coords[0]
+                record["centroid_lon"] = coords[1]
+
+        records.append(record)
     return records
 
 
 def _deserialize_map_context(records: Any) -> pd.DataFrame:
-    """Rehydrate saved WKB map context without consulting current datasets."""
+    """Rehydrate saved score map context and marker centroids (backward-compatible with WKB)."""
     if not isinstance(records, list):
         records = []
+
+    rows: List[Dict[str, Any]] = []
+    has_legacy_polygon = False
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        try:
+            weighted_score = float(record.get("weighted_score", 0.0))
+            codgeo = str(record["codgeo"])
+        except (KeyError, TypeError, ValueError):
+            continue
+
+        centroid_pt: Optional[Point] = None
+        if "centroid_lat" in record and "centroid_lon" in record:
+            try:
+                lat = float(record["centroid_lat"])
+                lon = float(record["centroid_lon"])
+                if math.isfinite(lat) and math.isfinite(lon):
+                    centroid_pt = Point(lon, lat)
+            except (TypeError, ValueError):
+                centroid_pt = None
+
+        row_dict: Dict[str, Any] = {
+            "codgeo": codgeo,
+            "libgeo": str(record.get("libgeo", "")),
+            "weighted_score": weighted_score,
+            "centroid": centroid_pt,
+        }
+
+        raw_poly_b64 = record.get("polygon_wkb_b64")
+        if isinstance(raw_poly_b64, str) and raw_poly_b64:
+            try:
+                polygon = base64.b64decode(raw_poly_b64, validate=True)
+            except (TypeError, ValueError, base64.binascii.Error):
+                polygon = None
+            if polygon is not None:
+                row_dict["polygon"] = polygon
+                has_legacy_polygon = True
+                if centroid_pt is None:
+                    try:
+                        geom = wkb.loads(polygon)
+                        pt = (
+                            geom
+                            if hasattr(geom, "x") and hasattr(geom, "y")
+                            else geom.centroid
+                        )
+                        row_dict["centroid"] = Point(float(pt.x), float(pt.y))
+                    except Exception:
+                        pass
+
+        rows.append(row_dict)
+
+    columns = ["libgeo", "weighted_score", "centroid"]
+    if has_legacy_polygon:
+        columns.append("polygon")
+    if not rows:
+        return pd.DataFrame(columns=columns)
+    df = pd.DataFrame(rows)
+    df["centroid"] = df["centroid"].astype(object)
+    return df.set_index("codgeo")
+
+
+def _target_codgeos(search_results: SearchResultsData) -> set[str]:
+    """Return normalized 5-digit codgeos for Top results and optional shortlisted city."""
+    codes = {
+        str(c.codgeo).strip().zfill(5)
+        for c in getattr(search_results, "results", []) or []
+        if getattr(c, "codgeo", None)
+    }
+    pressentie = getattr(search_results, "commune_pressentie", None)
+    if pressentie is not None and getattr(pressentie, "codgeo", None):
+        codes.add(str(pressentie.codgeo).strip().zfill(5))
+    return codes
+
+
+def _serialize_pois_context(
+    pois_df: Any,
+    search_results: SearchResultsData,
+    inclusion_services_index: Any = None,
+) -> List[Dict[str, Any]]:
+    """Persist POI markers scoped to Top results and shortlisted city."""
+    if (
+        pois_df is None
+        or not isinstance(pois_df, pd.DataFrame)
+        or pois_df.empty
+        or "codgeo" not in pois_df.columns
+    ):
+        return []
+
+    target_codes = _target_codgeos(search_results)
+    if not target_codes:
+        return []
+
+    pois_work = pois_df.copy()
+    pois_work["_codgeo_norm"] = (
+        pois_work["codgeo"].astype(str).str.strip().str.zfill(5)
+    )
+    filtered = pois_work[pois_work["_codgeo_norm"].isin(target_codes)]
+    if filtered.empty:
+        return []
+
+    has_incl_index = (
+        inclusion_services_index is not None
+        and isinstance(inclusion_services_index, pd.DataFrame)
+        and not inclusion_services_index.empty
+    )
+
+    records: List[Dict[str, Any]] = []
+    for _, row in filtered.iterrows():
+        geom = row.get("geometry")
+        lat_val = geom.y if hasattr(geom, "y") else row.get("lat")
+        lon_val = geom.x if hasattr(geom, "x") else row.get("lon")
+        try:
+            lat = float(lat_val)
+            lon = float(lon_val)
+        except (TypeError, ValueError):
+            continue
+        if not (math.isfinite(lat) and math.isfinite(lon)):
+            continue
+
+        category = str(row.get("category", ""))
+        raw_type_val = row.get("type")
+        raw_type = "" if pd.isna(raw_type_val) else str(raw_type_val)
+        type_label: Optional[str] = None
+        if (
+            category in {"incl_services", "inclusion"}
+            and raw_type
+            and has_incl_index
+            and raw_type in inclusion_services_index.index
+        ):
+            val = inclusion_services_index.loc[raw_type, "label"]
+            type_label = str(val if isinstance(val, str) else val.iloc[0])
+
+        record: Dict[str, Any] = {
+            "codgeo": str(row["_codgeo_norm"]),
+            "category": category,
+            "name": "" if pd.isna(row.get("name")) else str(row.get("name")),
+            "type": raw_type,
+            "lat": lat,
+            "lon": lon,
+        }
+        if type_label:
+            record["type_label"] = type_label
+        records.append(record)
+    return records
+
+
+def _deserialize_pois_context(records: Any) -> pd.DataFrame:
+    """Rehydrate saved POI markers for map_vector without loading full national POIs."""
+    columns = ["codgeo", "category", "name", "type", "type_label", "lat", "lon"]
+    if not isinstance(records, list):
+        return pd.DataFrame(columns=columns)
 
     rows: List[Dict[str, Any]] = []
     for record in records:
         if not isinstance(record, dict):
             continue
         try:
-            polygon = base64.b64decode(record["polygon_wkb_b64"], validate=True)
-            weighted_score = float(record["weighted_score"])
-            codgeo = str(record["codgeo"])
-        except (KeyError, TypeError, ValueError, base64.binascii.Error):
+            lat = float(record["lat"])
+            lon = float(record["lon"])
+            codgeo = str(record["codgeo"]).strip().zfill(5)
+            category = str(record["category"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not (math.isfinite(lat) and math.isfinite(lon)):
             continue
         rows.append(
             {
                 "codgeo": codgeo,
-                "libgeo": str(record.get("libgeo", "")),
-                "weighted_score": weighted_score,
-                "polygon": polygon,
+                "category": category,
+                "name": str(record.get("name", "")),
+                "type": str(record.get("type", "")),
+                "type_label": record.get("type_label"),
+                "lat": lat,
+                "lon": lon,
             }
         )
-
     if not rows:
-        return pd.DataFrame(columns=["libgeo", "weighted_score", "polygon"])
-    return pd.DataFrame(rows).set_index("codgeo")
+        return pd.DataFrame(columns=columns)
+    return pd.DataFrame(rows, columns=columns)
+
+
+def _serialize_ccas_context(
+    structures_df: Any,
+    odis_df: Any,
+    search_results: SearchResultsData,
+) -> List[Dict[str, Any]]:
+    """Persist CCAS/CIAS contact structures scoped to Top results and shortlisted city."""
+    if (
+        structures_df is None
+        or not isinstance(structures_df, pd.DataFrame)
+        or structures_df.empty
+        or "codgeo" not in structures_df.columns
+    ):
+        return []
+
+    raw_codes: set[str] = set()
+    for c in getattr(search_results, "results", []) or []:
+        if getattr(c, "codgeo", None):
+            raw_codes.add(str(c.codgeo).strip())
+    pressentie = getattr(search_results, "commune_pressentie", None)
+    if pressentie is not None and getattr(pressentie, "codgeo", None):
+        raw_codes.add(str(pressentie.codgeo).strip())
+
+    target_codes = set(raw_codes)
+    if (
+        odis_df is not None
+        and isinstance(odis_df, pd.DataFrame)
+        and not odis_df.empty
+    ):
+        for code in raw_codes:
+            if code in odis_df.index:
+                row = odis_df.loc[code]
+                if isinstance(row, pd.DataFrame):
+                    row = row.iloc[0]
+                if (
+                    bool(row.get("binome"))
+                    and "codgeo_binome" in row
+                    and pd.notna(row.get("codgeo_binome"))
+                ):
+                    target_codes.add(str(row.get("codgeo_binome")).strip())
+
+    if not target_codes:
+        return []
+
+    filtered = structures_df[
+        structures_df["codgeo"].astype(str).str.strip().isin(target_codes)
+    ]
+    if filtered.empty:
+        return []
+
+    records: List[Dict[str, Any]] = []
+    for _, row in filtered.iterrows():
+        records.append(
+            {
+                "codgeo": str(row.get("codgeo", "")).strip(),
+                "commune": None
+                if pd.isna(row.get("commune"))
+                else str(row.get("commune")),
+                "nom": "" if pd.isna(row.get("nom")) else str(row.get("nom")),
+                "adresse": None
+                if pd.isna(row.get("adresse"))
+                else str(row.get("adresse")),
+                "telephone": None
+                if pd.isna(row.get("telephone"))
+                else str(row.get("telephone")),
+                "courriel": None
+                if pd.isna(row.get("courriel"))
+                else str(row.get("courriel")),
+                "site_web": None
+                if pd.isna(row.get("site_web"))
+                else str(row.get("site_web")),
+            }
+        )
+    return records
+
+
+def _deserialize_ccas_context(records: Any) -> pd.DataFrame:
+    """Rehydrate saved CCAS/CIAS contact rows without loading national tables."""
+    columns = [
+        "codgeo",
+        "commune",
+        "nom",
+        "adresse",
+        "telephone",
+        "courriel",
+        "site_web",
+    ]
+    if not isinstance(records, list):
+        return pd.DataFrame(columns=columns)
+
+    rows: List[Dict[str, Any]] = []
+    for record in records:
+        if not isinstance(record, dict) or not record.get("codgeo"):
+            continue
+        rows.append(
+            {
+                "codgeo": str(record["codgeo"]).strip(),
+                "commune": record.get("commune"),
+                "nom": str(record.get("nom", "")),
+                "adresse": record.get("adresse"),
+                "telephone": record.get("telephone"),
+                "courriel": record.get("courriel"),
+                "site_web": record.get("site_web"),
+            }
+        )
+    if not rows:
+        return pd.DataFrame(columns=columns)
+    return pd.DataFrame(rows, columns=columns)
 
 
 def save_shared_search(
@@ -310,26 +642,29 @@ def save_shared_search(
     data_release: Optional[str] = None,
     map_center: Optional[List[float]] = None,
     map_zoom: Optional[int] = None,
+    pois_df: Any = None,
+    structures_ccas_df: Any = None,
+    odis_df: Any = None,
+    inclusion_services_index: Any = None,
+    share_id: Optional[str] = None,
+    allow_overwrite: bool = False,
 ) -> str:
     """
     Serializes and saves a search results snapshot (config + search_results).
     Compresses payload with Gzip and uploads to GCS with content_encoding='gzip'.
     Logs metadata to BigQuery. Returns the 8-character share_id.
     """
-    share_id = uuid.uuid4().hex[:8]
+    if share_id and is_valid_share_id(share_id):
+        share_id = share_id.strip()
+    else:
+        share_id = uuid.uuid4().hex[:8]
 
     # Resolve metadata
     if not username:
-        try:
-            username = st.session_state.get("username", "unknown")
-        except Exception:
-            username = "unknown"
+        username = _session_value("username", "unknown") or "unknown"
     if not org_id:
-        try:
-            org = st.session_state.get("org")
-            org_id = org.id if org and hasattr(org, "id") else "unknown"
-        except Exception:
-            org_id = "unknown"
+        org = _session_value("org")
+        org_id = org.id if org and hasattr(org, "id") else "unknown"
 
     try:
         paris_tz = zoneinfo.ZoneInfo("Europe/Paris")
@@ -337,13 +672,35 @@ def save_shared_search(
     except Exception:
         timestamp_str = datetime.now().isoformat()
 
+    config_for_save = (
+        config.model_copy(deep=True) if hasattr(config, "model_copy") else config
+    )
+    results_for_save = (
+        search_results.model_copy(deep=True)
+        if hasattr(search_results, "model_copy")
+        else search_results
+    )
+    bg_key = getattr(results_for_save, "background_key", None)
+    if bg_key:
+        bg_store = get_odis_bg_store()
+        bg_entry = bg_store.get(bg_key) if isinstance(bg_store, dict) else None
+        sync_search_results_data(
+            results_for_save,
+            bg_entry if isinstance(bg_entry, dict) else None,
+            config=config_for_save
+            if isinstance(config_for_save, SearchCriterias)
+            else None,
+        )
+
     config_dict = (
-        config.model_dump(mode="json") if hasattr(config, "model_dump") else config
+        config_for_save.model_dump(mode="json")
+        if hasattr(config_for_save, "model_dump")
+        else config_for_save
     )
     results_dict = (
-        search_results.model_dump(mode="json")
-        if hasattr(search_results, "model_dump")
-        else search_results
+        results_for_save.model_dump(mode="json")
+        if hasattr(results_for_save, "model_dump")
+        else results_for_save
     )
 
     if processed_gdf is None:
@@ -357,6 +714,23 @@ def save_shared_search(
     if map_zoom is None:
         map_zoom = _session_value("zoom")
 
+    app_data = _session_value("app_data")
+    if not isinstance(app_data, dict):
+        app_data = {}
+    if pois_df is None:
+        pois_df = app_data.get("pois")
+    if structures_ccas_df is None:
+        structures_ccas_df = app_data.get("structures_ccas")
+    if odis_df is None:
+        odis_df = app_data.get("odis")
+    if inclusion_services_index is None:
+        inclusion_services_index = app_data.get("inclusion_services_index")
+
+    marker_codgeos = _target_codgeos(results_for_save)
+    current_geo = getattr(results_for_save, "current_geo", None)
+    if current_geo is not None and getattr(current_geo, "codgeo", None):
+        marker_codgeos.add(str(current_geo.codgeo).strip().zfill(5))
+
     payload: Dict[str, Any] = {
         "share_id": share_id,
         "schema_version": SHARE_SCHEMA_VERSION,
@@ -364,15 +738,29 @@ def save_shared_search(
         "created_at": timestamp_str,
         "username": username,
         "org_id": org_id,
-        "search_hash": getattr(search_results, "search_hash", ""),
+        "search_hash": getattr(results_for_save, "search_hash", ""),
         "config": _safe_json_format(config_dict),
         "search_results": _safe_json_format(results_dict),
         "snapshot": {
             "policy": "immutable",
             "data_release": data_release or "unknown",
-            "map_context": _serialize_map_context(processed_gdf),
+            "map_context": _serialize_map_context(
+                processed_gdf, centroid_codgeos=marker_codgeos
+            ),
             "current_map_context": _serialize_map_context(
-                selected_geo, require_weighted_score=False
+                selected_geo,
+                require_weighted_score=False,
+                centroid_codgeos=None,
+            ),
+            "pois_context": _serialize_pois_context(
+                pois_df,
+                results_for_save,
+                inclusion_services_index=inclusion_services_index,
+            ),
+            "ccas_context": _serialize_ccas_context(
+                structures_ccas_df,
+                odis_df,
+                results_for_save,
             ),
             "map_view": {
                 "center": map_center if isinstance(map_center, list) else None,
@@ -389,18 +777,20 @@ def save_shared_search(
     if not gcs_client:
         raise RuntimeError("Le stockage GCS des recherches partagées est indisponible.")
 
+    deployment_env = cfg.get_deployment_env()
+    blob_path = get_snapshot_blob_path(share_id, env=deployment_env)
     try:
         bucket_name = _get_shared_searches_bucket_name()
         bucket = gcs_client.bucket(bucket_name)
-        blob = bucket.blob(f"searches/{share_id}.json")
+        blob = bucket.blob(blob_path)
         blob.content_encoding = "gzip"
         blob.custom_time = datetime.now(timezone.utc)
         blob.upload_from_string(
             compressed_bytes,
             content_type="application/json",
-            if_generation_match=0,
+            if_generation_match=None if allow_overwrite else 0,
         )
-        gcs_uri = f"gs://{bucket_name}/searches/{share_id}.json"
+        gcs_uri = f"gs://{bucket_name}/{blob_path}"
         logger.info(
             f"✅ Saved gzipped shared search snapshot to GCS at {gcs_uri} ({len(compressed_bytes)} bytes)"
         )
@@ -415,17 +805,17 @@ def save_shared_search(
             "Impossible d'enregistrer la recherche partagée dans GCS."
         ) from e
 
-    # Log to BigQuery saved_searches registry
+    # Log to BigQuery saved_searches registry (append-only: 'create' vs 'update')
     try:
         from services import telemetry
 
         telemetry.log_saved_search_event(
-            event_type="create",
+            event_type="update" if allow_overwrite else "create",
             share_id=share_id,
             status="success",
-            env=cfg.ODIS_DEPLOYMENT_ENV,
+            env=deployment_env,
             gcs_uri=gcs_uri,
-            search_hash=getattr(search_results, "search_hash", ""),
+            search_hash=getattr(results_for_save, "search_hash", ""),
             app_version=cfg.ODIS_APP_VERSION,
             schema_version=SHARE_SCHEMA_VERSION,
             data_release=data_release or "unknown",
@@ -433,9 +823,76 @@ def save_shared_search(
             org_id=org_id,
         )
     except Exception as e:
-        logger.warning(f"⚠️ BQ telemetry log failed for shared search create: {e}")
+        logger.warning(f"⚠️ BQ telemetry log failed for shared search save: {e}")
 
     return share_id
+
+
+def auto_persist_search_snapshot(
+    h: str, *, is_initial: bool = False
+) -> Optional[str]:
+    """Persist or refresh an active search snapshot in GCS from background metadata."""
+    if not h or not os.getenv("GCS_SHARED_SEARCHES_BUCKET"):
+        return None
+
+    store = get_odis_bg_store()
+    entry = store.get(h) if isinstance(store, dict) else None
+    meta = entry.get("snapshot_meta") if isinstance(entry, dict) else None
+    if not isinstance(meta, dict) or not meta.get("share_id"):
+        return None
+
+    if not _get_gcs_client():
+        return None
+
+    lock = meta.get("lock")
+    ctx = lock if lock is not None else nullcontext()
+    with ctx:
+        already_created = bool(meta.get("created", False))
+        allow_overwrite = already_created or not is_initial
+        save_kwargs: Dict[str, Any] = {
+            "config": meta["config"],
+            "search_results": meta["search_results"],
+            "username": meta.get("username"),
+            "org_id": meta.get("org_id"),
+            "processed_gdf": meta.get("processed_gdf"),
+            "selected_geo": meta.get("selected_geo"),
+            "data_release": meta.get("data_release"),
+            "map_center": meta.get("center"),
+            "map_zoom": meta.get("zoom"),
+            "pois_df": meta.get("pois_df"),
+            "structures_ccas_df": meta.get("structures_ccas_df"),
+            "odis_df": meta.get("odis_df"),
+            "inclusion_services_index": meta.get("inclusion_services_index"),
+            "share_id": meta["share_id"],
+        }
+        try:
+            saved_id = save_shared_search(**save_kwargs, allow_overwrite=allow_overwrite)
+        except Exception as exc:
+            if not allow_overwrite and "existe déjà" in str(exc):
+                fresh_share_id = uuid.uuid4().hex[:8]
+                meta["share_id"] = fresh_share_id
+                save_kwargs["share_id"] = fresh_share_id
+                try:
+                    saved_id = save_shared_search(**save_kwargs, allow_overwrite=False)
+                except Exception as retry_exc:
+                    logger.warning(
+                        "Auto-persist snapshot failed for %s (%s): %s",
+                        h,
+                        fresh_share_id,
+                        retry_exc,
+                    )
+                    return None
+            else:
+                logger.warning(
+                    "Auto-persist snapshot failed for %s (%s): %s",
+                    h,
+                    meta.get("share_id"),
+                    exc,
+                )
+                return None
+
+        meta["created"] = True
+        return saved_id
 
 
 def _share_load_failure(
@@ -503,10 +960,20 @@ def load_shared_search_snapshot_outcome(
             OutcomeStatus.UNAVAILABLE, "SHARE-GCS-UNAVAILABLE", share_id
         )
 
+    deployment_env = cfg.get_deployment_env()
+    blob_path = get_snapshot_blob_path(share_id, env=deployment_env)
     try:
-        bucket = gcs_client.bucket(_get_shared_searches_bucket_name())
-        blob = bucket.blob(f"searches/{share_id}.json")
+        bucket_name = _get_shared_searches_bucket_name()
+        bucket = gcs_client.bucket(bucket_name)
+        blob = bucket.blob(blob_path)
         exists = blob.exists()
+        if not exists:
+            legacy_path = f"searches/{share_id}.json"
+            legacy_blob = bucket.blob(legacy_path)
+            if legacy_blob.exists():
+                blob = legacy_blob
+                blob_path = legacy_path
+                exists = True
     except google_exceptions.NotFound:
         exists = False
     except (google_exceptions.Forbidden, google_exceptions.Unauthorized):
@@ -626,6 +1093,13 @@ def load_shared_search_snapshot_outcome(
                 migrated_payload.get("schema_version", SHARE_SCHEMA_VERSION)
             ),
             app_version=migrated_payload.get("app_version"),
+            pois_context=snapshot_data.get("pois_context", [])
+            if isinstance(snapshot_data.get("pois_context"), list)
+            else [],
+            ccas_context=snapshot_data.get("ccas_context", [])
+            if isinstance(snapshot_data.get("ccas_context"), list)
+            else [],
+            gcs_path=blob_path,
         )
     except (ValidationError, TypeError, ValueError, KeyError):
         return _share_load_failure(
@@ -710,6 +1184,16 @@ def restore_shared_search_to_session_state(
     data_loader.apply_search_criteria_to_ui(config_obj)
     processed_gdf = _deserialize_map_context(snapshot.map_context)
     current_map_context = _deserialize_map_context(snapshot.current_map_context)
+    pois_df = (
+        _deserialize_pois_context(snapshot.pois_context)
+        if snapshot.pois_context
+        else None
+    )
+    ccas_df = (
+        _deserialize_ccas_context(snapshot.ccas_context)
+        if snapshot.ccas_context
+        else None
+    )
 
     map_view = snapshot.map_view
     center = map_view.get("center")
@@ -724,6 +1208,8 @@ def restore_shared_search_to_session_state(
         share_id=share_id,
         processed_gdf=processed_gdf,
         current_map_context=current_map_context,
+        pois_df=pois_df,
+        ccas_df=ccas_df,
         version=snapshot.schema_version,
         data_release=snapshot.data_release,
         created_at=snapshot.created_at,
@@ -789,12 +1275,16 @@ def restore_shared_search_from_query_params() -> bool:
         from services import telemetry
 
         bucket_name = os.getenv("GCS_SHARED_SEARCHES_BUCKET", "unknown")
+        deployment_env = cfg.get_deployment_env()
+        resolved_path = outcome.value.gcs_path or get_snapshot_blob_path(
+            share_id, env=deployment_env
+        )
         telemetry.log_saved_search_event(
             event_type="view",
             share_id=share_id,
             status="success",
-            env=cfg.ODIS_DEPLOYMENT_ENV,
-            gcs_uri=f"gs://{bucket_name}/searches/{share_id}.json",
+            env=deployment_env,
+            gcs_uri=f"gs://{bucket_name}/{resolved_path}",
             search_hash=getattr(outcome.value.search_results, "search_hash", ""),
             app_version=cfg.ODIS_APP_VERSION,
             schema_version=outcome.value.schema_version,

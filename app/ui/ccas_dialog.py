@@ -28,8 +28,14 @@ def show_ccas_dialog(index: Any):
     libgeo = commune.name
     # The Results page owns a complete, single app-data snapshot. Reuse it here
     # instead of triggering an unrelated loader call from a dialog.
-    app_data = st.session_state.get("app_data", {})
+    app_data = st.session_state.get("app_data") or {}
     structures_df = app_data.get("structures_ccas", pd.DataFrame())
+    if not isinstance(structures_df, pd.DataFrame) or structures_df.empty:
+        snapshot_ccas = st.session_state.get("snapshot_ccas_df")
+        if isinstance(snapshot_ccas, pd.DataFrame) and not snapshot_ccas.empty:
+            structures_df = snapshot_ccas
+        else:
+            structures_df = pd.DataFrame()
 
     target_codes = [codgeo.strip()]
     # Optional logic for binome if needed (fallback to df_all_communes)

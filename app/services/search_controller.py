@@ -4,18 +4,24 @@ from __future__ import annotations
 
 import gc
 import logging
+import threading
 from collections.abc import Mapping
 from typing import Any
 from uuid import uuid4
 
 import pandas as pd
+import streamlit as st
+from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 import config as cfg
+from agents.utils import get_odis_bg_store
 from core import maps_deck, scoring
+from core.hydration import submit_background_work
 from core.models import SearchCriterias, SearchResultsData
 from core.postscoring import launch_post_scoring_tasks
 from services import telemetry
 from services.app_session import AppSession
+from services.server_activity import record_server_activity
 from ui import ui_telemetry
 from utils import common, data_loader
 
@@ -43,6 +49,7 @@ class SearchController:
         self, config: SearchCriterias, app_data: Mapping[str, Any]
     ) -> SearchResultsData:
         logger.info("--- Running deterministic search ---")
+        record_server_activity()
         gc.collect()
         telemetry.reset_interaction_id()
         # The bundle was resolved before this search. Reusing its release ID
@@ -90,6 +97,53 @@ class SearchController:
         )
 
         self._center_map(config, search_results, app_data)
+
+        share_id = uuid4().hex[:8]
+        self.session.state["active_share_id"] = share_id
+        try:
+            if get_script_run_ctx(suppress_warning=True) is not None:
+                st.query_params["search"] = share_id
+        except Exception as exc:
+            logger.debug("Failed to set search query parameter: %s", exc)
+
+        center_val = self.session.state.get("center")
+        bg_entry = get_odis_bg_store().setdefault(search_hash, {})
+        bg_entry["snapshot_meta"] = {
+            "share_id": share_id,
+            "created": False,
+            "lock": threading.Lock(),
+            "config": config.model_copy(deep=True)
+            if hasattr(config, "model_copy")
+            else config,
+            "search_results": search_results.model_copy(deep=True)
+            if hasattr(search_results, "model_copy")
+            else search_results,
+            "processed_gdf": processed_gdf,
+            "selected_geo": self.session.state.get("selected_geo"),
+            "pois_df": app_data.get("pois"),
+            "structures_ccas_df": app_data.get("structures_ccas"),
+            "odis_df": app_data.get("odis"),
+            "inclusion_services_index": app_data.get("inclusion_services_index"),
+            "data_release": self.session.state.get("active_data_release"),
+            "center": list(center_val) if isinstance(center_val, list) else None,
+            "zoom": self.session.state.get("zoom"),
+            "username": username,
+            "org_id": org_id,
+        }
+        from services.share_service import (
+            auto_persist_search_snapshot,
+            should_schedule_auto_persist,
+        )
+
+        if should_schedule_auto_persist():
+            try:
+                submit_background_work(
+                    lambda h=search_hash: auto_persist_search_snapshot(
+                        h, is_initial=True
+                    )
+                )
+            except Exception as exc:
+                logger.debug("Initial auto-snapshot scheduling failed: %s", exc)
 
         self.session.state["fgs_to_show"] = set()
         self.session.state["highlighted_result"] = [False, None]
