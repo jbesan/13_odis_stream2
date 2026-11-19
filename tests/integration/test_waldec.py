@@ -15,7 +15,7 @@ def test_waldec():
     data = load_app_data_raw()
     set_data_context(data)
 
-    results = _search_referentiels_logic("fêtes", domain="waldec_codes")
+    results = _search_referentiels_logic("fêtes", domain="association_tags")
     assert isinstance(results, list), "Expected list of results"
     assert len(results) > 0, "Expected non-empty search results for query 'fêtes'"
     for r in results:

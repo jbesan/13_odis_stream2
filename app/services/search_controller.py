@@ -173,6 +173,10 @@ class SearchController:
             rome_index=app_data.get("rome_index", pd.DataFrame()),
             bv_data=app_data.get("bv_data"),
             pois=app_data.get("pois", pd.DataFrame()),
+            incl_index_bdv=app_data.get("incl_index_bdv"),
+            asso_thematiques_data=app_data.get("asso_thematiques_data"),
+            asso_tags_bdv_data=app_data.get("asso_tags_bdv_data"),
+            asso_tags_ref=app_data.get("asso_tags_ref"),
         )
 
     @staticmethod

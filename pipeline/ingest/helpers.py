@@ -37,6 +37,52 @@ def _rna_rag_table_id(config: Optional[Dict[str, Any]] = None) -> str:
     return f"{_data_project()}.{table}"
 
 
+def _rna_v6_table_id(config: Optional[Dict[str, Any]] = None) -> str:
+    """Resolve the Commun RNA V6 consolidated BigQuery table ID from config.
+
+    Args:
+        config: Optional pipeline configuration dictionary.
+
+    Returns:
+        Fully-qualified BigQuery table ID ``project.dataset.table``.
+
+    Raises:
+        ValueError: If ``sources.rna_v6.table`` is not in ``dataset.table`` format.
+    """
+    source_config = (config or {}).get("sources", {}).get("rna_v6", {})
+    table = source_config.get("table", "rna_rag.national_v6_consolidated")
+    if not isinstance(table, str) or table.count(".") != 1:
+        raise ValueError(
+            "sources.rna_v6.table must use the dataset.table form (for example "
+            "rna_rag.national_v6_consolidated)"
+        )
+    return f"{_data_project()}.{table}"
+
+
+def _rna_v6_tags_ref_table_id(config: Optional[Dict[str, Any]] = None) -> str:
+    """Resolve the Commun RNA V6 canonical tags reference table ID from config.
+
+    Args:
+        config: Optional pipeline configuration dictionary.
+
+    Returns:
+        Fully-qualified BigQuery table ID ``project.dataset.table``.
+
+    Raises:
+        ValueError: If ``sources.rna_v6.tags_ref_table`` is not in ``dataset.table`` format.
+    """
+    source_config = (config or {}).get("sources", {}).get("rna_v6", {})
+    table = source_config.get(
+        "tags_ref_table", "rna_rag.referentiel_tags_canoniques_n50"
+    )
+    if not isinstance(table, str) or table.count(".") != 1:
+        raise ValueError(
+            "sources.rna_v6.tags_ref_table must use the dataset.table form (for example "
+            "rna_rag.referentiel_tags_canoniques_n50)"
+        )
+    return f"{_data_project()}.{table}"
+
+
 def _materialize_rag_cache(
     candidate_path: Path,
     shared_path: Path,

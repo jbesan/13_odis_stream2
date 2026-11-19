@@ -21,8 +21,19 @@ logger = logging.getLogger(__name__)
 @pytest.fixture(scope="module")
 def mcp_data_context():
     """Load data once for the module (simulating Server Startup)."""
+    import pandas as pd
+
     print("Loading ODIS Data Context...")
     data = load_app_data_raw()
+    ref_df = data.get("asso_tags_ref")
+    if ref_df is None or not isinstance(ref_df, pd.DataFrame) or ref_df.empty:
+        data["asso_tags_ref"] = pd.DataFrame(
+            {
+                "tag_canonique": ["football", "volley ball", "chant choral"],
+                "occ_national": [28000, 3200, 14500],
+                "exemples_bruts": [["football", "foot"], ["volley"], ["chorale"]],
+            }
+        )
     set_data_context(data)
     return data
 
@@ -50,11 +61,15 @@ def test_search_referentiels_jobs(mcp_data_context):
 
 
 def test_search_referentiels_hobbies(mcp_data_context):
-    """Verify WALDEC search finds hobbies."""
-    results = _search_referentiels_logic("Football", domain="waldec_codes")
+    """Verify association_tags search finds hobbies and supports waldec_codes alias."""
+    results = _search_referentiels_logic("Football", domain="association_tags")
     assert len(results) > 0
     top = results[0]
     assert "football" in top["label"].lower()
+
+    alias_results = _search_referentiels_logic("Football", domain="waldec_codes")
+    assert len(alias_results) > 0
+    assert alias_results[0]["code"] == top["code"]
 
 
 def test_search_referentiels_inclusion(mcp_data_context):

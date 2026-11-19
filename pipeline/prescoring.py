@@ -71,6 +71,7 @@ def apply_configured_raw_missingness(
     raw_metrics_to_fill.update(
         c for c in df.columns if c.startswith("inc_rna_") and c.endswith("_count")
     )
+    raw_metrics_to_fill.update({"lien_social_count", "inc_asso_refug_count"})
 
     for metric in raw_metrics_to_fill:
         if metric in df.columns:

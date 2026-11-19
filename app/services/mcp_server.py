@@ -5,7 +5,7 @@ import asyncio
 import threading
 
 import pandas as pd
-from utils.data_loader import load_app_data_raw
+from utils.data_loader import get_tag_search_index, load_app_data_raw
 from core.scoring import ScoringEngine
 from core.models import SearchCriterias, CriteriaItem
 from services.rna_rag import RNARagService
@@ -95,14 +95,28 @@ def get_scoring_engine() -> ScoringEngine:
         ),
         live_jobs_data=DATA_CONTEXT.get("live_jobs_data", pd.DataFrame()),
         siae_jobs_data=DATA_CONTEXT.get("siae_jobs_data", pd.DataFrame()),
+        bv_data=DATA_CONTEXT.get("bv_data"),
+        incl_index_bdv=DATA_CONTEXT.get("incl_index_bdv"),
+        asso_thematiques_data=DATA_CONTEXT.get("asso_thematiques_data"),
+        asso_tags_bdv_data=DATA_CONTEXT.get("asso_tags_bdv_data"),
+        asso_tags_ref=DATA_CONTEXT.get("asso_tags_ref"),
     )
 
 
 def _search_referentiels_logic(query: str, domain: str) -> List[Dict[str, Any]]:
-    """Recherche des codes officiels (Formations, ROME, Services d'inclusion, WALDEC, etc.) dans les référentiels."""
+    """Recherche des codes officiels (Formations, ROME, Services d'inclusion, tags associatifs, etc.)."""
 
     ensure_data_context()
-    # print(f"Search Referentiels for Query: {query}, Domain: {domain}")
+
+    if domain in ("association_tags", "waldec_codes"):
+        if domain == "waldec_codes":
+            logger.warning(
+                "Domain 'waldec_codes' is deprecated; routing to Commun RNA V6 'association_tags'."
+            )
+        tag_index = get_tag_search_index(DATA_CONTEXT)
+        if not tag_index.is_empty:
+            res = tag_index.search(query, limit=5)
+            return [{"code": m.tag, "label": m.tag.capitalize()} for m in res.matches]
 
     if "referentiels_raw" not in DATA_CONTEXT:
         logger.warning("   ⚠️ Referentiels data not available.")
@@ -238,7 +252,7 @@ def search_referentiels(query: str, domain: Optional[str] = None) -> Dict[str, A
 
     Args:
         query (str): Mot clé de recherche.
-        domain (str): Domaine de recherche possibles:['formation_codes', 'inclusion_services', 'waldec_codes', 'rome_codes', 'regions', 'departements', 'communes'].
+        domain (str): Domaine de recherche possibles:['formation_codes', 'inclusion_services', 'association_tags', 'rome_codes', 'regions', 'departements', 'communes', 'housing_types'] ('waldec_codes' accepté en alias).
 
     Returns:
         List[Dict[str, Any]]: Liste des codes + labels officiels correspondants.
@@ -252,6 +266,7 @@ def search_referentiels(query: str, domain: Optional[str] = None) -> Dict[str, A
             "rome_codes",
             "formation_codes",
             "inclusion_services",
+            "association_tags",
             "waldec_codes",
             "regions",
             "departements",

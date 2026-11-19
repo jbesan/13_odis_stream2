@@ -3,9 +3,17 @@ import pandas as pd
 import logging
 from typing import Any
 import config as cfg
-from core.models import SearchCriterias, CriteriaItem, SearchAreaLevel
+from core.models import SearchCriterias, SearchAreaLevel
 from ui.components import inject_custom_css
-from ui.form_state import FormState, health_key, housing_key, long_term_housing_key
+from ui.form_state import (
+    FormState,
+    _filter_valid_association_tags,
+    health_key,
+    housing_key,
+    long_term_housing_key,
+)
+from ui.tag_search import TagSearchIndex
+from utils.data_loader import get_tag_search_index
 
 # Configure Logging
 logger = logging.getLogger("ui.forms")
@@ -258,53 +266,158 @@ def render_health_form() -> None:
         st.checkbox(label, key=cb_key)
 
 
+def _on_selected_pills_change(pills_key: str) -> None:
+    """Sync removed canonical tags from selected ``st.pills`` before rerun."""
+    kept = list(st.session_state.get(pills_key) or [])
+    current = list(st.session_state.get("ui_inc_asso_add_selection_raw") or [])
+    st.session_state["ui_inc_asso_add_selection_raw"] = [
+        tag for tag in current if tag in kept
+    ]
+    st.session_state["ui_asso_tag_selected_nonce"] = (
+        int(st.session_state.get("ui_asso_tag_selected_nonce", 0)) + 1
+    )
+
+
+def _on_suggestion_pill_pick(pills_key: str) -> None:
+    """Append picked suggestion tag and rotate pill widget keys before rerun."""
+    picked = st.session_state.get(pills_key)
+    current = list(st.session_state.get("ui_inc_asso_add_selection_raw") or [])
+    if picked and picked not in current:
+        st.session_state["ui_inc_asso_add_selection_raw"] = current + [picked]
+        st.session_state["ui_asso_tag_suggestions_nonce"] = (
+            int(st.session_state.get("ui_asso_tag_suggestions_nonce", 0)) + 1
+        )
+        st.session_state["ui_asso_tag_selected_nonce"] = (
+            int(st.session_state.get("ui_asso_tag_selected_nonce", 0)) + 1
+        )
+
+
+@st.fragment
+def _render_association_tags_selector(tag_search_index: TagSearchIndex) -> None:
+    """Render interactive canonical tag search & clickable pills inside a fragment.
+
+    Args:
+        tag_search_index: Pre-indexed ``TagSearchIndex`` over canonical RNA V6 tags.
+    """
+    selected_tags = _filter_valid_association_tags(
+        st.session_state.get("ui_inc_asso_add_selection_raw", [])
+    )
+    st.session_state["ui_inc_asso_add_selection_raw"] = selected_tags
+
+    selected_nonce = int(st.session_state.get("ui_asso_tag_selected_nonce", 0))
+    sug_nonce = int(st.session_state.get("ui_asso_tag_suggestions_nonce", 0))
+
+    if selected_tags:
+        st.caption(
+            f"**{len(selected_tags)} sélectionné(s)** — cliquez sur un badge pour le retirer"
+        )
+        selected_key = f"ui_asso_tag_selected_{selected_nonce}"
+        st.pills(
+            "Centres d'intérêt sélectionnés",
+            options=selected_tags,
+            selection_mode="multi",
+            default=selected_tags,
+            format_func=lambda t: (
+                f"{t.capitalize()} ({tag_search_index.get_count(t):,} assos) ✕".replace(
+                    ",", " "
+                )
+                if tag_search_index.get_count(t) is not None
+                else f"{t.capitalize()} ✕"
+            ),
+            help="Cliquez sur un badge pour le retirer de votre sélection.",
+            key=selected_key,
+            on_change=_on_selected_pills_change,
+            args=(selected_key,),
+            label_visibility="collapsed",
+        )
+
+    query = st.text_input(
+        "Rechercher un loisir ou centre d'intérêt",
+        key="ui_asso_tag_search_query",
+        placeholder="Ex : volley, chant choral, échecs, jardinage...",
+    )
+
+    clean_query = (query or "").strip()
+    is_fuzzy = False
+    if len(clean_query) >= 2:
+        search_res = tag_search_index.search(
+            clean_query, limit=12, exclude=selected_tags
+        )
+        matches = search_res.matches
+        is_fuzzy = search_res.is_fuzzy_fallback
+        if not matches:
+            has_selected_matches = bool(selected_tags) and bool(
+                tag_search_index.search(clean_query, limit=1, exclude=None).matches
+            )
+            if has_selected_matches:
+                st.caption(
+                    "Toutes les suggestions pour cette recherche sont déjà sélectionnées."
+                )
+            else:
+                st.info(
+                    "Aucune correspondance trouvée pour cette recherche. "
+                    "Essayez un terme plus général ou un synonyme."
+                )
+            return
+        if is_fuzzy:
+            st.caption(
+                f"Aucune correspondance exacte pour « {clean_query} » — suggestions proches :"
+            )
+        else:
+            st.caption("Suggestions correspondantes — cliquez pour ajouter :")
+    else:
+        matches = tag_search_index.popular(limit=12, exclude=selected_tags)
+        if not matches:
+            return
+        st.caption("Loisirs populaires en France — cliquez pour ajouter :")
+
+    match_map = {m.tag: m for m in matches}
+    suggestions_key = f"ui_asso_tag_suggestions_{sug_nonce}"
+    st.pills(
+        "Suggestions de centres d'intérêt",
+        options=[m.tag for m in matches],
+        selection_mode="single",
+        format_func=lambda t: (
+            f"{t.capitalize()} ({match_map[t].occ_national:,} assos)".replace(",", " ")
+            if t in match_map
+            else t.capitalize()
+        ),
+        key=suggestions_key,
+        on_change=_on_suggestion_pill_pick,
+        args=(suggestions_key,),
+        label_visibility="collapsed",
+    )
+
+
 def render_other_needs_form(app_data: dict[str, Any]) -> None:
     """Renders the UI for the 'Autres Besoins' (Inclusion) section."""
     inject_custom_css()
 
     col1, col2 = st.columns(2)
     with col2:
-        st.markdown("#### Associations Locales")
-        st.text(
-            "Sélectionnez vos centres d'intérêt pour identifier les territoires avec un tissu associatif correspondant (Solidarité, Loisirs, Culture...). Les associations référencées sont issues du Répertoire National des Associations."
+        st.markdown("#### Loisirs & Centres d'intérêt")
+        st.caption(
+            "Recherchez les loisirs, sports ou activités culturelles souhaités. "
+            "Le score évalue la présence d'associations correspondantes sur le territoire."
         )
 
-        if "waldec_index" in app_data:
-            waldec_index = app_data["waldec_index"]
-            prefixes = cfg.WALDEC_CATEGORIES
-            mask = waldec_index.index.str[:3].isin(prefixes)
-            loisirs_df = waldec_index[mask].copy()
-
-            options_items = []
-            item_map = {}
-            for code, row in loisirs_df.iterrows():
-                item = CriteriaItem(code=str(code), label=row["label"])
-                options_items.append(item)
-                count_str = f"{int(row['count']):,}".replace(",", " ")
-                item_map[item.code] = f"{item.label.title()} [{count_str} assos]"
-
-            if "ui_inc_asso_add_selection_raw" not in st.session_state:
-                legacy_values = st.session_state.get("ui_inc_asso_add_selection", [])
-                st.session_state["ui_inc_asso_add_selection_raw"] = [
-                    item.code if hasattr(item, "code") else str(item)
-                    for item in legacy_values
-                ]
-
-            st.multiselect(
-                "Centres d'intérêt",
-                options=[item.code for item in options_items],
-                format_func=lambda x: item_map.get(x, x),
-                key="ui_inc_asso_add_selection_raw",
-                label_visibility="collapsed",
-                wrap=True,
+        if "ui_inc_asso_add_selection_raw" not in st.session_state:
+            legacy_values = st.session_state.get("ui_inc_asso_add_selection", [])
+            st.session_state["ui_inc_asso_add_selection_raw"] = (
+                _filter_valid_association_tags(legacy_values)
             )
+
+        tag_search_index = get_tag_search_index(app_data)
+        if not tag_search_index.is_empty:
+            _render_association_tags_selector(tag_search_index)
         else:
-            st.warning("Référentiel WALDEC non chargé.")
+            st.warning("Référentiel des tags associatifs non chargé.")
 
     with col1:
-        st.markdown("#### Services d'Inclusion (i.e. Soliguide)")
-        st.text(
-            "Sélectionnez les services d'accompagnement social requis pour la personne ou la famille."
+        st.markdown("#### Besoins d'inclusion (Services & Associations)")
+        st.caption(
+            "Guichet unique : chaque besoin sélectionné évalue à la fois les services d'accompagnement "
+            "(Soliguide / Data·Inclusion) et les associations d'action sociale sur le territoire."
         )
 
         # Ensure raw selection list is initialized in session state

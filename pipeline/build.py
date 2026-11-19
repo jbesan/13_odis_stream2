@@ -617,30 +617,34 @@ def build_communes(config: Dict[str, Any], logger: PipelineLogger) -> pd.DataFra
         # Merge Insécurité
         merge_clean("ter_insecurite", ["ter_insecurite"])
 
-        # Merge RNA RAG Inclusion Stats (New)
-        # This brings in inc_rna_{category}_count columns
-        merge_clean("rna_inclusion_agg")
+        # Merge RNA V6 Inclusion & Refugee Stats (preferred), or legacy RNA RAG fallback
+        if (CLEAN_DIR / "rna_v6_inclusion_agg.parquet").exists():
+            merge_clean("rna_v6_inclusion_agg")
+            logging.info(
+                "RNA V6: Merged lien_social_count and inc_asso_refug_count directly."
+            )
+        else:
+            merge_clean("rna_inclusion_agg")
+
+            # Calculate lien_social_count from RAG categories
+            # 'lien_social_count' is used for inc_asso_core_scaled (Lien Social Density)
+            rna_cols = [
+                c
+                for c in communes_gdf.columns
+                if c.startswith("inc_rna_") and c.endswith("_count")
+            ]
+            if rna_cols:
+                communes_gdf["lien_social_count"] = communes_gdf[rna_cols].sum(
+                    axis=1, min_count=1
+                )
+                logging.info(
+                    f"RNA RAG: Calculated lien_social_count from {len(rna_cols)} categories."
+                )
+            else:
+                communes_gdf["lien_social_count"] = np.nan
 
         # Merge SIAE Structures Count (New F-39)
         communes_gdf = merge_siae_structures(communes_gdf, config, logger)
-
-        # Calculate lien_social_count from RAG categories
-        # 'lien_social_count' is used for inc_asso_core_scaled (Lien Social Density)
-        # Any association with is_inclusion_relevant=True in BQ contributes here.
-        rna_cols = [
-            c
-            for c in communes_gdf.columns
-            if c.startswith("inc_rna_") and c.endswith("_count")
-        ]
-        if rna_cols:
-            communes_gdf["lien_social_count"] = communes_gdf[rna_cols].sum(
-                axis=1, min_count=1
-            )
-            logging.info(
-                f"RNA RAG: Calculated lien_social_count from {len(rna_cols)} categories."
-            )
-        else:
-            communes_gdf["lien_social_count"] = np.nan
 
         # Merge Odace Rent Data
         # The candidate communes artifact carries commune_sk from Odace
@@ -1084,15 +1088,59 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
     """Generates vertical lookup tables."""
     logger.log_step("build_vertical_tables", "STARTED")
     try:
-        # 2. Associations
-        assoc_path = CLEAN_DIR / "associations_vertical.parquet"
-        if assoc_path.exists():
-            df = pd.read_parquet(assoc_path)
-            df = consolidate_plm_vertical(df, "codgeo", ["id_waldec"], "count")
-            df = df[~df["codgeo"].isin(PLM_ARRONDISSEMENTS)].copy()
-            out = OUTPUT_DIR / "odis_associations_agg.parquet"
-            df.to_parquet(out, compression="brotli", index=False)
-            logger.log_step("build_vertical_tables", "ASSOCIATIONS", {"path": str(out)})
+        # 2a. Associations V6 (Data Inclusion themes by grain: commune & bdv)
+        themes_path = CLEAN_DIR / "rna_v6_thematiques_agg.parquet"
+        if themes_path.exists():
+            df_themes = pd.read_parquet(themes_path)
+            commune_df = df_themes[df_themes["grain"] == "commune"].copy()
+            bdv_df = df_themes[df_themes["grain"] == "bdv"].copy()
+            if not commune_df.empty:
+                commune_df = consolidate_plm_vertical(
+                    commune_df, "geo_code", ["thematique_slug"], "count"
+                )
+                commune_df = commune_df[
+                    ~commune_df["geo_code"].isin(PLM_ARRONDISSEMENTS)
+                ].copy()
+                commune_df["grain"] = "commune"
+            df_out_themes = pd.concat(
+                [
+                    commune_df[["grain", "geo_code", "thematique_slug", "count"]],
+                    bdv_df[["grain", "geo_code", "thematique_slug", "count"]],
+                ],
+                ignore_index=True,
+            )
+            df_out_themes["count"] = df_out_themes["count"].astype("int32")
+            out = OUTPUT_DIR / "odis_associations_thematiques_agg.parquet"
+            df_out_themes.to_parquet(out, compression="brotli", index=False)
+            logger.log_step(
+                "build_vertical_tables",
+                "ASSO_THEMATIQUES",
+                {"path": str(out), "rows": len(df_out_themes)},
+            )
+
+        # 2b. Associations V6 (Bassin de Vie leisure/interest canonical tags)
+        tags_bdv_path = CLEAN_DIR / "rna_v6_tags_bdv.parquet"
+        if tags_bdv_path.exists():
+            df_tags_bdv = pd.read_parquet(tags_bdv_path)
+            out = OUTPUT_DIR / "odis_associations_tags_bdv.parquet"
+            df_tags_bdv.to_parquet(out, compression="brotli", index=False)
+            logger.log_step(
+                "build_vertical_tables",
+                "ASSO_TAGS_BDV",
+                {"path": str(out), "rows": len(df_tags_bdv)},
+            )
+
+        # 2c. Associations V6 (Canonical tags referential N >= 50)
+        tags_ref_path = CLEAN_DIR / "rna_v6_tags_ref.parquet"
+        if tags_ref_path.exists():
+            df_tags_ref = pd.read_parquet(tags_ref_path)
+            out = OUTPUT_DIR / "odis_association_tags_ref.parquet"
+            df_tags_ref.to_parquet(out, compression="brotli", index=False)
+            logger.log_step(
+                "build_vertical_tables",
+                "ASSO_TAGS_REF",
+                {"path": str(out), "rows": len(df_tags_ref)},
+            )
 
         # 3. Structures Inclusion (CCAS/CIAS)
         struct_path = CLEAN_DIR / "structures_inclusion.parquet"
@@ -1139,6 +1187,7 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
 
     except Exception as e:
         logger.log_step("build_vertical_tables", "ERROR", {"error": str(e)})
+        raise PipelineRunError("Vertical tables build failed") from e
 
 
 def generate_pois(config: Dict[str, Any], logger: PipelineLogger):
@@ -1689,7 +1738,9 @@ def main(argv=None):
         "communes": ["odis_communes_pre.parquet"],
         "bassins_de_vie": ["odis_bassins_de_vie.parquet"],
         "vertical_tables": [
-            "odis_associations_agg.parquet",
+            "odis_associations_thematiques_agg.parquet",
+            "odis_associations_tags_bdv.parquet",
+            "odis_association_tags_ref.parquet",
             "odis_ccas.parquet",
             "odis_formations_agg.parquet",
             "odis_refugee_associations.parquet",

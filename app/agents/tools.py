@@ -146,12 +146,13 @@ class ReferentielSearchQuery(BaseModel):
         "communes",
         "formation_codes",
         "inclusion_services",
+        "association_tags",
         "waldec_codes",
         "regions",
         "departements",
         "housing_types",
     ] = Field(
-        description="Domaine cible ('rome_codes', 'communes', 'formation_codes', 'inclusion_services', 'waldec_codes', 'regions', 'departements', 'housing_types').",
+        description="Domaine cible ('rome_codes', 'communes', 'formation_codes', 'inclusion_services', 'association_tags', 'regions', 'departements', 'housing_types'; 'waldec_codes' accepté comme alias déprécié).",
     )
 
 

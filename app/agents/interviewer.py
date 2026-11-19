@@ -38,7 +38,7 @@ AUTODETECT_SYSTEM_PROMPT = """
 - Cible: `Zone de recherche (département, région, France)` (domain: 'regions' ou 'departements')
 - Projet Pro: `Métiers ciblés par adulte` (domain: 'rome_codes') et `Formations ciblées` (domain: 'formation_codes')
 - Services d'inclusion: `Services d'inclusion essentiels` ou `Services d'inclusion additionnels` (domain: 'inclusion_services')
-- Associations: `Associations et centres d'intérêt` (domain: 'waldec_codes')
+- Associations: `Loisirs et centres d'intérêt` (domain: 'association_tags')
 
 **Options Disponibles**:
 - Hébergement souhaité: {HEBERGEMENT_OPTIONS}

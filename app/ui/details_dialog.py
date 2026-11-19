@@ -656,9 +656,15 @@ def render_scores_for_category(
                             if b_val_fmt is not None
                             else "Donnée indisponible"
                         )
-                        st.caption(
-                            f"Commune : {c_txt} | Bassin de Vie : {b_txt}{unit_str}"
-                        )
+                        if (
+                            s.valeur_kpi_commune is None
+                            and s.score_normalise_commune is None
+                        ):
+                            st.caption(f"Bassin de Vie : {b_txt}{unit_str}")
+                        else:
+                            st.caption(
+                                f"Commune : {c_txt} | Bassin de Vie : {b_txt}{unit_str}"
+                            )
                     else:
                         st.caption(f"Commune : {c_txt}{unit_str}")
 

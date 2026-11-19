@@ -47,7 +47,7 @@ def test_hydrate_and_collect_use_one_canonical_value_per_composite():
             hebergement_cible=["Chez l'habitant"],
             besoin_sante=["Maternité"],
             inc_services_selection=[CriteriaItem(code="fle", label="Français")],
-            inc_asso_add_selection=[CriteriaItem(code="006030", label="Culture")],
+            inc_asso_add_selection=[CriteriaItem(code="chant choral", label="Chant choral")],
         ),
         app_data=_app_data(),
     )
@@ -64,7 +64,29 @@ def test_hydrate_and_collect_use_one_canonical_value_per_composite():
     assert criteria.besoin_sante == ["Maternité"]
     assert criteria.codes_metiers[0][0].code == "M1805"
     assert criteria.inc_services_selection[0].code == "fle"
-    assert criteria.inc_asso_add_selection[0].code == "006030"
+    assert criteria.inc_asso_add_selection[0].code == "chant choral"
+
+
+def test_filter_legacy_waldec_codes_warns_and_drops(caplog):
+    state = {"org": None}
+    form = FormState(state)
+    form.initialize(cfg.DEMO_DATA_DEFAULT)
+    with caplog.at_level("WARNING"):
+        form.hydrate(
+            {
+                "inc_asso_add_selection": [
+                    {"code": "006030", "label": "Chant"},
+                    {"code": "011075", "label": "Sport"},
+                    {"code": "volley ball", "label": "Volley ball"},
+                    {"code": "asso_sport", "label": "Club sportif"},
+                ]
+            },
+            overwrite=True,
+        )
+
+    assert state["ui_inc_asso_add_selection_raw"] == ["volley ball", "asso_sport"]
+    assert "006030" in caplog.text
+    assert "011075" in caplog.text
 
 
 def test_named_weight_profile_is_derived_without_expert_flag():

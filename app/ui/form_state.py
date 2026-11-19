@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Mapping, MutableMapping
+import logging
+import re
 from typing import Any, Optional
 
 import pandas as pd
@@ -17,6 +19,9 @@ import streamlit as st
 
 import config as cfg
 from core.models import CriteriaItem, SearchAreaLevel, SearchCriterias
+
+logger = logging.getLogger(__name__)
+_LEGACY_WALDEC_CODE_RE = re.compile(r"^\d{6}$")
 
 
 FORM_INITIALIZED_KEY = "_form_state_initialized"
@@ -60,6 +65,33 @@ def _codes(values: Any) -> list[str]:
     if not isinstance(values, list):
         values = [values]
     return [str(_code(value)) for value in values if _code(value) is not None]
+
+
+def _filter_valid_association_tags(values: Any) -> list[str]:
+    """Extract canonical association tags while discarding legacy 6-digit WALDEC codes.
+
+    Args:
+        values: Raw selection items (strings, mappings, or ``CriteriaItem`` instances).
+
+    Returns:
+        Deduplicated list of non-empty canonical tags in insertion order.
+    """
+    tags: list[str] = []
+    seen: set[str] = set()
+    for raw in _codes(values):
+        cleaned = raw.strip()
+        if not cleaned:
+            continue
+        if _LEGACY_WALDEC_CODE_RE.match(cleaned):
+            logger.warning(
+                "Ignoring legacy 6-digit WALDEC code '%s' in inc_asso_add_selection",
+                cleaned,
+            )
+            continue
+        if cleaned not in seen:
+            seen.add(cleaned)
+            tags.append(cleaned)
+    return tags
 
 
 def _label_from_index(index: pd.DataFrame, code: Any) -> str:
@@ -248,7 +280,7 @@ class FormState:
         if "inc_asso_add_selection" in values:
             self._put(
                 "ui_inc_asso_add_selection_raw",
-                _codes(values["inc_asso_add_selection"]),
+                _filter_valid_association_tags(values["inc_asso_add_selection"]),
                 overwrite=overwrite,
             )
 
@@ -490,10 +522,11 @@ class FormState:
                 set(_codes(self.state.get("ui_inc_services_selection_raw", [])))
             )
         ]
-        waldec_index = app_data.get("waldec_index", pd.DataFrame())
         associations = [
-            CriteriaItem(code=code, label=_label_from_index(waldec_index, code))
-            for code in _codes(self.state.get("ui_inc_asso_add_selection_raw", []))
+            CriteriaItem(code=tag, label=tag.capitalize())
+            for tag in _filter_valid_association_tags(
+                self.state.get("ui_inc_asso_add_selection_raw", [])
+            )
         ]
 
         raw_range = self.state.get("ui_target_city_size_range")
