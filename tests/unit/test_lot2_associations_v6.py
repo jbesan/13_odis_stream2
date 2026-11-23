@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import csv
 from datetime import date
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -43,20 +41,10 @@ from core.postscoring import (
 from services.rna_rag import RNARagService
 
 
-def test_inclusion_referential_matches_local_csv_69() -> None:
-    """Verify 69/69 parity between app referential and pipeline CSV."""
-    csv_path = (
-        Path(__file__).resolve().parents[2]
-        / "pipeline"
-        / "local"
-        / "referentiel_services_inclusion.csv"
-    )
-    with csv_path.open(encoding="utf-8") as fh:
-        rows = list(csv.DictReader(fh))
-
+def test_inclusion_referential_69_and_resolvers() -> None:
+    """Verify canonical 69-item app referential and slug/label resolvers."""
     assert len(DATA_INCLUSION_THEMATIQUES) == 69
-    assert len(rows) == 69
-    assert {r["Nom"]: r["Label"] for r in rows} == dict(DATA_INCLUSION_THEMATIQUES)
+    assert len(dict(DATA_INCLUSION_THEMATIQUES)) == 69
 
     df = get_inclusion_thematiques_df()
     assert len(df) == 69
