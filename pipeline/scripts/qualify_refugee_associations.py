@@ -7,7 +7,7 @@ on ``/v1beta/decisions`` with incremental ``(id, text_source_sha256)`` caching).
 
 Usage (from repository root)::
 
-    uv run python pipeline/scripts/qualify_refugee_associations.py \
+    uv run python -m pipeline.scripts.qualify_refugee_associations \
         --bdv 33063 \
         --with-768d-topk 150 \
         --output pipeline/cache/p0_bordeaux_refugee_decisions.parquet
@@ -18,22 +18,30 @@ from __future__ import annotations
 import argparse
 import asyncio
 from datetime import UTC, datetime
-import io
 import logging
 import os
 from pathlib import Path
-import random
-import time
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from dotenv import load_dotenv
-from google import genai
 from google.cloud import bigquery
-from google.genai import types
-import httpx
-import numpy as np
 import polars as pl
 from pydantic import BaseModel, Field
+
+from pipeline.scripts.decisions_common import (
+    DECISIONS_MODEL,
+    DEFAULT_CONSOLIDATED_PARQUET,
+    DEFAULT_EMBEDDINGS_PARQUET,
+    INPUT_COST_USD_PER_1M,
+    REPO_ROOT,
+    build_universe_df,
+    compute_768d_topk_scores_multi,
+    format_association_input,
+    load_jsonl_cache_typed,
+    merge_delta_to_bigquery,
+    resolve_gemini_api_key,
+    run_decisions_batch_generic,
+    upload_parquet_to_bigquery,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -42,21 +50,6 @@ logging.basicConfig(
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_CONSOLIDATED_PARQUET = (
-    REPO_ROOT.parent
-    / "rna_rag"
-    / "data"
-    / "results"
-    / "national_v6_consolidated.parquet"
-)
-DEFAULT_EMBEDDINGS_PARQUET = (
-    REPO_ROOT.parent
-    / "rna_rag"
-    / "data"
-    / "results"
-    / "national_v6_embeddings_768d.parquet"
-)
 DEFAULT_OUTPUT_PARQUET = (
     REPO_ROOT / "pipeline" / "cache" / "refugee_v6_verified.parquet"
 )
@@ -64,22 +57,16 @@ DEFAULT_JSONL_CACHE = (
     REPO_ROOT / "pipeline" / "cache" / "refugee_decisions_cache.jsonl"
 )
 
-DECISIONS_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/decisions"
-DECISIONS_MODEL = "gemini-decision-1"
-EMBEDDING_MODEL = "gemini-embedding-001"
 EMBEDDING_QUERY = (
     "accueil hébergement accompagnement juridique social et intégration en France "
     "des réfugiés demandeurs d'asile et mineurs non accompagnés"
 )
-INPUT_COST_USD_PER_1M = 0.10
 
 REFUGEE_REGEX_PATTERN = (
     r"réfugi|asile|exil|mineurs?\s+(?:non\s+accompagn|isol)|sans[- ]?papier|"
     r"primo[- ]?arriv|\bmna\b|\bresf\b|\bcada\b|migrant|"
     r"dispositif\s+national\s+d.accueil|déplac[eé]e?s?\s+par\s+force"
 )
-
-_NON_EMPLOYER_TRANCHES = ["", "NN", "00", "NONE", "NAN"]
 
 QUESTIONS_SPEC: Dict[str, Any] = {
     "is_refugee_targeted": {
@@ -146,165 +133,6 @@ class RefugeeDecisionRecord(BaseModel):
     model_version: str = DECISIONS_MODEL
 
 
-class AsyncRateLimiter:
-    """Simple async spacing rate limiter enforcing a target RPM ceiling."""
-
-    def __init__(self, rpm: int) -> None:
-        """Initialize the limiter.
-
-        Args:
-            rpm: Maximum requests per minute allowed.
-        """
-        if rpm <= 0:
-            raise ValueError(f"rpm must be positive, got {rpm}")
-        self._min_interval = 60.0 / float(rpm)
-        self._lock = asyncio.Lock()
-        self._next_allowed = 0.0
-
-    async def acquire(self) -> None:
-        """Wait until the next request slot is available."""
-        async with self._lock:
-            now = time.monotonic()
-            if now < self._next_allowed:
-                delay = self._next_allowed - now
-                self._next_allowed += self._min_interval
-            else:
-                delay = 0.0
-                self._next_allowed = now + self._min_interval
-        if delay > 0.0:
-            await asyncio.sleep(delay)
-
-
-def resolve_gemini_api_key() -> str:
-    """Resolve Google AI Studio API key from environment or local ``.env`` files.
-
-    Returns:
-        Non-empty API key string.
-
-    Raises:
-        RuntimeError: If neither ``GEMINI_API_KEY`` nor ``GOOGLE_API_KEY`` is set.
-    """
-    for candidate_env in (
-        REPO_ROOT / "pipeline" / ".env",
-        REPO_ROOT / "app" / ".env",
-        REPO_ROOT / ".env",
-    ):
-        if candidate_env.exists():
-            load_dotenv(candidate_env, override=False)
-
-    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    if not api_key or not api_key.strip():
-        raise RuntimeError(
-            "Missing GEMINI_API_KEY or GOOGLE_API_KEY in environment or app/.env"
-        )
-    return api_key.strip()
-
-
-def format_association_input(row: Dict[str, Any]) -> str:
-    """Build the compact text input sent to ``gemini-decision-1``.
-
-    Args:
-        row: Association dictionary containing V6 text and metadata fields.
-
-    Returns:
-        Formatted multiline description string.
-    """
-    title = str(row.get("title") or "").strip()
-    titre_court = str(row.get("titre_court") or "").strip()
-    waldec = str(row.get("waldec_labels_hierarchical") or "").strip()
-    objet = str(row.get("objet") or "").strip()
-    tags = [str(t).strip() for t in (row.get("llm_tags_recherche") or []) if t]
-    themes = [str(t).strip() for t in (row.get("llm_thematiques") or []) if t]
-
-    lines: List[str] = []
-    if title:
-        lines.append(f"Nom: {title}")
-    if titre_court and titre_court.lower() != title.lower():
-        lines.append(f"Titre court: {titre_court}")
-    if waldec:
-        lines.append(f"WALDEC: {waldec}")
-    if objet:
-        lines.append(f"Objet: {objet}")
-    if tags:
-        lines.append(f"Mots-clés: {', '.join(tags)}")
-    if themes:
-        lines.append(f"Thématiques: {', '.join(themes)}")
-    return "\n".join(lines) if lines else f"Association {row.get('id', '')}"
-
-
-def build_universe_df(
-    consolidated_parquet: Path,
-    bdv_codes: Optional[Sequence[str]] = None,
-) -> pl.DataFrame:
-    """Load the active social non-international association universe deduplicated by ``id``.
-
-    Args:
-        consolidated_parquet: Path to ``national_v6_consolidated.parquet``.
-        bdv_codes: Optional list of Bassin de Vie codes to restrict the scan.
-
-    Returns:
-        Polars DataFrame deduplicated on ``id`` (preferring employed/siège/recent rows).
-
-    Raises:
-        FileNotFoundError: If ``consolidated_parquet`` does not exist.
-    """
-    if not consolidated_parquet.exists():
-        raise FileNotFoundError(
-            f"Consolidated V6 parquet not found: {consolidated_parquet}"
-        )
-
-    lf = pl.scan_parquet(consolidated_parquet).filter(
-        (pl.col("llm_action_sociale") == True)  # noqa: E712
-        & (pl.col("etat_admin").is_null() | (pl.col("etat_admin") != "F"))
-        & (
-            pl.col("llm_perimetre_action").is_null()
-            | (pl.col("llm_perimetre_action") != "international")
-        )
-    )
-    if bdv_codes:
-        norm_bdvs = [str(c).strip() for c in bdv_codes if str(c).strip()]
-        lf = lf.filter(pl.col("bdv_codeinsee").is_in(norm_bdvs))
-
-    cols = [
-        "id",
-        "text_source_sha256",
-        "is_siege",
-        "adrs_codeinsee",
-        "bdv_codeinsee",
-        "title",
-        "titre_court",
-        "objet",
-        "waldec_labels_hierarchical",
-        "tranche_effectifs",
-        "date_decla",
-        "llm_tags_recherche",
-        "llm_thematiques",
-        "llm_publics_cibles",
-    ]
-
-    df = (
-        lf.select(cols)
-        .with_columns(
-            (
-                ~pl.col("tranche_effectifs")
-                .fill_null("")
-                .str.strip_chars()
-                .str.to_uppercase()
-                .is_in(_NON_EMPLOYER_TRANCHES)
-            ).alias("_has_emp")
-        )
-        .sort(
-            ["_has_emp", "is_siege", "date_decla"],
-            descending=[True, True, True],
-            nulls_last=True,
-        )
-        .unique(subset=["id"], keep="first")
-        .drop("_has_emp")
-        .collect()
-    )
-    return df
-
-
 def compute_768d_topk_scores(
     embeddings_parquet: Path,
     universe_ids: Sequence[str],
@@ -321,61 +149,14 @@ def compute_768d_topk_scores(
 
     Returns:
         Tuple of ``(score_by_id, topk_id_set)``.
-
-    Raises:
-        FileNotFoundError: If ``embeddings_parquet`` does not exist.
     """
-    if not embeddings_parquet.exists():
-        raise FileNotFoundError(
-            f"Embeddings 768d parquet not found: {embeddings_parquet}"
-        )
-    if top_k <= 0 or not universe_ids:
-        return {}, set()
-
-    logger.info("Embedding semantic reference query via %s...", EMBEDDING_MODEL)
-    client = genai.Client(api_key=api_key)
-    embed_resp = client.models.embed_content(
-        model=EMBEDDING_MODEL,
-        contents=EMBEDDING_QUERY,
-        config=types.EmbedContentConfig(
-            task_type="RETRIEVAL_QUERY",
-            output_dimensionality=768,
-        ),
-    )
-    q_vec = np.asarray(embed_resp.embeddings[0].values, dtype=np.float32)
-    q_norm = q_vec / max(float(np.linalg.norm(q_vec)), 1e-12)
-
-    id_list = list(dict.fromkeys(universe_ids))
-    emb_df = (
-        pl.scan_parquet(embeddings_parquet)
-        .filter(pl.col("id").is_in(id_list))
-        .select(["id", "embedding_gemini_768"])
-        .collect()
-    )
-    if emb_df.is_empty():
-        logger.warning("No matching IDs found in 768d embeddings parquet.")
-        return {}, set()
-
-    matched_ids = emb_df["id"].to_list()
-    mat = np.asarray(emb_df["embedding_gemini_768"].to_list(), dtype=np.float32)
-    norms = np.linalg.norm(mat, axis=1, keepdims=True)
-    norms = np.maximum(norms, 1e-12)
-    sims = (mat / norms) @ q_norm
-
-    order = np.argsort(-sims)
-    score_by_id = {matched_ids[i]: float(sims[i]) for i in order}
-    topk_ids = {matched_ids[i] for i in order[:top_k]}
-    if len(order) > 0:
-        min_topk_sim = float(sims[order[min(top_k, len(order)) - 1]])
-        max_sim = float(sims[order[0]])
-        logger.info(
-            "768d cosine scoring complete: %d vectors scored, top-%d sim range [%.4f .. %.4f]",
-            len(matched_ids),
-            min(top_k, len(matched_ids)),
-            min_topk_sim,
-            max_sim,
-        )
-    return score_by_id, topk_ids
+    return compute_768d_topk_scores_multi(
+        embeddings_parquet,
+        universe_ids,
+        api_key=api_key,
+        queries={"refugee": EMBEDDING_QUERY},
+        top_k=top_k,
+    )["refugee"]
 
 
 def build_candidate_pool(
@@ -413,7 +194,9 @@ def build_candidate_pool(
         .fill_null(False)
         .alias("in_regex_match"),
         pl.col("id").is_in(list(topk_ids)).alias("in_topk_768d"),
-        pl.col("id").replace_strict(score_by_id, default=None).alias("cosine_768d"),
+        pl.col("id")
+        .replace_strict(score_by_id, default=None, return_dtype=pl.Float64)
+        .alias("cosine_768d"),
     )
     return annotated.filter(
         pl.col("in_exiles_tag") | pl.col("in_regex_match") | pl.col("in_topk_768d")
@@ -429,118 +212,39 @@ def load_jsonl_cache(cache_path: Path) -> Dict[Tuple[str, str], RefugeeDecisionR
     Returns:
         Dictionary mapping ``(id, text_source_sha256)`` to ``RefugeeDecisionRecord``.
     """
-    cache: Dict[Tuple[str, str], RefugeeDecisionRecord] = {}
-    if not cache_path.exists():
-        return cache
-
-    with cache_path.open("r", encoding="utf-8") as fh:
-        for line_no, raw in enumerate(fh, start=1):
-            stripped = raw.strip()
-            if not stripped:
-                continue
-            try:
-                rec = RefugeeDecisionRecord.model_validate_json(stripped)
-            except Exception as exc:
-                logger.error(
-                    "Invalid JSONL cache line %d in %s: %s", line_no, cache_path, exc
-                )
-                raise
-            cache[(rec.id, rec.text_source_sha256)] = rec
-    return cache
+    return load_jsonl_cache_typed(cache_path, RefugeeDecisionRecord)
 
 
-async def evaluate_one_association(
-    client: httpx.AsyncClient,
-    limiter: AsyncRateLimiter,
-    semaphore: asyncio.Semaphore,
-    api_key: str,
-    row: Dict[str, Any],
-    *,
-    max_retries: int = 5,
+def parse_refugee_response(
+    row: Dict[str, Any], body: Dict[str, Any]
 ) -> RefugeeDecisionRecord:
-    """Call ``/v1beta/decisions`` for one association with retry on transient errors.
+    """Convert a ``/v1beta/decisions`` JSON response into ``RefugeeDecisionRecord``.
 
     Args:
-        client: Shared async HTTPX client.
-        limiter: RPM spacing limiter.
-        semaphore: Concurrency semaphore.
-        api_key: Google AI Studio API key.
-        row: Candidate association row dictionary.
-        max_retries: Maximum retry attempts on 429/5xx/network errors.
+        row: Candidate association dictionary.
+        body: Parsed JSON response body.
 
     Returns:
         Validated ``RefugeeDecisionRecord``.
-
-    Raises:
-        RuntimeError: On non-retryable HTTP errors or exhausted retries.
     """
-    asso_id = str(row["id"])
-    sha = str(row.get("text_source_sha256") or "")
-    payload = {
-        "model": DECISIONS_MODEL,
-        "input": format_association_input(row),
-        "questions": QUESTIONS_SPEC,
-    }
-    headers = {
-        "x-goog-api-key": api_key,
-        "Content-Type": "application/json",
-    }
-
-    last_error: Optional[str] = None
-    for attempt in range(max_retries + 1):
-        async with semaphore:
-            await limiter.acquire()
-            try:
-                resp = await client.post(
-                    DECISIONS_ENDPOINT,
-                    headers=headers,
-                    json=payload,
-                    timeout=30.0,
-                )
-            except (httpx.TimeoutException, httpx.TransportError) as exc:
-                last_error = f"Transport error for {asso_id}: {exc}"
-                if attempt == max_retries:
-                    raise RuntimeError(last_error) from exc
-                delay = min(30.0, (2.0**attempt) + random.uniform(0.0, 0.5))
-                logger.warning("%s — retrying in %.1fs", last_error, delay)
-                await asyncio.sleep(delay)
-                continue
-
-        if resp.status_code == 200:
-            body = resp.json()
-            answers = body["answers"]
-            noul_ans = answers["is_refugee_targeted"]
-            role_ans = answers["primary_role"]
-            probs = role_ans["probabilities"]
-            usage = body.get("usage") or {}
-            return RefugeeDecisionRecord(
-                id=asso_id,
-                text_source_sha256=sha,
-                p_noul=float(noul_ans["noul"]),
-                noul_confidence=float(noul_ans["confidence"]),
-                role_choice=str(role_ans["choice"]),
-                role_confidence=float(role_ans["confidence"]),
-                p_accompagnement_accueil=float(probs["accompagnement_accueil"]),
-                p_amicale_culture_culte=float(probs["amicale_culture_culte"]),
-                p_autre=float(probs["autre"]),
-                input_tokens=int(usage.get("total_input_tokens", 0)),
-                evaluated_at=datetime.now(UTC).isoformat(),
-            )
-
-        if resp.status_code in {429, 500, 502, 503, 504}:
-            last_error = f"HTTP {resp.status_code} for {asso_id}: {resp.text[:300]}"
-            if attempt == max_retries:
-                raise RuntimeError(last_error)
-            delay = min(60.0, (2.0**attempt) * 1.5 + random.uniform(0.0, 1.0))
-            logger.warning("%s — retrying in %.1fs", last_error, delay)
-            await asyncio.sleep(delay)
-            continue
-
-        raise RuntimeError(
-            f"Non-retryable HTTP {resp.status_code} for {asso_id}: {resp.text[:500]}"
-        )
-
-    raise RuntimeError(last_error or f"Failed evaluation for {asso_id}")
+    answers = body["answers"]
+    noul_ans = answers["is_refugee_targeted"]
+    role_ans = answers["primary_role"]
+    probs = role_ans["probabilities"]
+    usage = body.get("usage") or {}
+    return RefugeeDecisionRecord(
+        id=str(row["id"]),
+        text_source_sha256=str(row.get("text_source_sha256") or ""),
+        p_noul=float(noul_ans["noul"]),
+        noul_confidence=float(noul_ans["confidence"]),
+        role_choice=str(role_ans["choice"]),
+        role_confidence=float(role_ans["confidence"]),
+        p_accompagnement_accueil=float(probs["accompagnement_accueil"]),
+        p_amicale_culture_culte=float(probs["amicale_culture_culte"]),
+        p_autre=float(probs["autre"]),
+        input_tokens=int(usage.get("total_input_tokens", 0)),
+        evaluated_at=datetime.now(UTC).isoformat(),
+    )
 
 
 async def run_decisions_batch(
@@ -563,35 +267,15 @@ async def run_decisions_batch(
     Returns:
         List of newly evaluated ``RefugeeDecisionRecord`` objects.
     """
-    rows_list = list(pending_rows)
-    if not rows_list:
-        return []
-
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    limiter = AsyncRateLimiter(rpm=rpm)
-    semaphore = asyncio.Semaphore(concurrency)
-    results: List[RefugeeDecisionRecord] = []
-    total = len(rows_list)
-    completed = 0
-
-    async with httpx.AsyncClient() as client:
-        tasks = [
-            asyncio.create_task(
-                evaluate_one_association(client, limiter, semaphore, api_key, row)
-            )
-            for row in rows_list
-        ]
-        with cache_path.open("a", encoding="utf-8") as cache_fh:
-            for coro in asyncio.as_completed(tasks):
-                record = await coro
-                cache_fh.write(record.model_dump_json() + "\n")
-                cache_fh.flush()
-                results.append(record)
-                completed += 1
-                if completed % 50 == 0 or completed == total:
-                    logger.info("Evaluated %d / %d associations", completed, total)
-
-    return results
+    return await run_decisions_batch_generic(
+        pending_rows,
+        api_key=api_key,
+        questions_spec=QUESTIONS_SPEC,
+        parse_response=parse_refugee_response,
+        cache_path=cache_path,
+        rpm=rpm,
+        concurrency=concurrency,
+    )
 
 
 def compute_verified_flag(df: pl.DataFrame) -> pl.DataFrame:
@@ -804,66 +488,6 @@ def fetch_bq_candidate_delta(
     return pl.DataFrame(arrow_tbl)
 
 
-def merge_delta_to_bigquery(
-    client: bigquery.Client,
-    delta_df: pl.DataFrame,
-    *,
-    project_id: str,
-    verified_table: str,
-    location: str = "europe-west1",
-) -> None:
-    """Upsert evaluated delta rows into BigQuery ``verified_table`` via staging ``MERGE``.
-
-    Args:
-        client: Initialized BigQuery client.
-        delta_df: Evaluated Polars DataFrame matching ``verified_table`` schema.
-        project_id: Target GCP project ID.
-        verified_table: Target ``dataset.table`` identifier.
-        location: BigQuery dataset location.
-    """
-    if delta_df.is_empty():
-        return
-
-    target_id = f"{project_id}.{verified_table}"
-    target_table = client.get_table(target_id)
-    target_cols = [field.name for field in target_table.schema]
-    aligned_df = delta_df.select(target_cols)
-
-    staging_id = f"{target_id}_staging_{int(time.time())}"
-    buf = io.BytesIO()
-    aligned_df.write_parquet(buf)
-    buf.seek(0)
-
-    load_cfg = bigquery.LoadJobConfig(
-        schema=target_table.schema,
-        source_format=bigquery.SourceFormat.PARQUET,
-        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
-    )
-    try:
-        load_job = client.load_table_from_file(
-            buf, staging_id, location=location, job_config=load_cfg
-        )
-        load_job.result()
-
-        update_cols = [c for c in target_cols if c != "id"]
-        update_clause = ", ".join(f"T.{c} = S.{c}" for c in update_cols)
-        insert_cols = ", ".join(target_cols)
-        insert_vals = ", ".join(f"S.{c}" for c in target_cols)
-        merge_sql = f"""
-        MERGE `{target_id}` AS T
-        USING `{staging_id}` AS S
-        ON T.id = S.id
-        WHEN MATCHED THEN
-            UPDATE SET {update_clause}
-        WHEN NOT MATCHED THEN
-            INSERT ({insert_cols}) VALUES ({insert_vals})
-        """
-        client.query(merge_sql, location=location).result()
-        logger.info("Merged %d delta rows into %s", aligned_df.height, target_id)
-    finally:
-        client.delete_table(staging_id, not_found_ok=True)
-
-
 def sync_refugee_verified_delta_from_bq(
     *,
     project_id: str,
@@ -955,35 +579,6 @@ def sync_refugee_verified_delta_from_bq(
         location=location,
     )
     return merged_delta.height
-
-
-def upload_parquet_to_bigquery(
-    parquet_path: Path,
-    *,
-    project_id: str,
-    dataset_table: str,
-    location: str = "europe-west1",
-) -> None:
-    """Load the qualified Parquet table into BigQuery (``WRITE_TRUNCATE``).
-
-    Args:
-        parquet_path: Local Parquet file to upload.
-        project_id: Target GCP project ID.
-        dataset_table: BigQuery ``dataset.table`` identifier.
-        location: BigQuery dataset location.
-    """
-    client = bigquery.Client(project=project_id)
-    table_id = f"{project_id}.{dataset_table}"
-    job_config = bigquery.LoadJobConfig(
-        source_format=bigquery.SourceFormat.PARQUET,
-        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
-    )
-    with parquet_path.open("rb") as fh:
-        job = client.load_table_from_file(
-            fh, table_id, location=location, job_config=job_config
-        )
-    job.result()
-    logger.info("Uploaded %s to BigQuery table %s (%s)", parquet_path, table_id, location)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

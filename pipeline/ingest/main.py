@@ -57,6 +57,9 @@ from pipeline.ingest.cleaners.rna_rag import (
     fetch_rna_v6_thematiques_agg,
 )
 from pipeline.ingest.runner import run_clean_step_safely
+from pipeline.scripts.qualify_hebergement_associations import (
+    sync_hebergement_verified_delta_from_bq,
+)
 from pipeline.scripts.qualify_refugee_associations import (
     sync_refugee_verified_delta_from_bq,
 )
@@ -85,6 +88,18 @@ def _needs_rna_v6_refugee_refresh(config: Dict[str, Any]) -> bool:
         if not (_is_cache_fresh(candidate_path, ttl_days) or _is_cache_fresh(shared_path, ttl_days)):
             return True
     return False
+
+
+def _needs_rna_v6_hebergement_refresh(config: Dict[str, Any]) -> bool:
+    """Return True when the RNA V6 hébergement commune cache is missing or expired."""
+    rna_v6_cfg = config.get("sources", {}).get("rna_v6", {})
+    ttl_days = int(rna_v6_cfg.get("ttl_days", 30))
+    candidate_path = context.CLEAN_DIR / "hebergement_rna_cols.parquet"
+    shared_path = context.SHARED_CLEAN_DIR / "rna_v6_hebergement_cols.parquet"
+    return not (
+        _is_cache_fresh(candidate_path, ttl_days)
+        or _is_cache_fresh(shared_path, ttl_days)
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -153,16 +168,18 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     selected_steps = args.steps.split(",") if args.steps else list(steps_map.keys())
 
-    if not args.steps or any(
-        s in selected_steps
-        for s in ["associations", "refugee_associations", "rna", "rna_v6"]
-    ):
-        if "rna_v6" in config.get("sources", {}):
+    if "rna_v6" in config.get("sources", {}):
+        rna_v6_cfg = config["sources"]["rna_v6"]
+        if not args.steps or any(
+            s in selected_steps
+            for s in ["associations", "refugee_associations", "rna", "rna_v6"]
+        ):
             if _needs_rna_v6_refugee_refresh(config):
-                rna_v6_cfg = config["sources"]["rna_v6"]
                 sync_refugee_verified_delta_from_bq(
                     project_id=_data_project(),
-                    v6_table=rna_v6_cfg.get("table", "rna_rag.national_v6_consolidated"),
+                    v6_table=rna_v6_cfg.get(
+                        "table", "rna_rag.national_v6_consolidated"
+                    ),
                     verified_table=rna_v6_cfg.get(
                         "refugee_verified_table", "rna_rag.refugee_v6_verified"
                     ),
@@ -170,8 +187,26 @@ def main(argv: Sequence[str] | None = None) -> None:
             fetch_rna_v6_commune_stats(logger, config)
             fetch_rna_v6_thematiques_agg(logger, config)
             fetch_rna_v6_tags_bdv(logger, config)
-        else:
-            fetch_rna_rag_stats(logger, config)
+
+        if (
+            not args.steps
+            or any(
+                s in selected_steps
+                for s in ["hebergement_rna", "rna", "rna_v6", "associations"]
+            )
+        ) and _needs_rna_v6_hebergement_refresh(config):
+            sync_hebergement_verified_delta_from_bq(
+                project_id=_data_project(),
+                v6_table=rna_v6_cfg.get("table", "rna_rag.national_v6_consolidated"),
+                verified_table=rna_v6_cfg.get(
+                    "hebergement_verified_table", "rna_rag.hebergement_v6_verified"
+                ),
+            )
+    elif not args.steps or any(
+        s in selected_steps
+        for s in ["associations", "refugee_associations", "rna", "rna_v6"]
+    ):
+        fetch_rna_rag_stats(logger, config)
 
     domain_cfg = get_domain_contracts()
     step_to_source_map = domain_cfg.runner.step_to_source_map

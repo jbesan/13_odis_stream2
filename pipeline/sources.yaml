@@ -107,6 +107,7 @@ sources:
     table: "rna_rag.national_v6_consolidated"
     tags_ref_table: "rna_rag.referentiel_tags_canoniques_n50"
     refugee_verified_table: "rna_rag.refugee_v6_verified"
+    hebergement_verified_table: "rna_rag.hebergement_v6_verified"
     format: "parquet"
     local_name: "rna_v6_inclusion_agg.parquet"
     ttl_days: 30

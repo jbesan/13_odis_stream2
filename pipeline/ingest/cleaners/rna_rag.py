@@ -18,6 +18,7 @@ from pipeline.ingest.helpers import (
     _data_project,
     _materialize_rag_cache,
     _rna_rag_table_id,
+    _rna_v6_hebergement_verified_table_id,
     _rna_v6_refugee_verified_table_id,
     _rna_v6_table_id,
     _rna_v6_tags_ref_table_id,
@@ -142,24 +143,105 @@ def compute_rna_rag_counts(
     return df
 
 
+def _query_hebergement_v6_counts(
+    config: Dict[str, Any], ingest_mod: Any
+) -> pd.DataFrame:
+    """Query commune-level IML and citizen-hosting counts from Commun RNA V6.
+
+    Joins active non-international social establishments in ``national_v6_consolidated``
+    with verified housing flags in ``hebergement_v6_verified`` so every active branch
+    (antenne) is counted in its normalized parent commune (PLM mapped to 75056/69123/13055)
+    without cross-arrondissement double counting.
+
+    Args:
+        config: Pipeline configuration dictionary.
+        ingest_mod: ``pipeline.ingest`` module namespace (allows test client patching).
+
+    Returns:
+        DataFrame with ``codgeo``, ``heb_loc_iml_count``, and ``heb_habitant_count``.
+
+    Raises:
+        PipelineRunError: If the BigQuery query returns zero rows.
+    """
+    client = ingest_mod.bigquery.Client(project=_data_project())
+    v6_table = _rna_v6_table_id(config)
+    hebergement_table = _rna_v6_hebergement_verified_table_id(config)
+    sql = f"""
+    WITH verified AS (
+        SELECT
+            id,
+            is_iml_verified,
+            is_hebergement_citoyen_verified
+        FROM `{hebergement_table}`
+        WHERE is_iml_verified = TRUE
+           OR is_hebergement_citoyen_verified = TRUE
+    ),
+    matched_establishments AS (
+        SELECT
+            n.id,
+            n.adrs_codeinsee,
+            v.is_iml_verified,
+            v.is_hebergement_citoyen_verified
+        FROM `{v6_table}` AS n
+        INNER JOIN verified AS v
+            ON n.id = v.id
+        WHERE n.llm_action_sociale = TRUE
+          AND (n.etat_admin IS NULL OR n.etat_admin != 'F')
+          AND (n.llm_perimetre_action IS NULL OR n.llm_perimetre_action != 'international')
+          AND n.adrs_codeinsee IS NOT NULL
+          AND LENGTH(TRIM(n.adrs_codeinsee)) > 0
+    )
+    SELECT
+        {_SQL_NORMALIZE_CODGEO} AS codgeo,
+        COUNT(DISTINCT IF(is_iml_verified = TRUE, id, NULL)) AS heb_loc_iml_count,
+        COUNT(DISTINCT IF(is_hebergement_citoyen_verified = TRUE, id, NULL)) AS heb_habitant_count
+    FROM matched_establishments
+    GROUP BY 1
+    """
+    logging.info("📡 [RNA V6] Fetching multi-antenna hébergement counts from BigQuery...")
+    agg = client.query(sql, location=_BQ_LOCATION).to_dataframe()
+    if agg.empty:
+        raise PipelineRunError("RNA V6 hébergement query returned 0 rows")
+    agg["codgeo"] = agg["codgeo"].astype(str).str.strip().str.zfill(5)
+    agg["heb_loc_iml_count"] = agg["heb_loc_iml_count"].fillna(0).astype("int64")
+    agg["heb_habitant_count"] = agg["heb_habitant_count"].fillna(0).astype("int64")
+    return agg
+
+
 def clean_hebergement_rna(config: Dict[str, Any], logger: PipelineLogger) -> None:
-    """Extracts accommodation-related associations from RNA using RAG (IML & Citoyen)."""
+    """Extract accommodation counts (IML & citizen hosting) from RNA V6 or legacy V5.
+
+    Args:
+        config: Pipeline configuration dictionary.
+        logger: Structured pipeline logger.
+
+    Raises:
+        PipelineRunError: If the BigQuery query fails or returns empty results.
+    """
     import pipeline.ingest as ingest
 
+    use_v6 = "rna_v6" in config.get("sources", {})
     output_agg = context.CLEAN_DIR / "hebergement_rna_cols.parquet"
-    shared_path = context.SHARED_CLEAN_DIR / output_agg.name
-    ttl_days = config["sources"]["rna_rag"]["ttl_days"]
+    shared_name = "rna_v6_hebergement_cols.parquet" if use_v6 else output_agg.name
+    shared_path = context.SHARED_CLEAN_DIR / shared_name
+    ttl_days = (
+        int(config["sources"]["rna_v6"].get("ttl_days", 30))
+        if use_v6
+        else int(config["sources"]["rna_rag"]["ttl_days"])
+    )
+    source_key = "rna_v6_hebergement" if use_v6 else "rna_rag_hebergement"
 
     cache_details = _materialize_rag_cache(
         output_agg,
         shared_path,
         ttl_days,
         logger,
-        "rna_rag_hebergement",
+        source_key,
     )
     if cache_details:
         logging.info(
-            "[RNA RAG] Reusing hebergement cache (%s days old, TTL=%s).",
+            "[%s] Reusing hebergement cache (%s days old, TTL=%s).",
+            "RNA V6" if use_v6 else "RNA RAG",
             cache_details["cache_age_days"],
             ttl_days,
         )
@@ -168,33 +250,32 @@ def clean_hebergement_rna(config: Dict[str, Any], logger: PipelineLogger) -> Non
 
     logger.log_step("clean_hebergement_rna", "STARTED")
 
-    domain_cfg = get_domain_contracts()
-    prompts = domain_cfg.rna_rag.hebergement_prompts
-
     try:
-        # A. IML Counts
-        df_iml = ingest.compute_rna_rag_counts(prompts["iml"], config=config)
-        df_iml = df_iml.rename(columns={"count": "heb_loc_iml_count"})
+        if use_v6:
+            agg = _query_hebergement_v6_counts(config, ingest)
+        else:
+            domain_cfg = get_domain_contracts()
+            prompts = domain_cfg.rna_rag.hebergement_prompts
+            df_iml = ingest.compute_rna_rag_counts(prompts["iml"], config=config)
+            df_iml = df_iml.rename(columns={"count": "heb_loc_iml_count"})
+            df_cit = ingest.compute_rna_rag_counts(prompts["citoyen"], config=config)
+            df_cit = df_cit.rename(columns={"count": "heb_habitant_count"})
+            agg = df_iml.merge(df_cit, on="codgeo", how="outer").fillna(0)
+            agg["codgeo"] = agg["codgeo"].astype(str).str.zfill(5)
 
-        # B. Citoyen Counts
-        df_cit = ingest.compute_rna_rag_counts(prompts["citoyen"], config=config)
-        df_cit = df_cit.rename(columns={"count": "heb_habitant_count"})
-
-        agg = df_iml.merge(df_cit, on="codgeo", how="outer").fillna(0)
-        agg["codgeo"] = agg["codgeo"].astype(str).str.zfill(5)
-
-        agg.to_parquet(output_agg)
+        output_agg.parent.mkdir(parents=True, exist_ok=True)
+        agg.to_parquet(output_agg, index=False)
         _save_rag_cache(output_agg, shared_path)
-        logger.log_source("rna_rag_hebergement", "REFRESHED", output_agg)
+        logger.log_source(source_key, "REFRESHED", output_agg)
         logger.log_step(
             "clean_hebergement_rna",
             "COMPLETED",
             {"path": str(output_agg), "rows": len(agg), "cache_status": "refreshed"},
         )
     except Exception as e:
-        logging.error(f"❌ [RNA RAG] Pivot failed: {e}")
+        logging.error(f"❌ [RNA Hébergement] Pivot failed: {e}")
         logger.log_step("clean_hebergement_rna", "ERROR", {"error": str(e)})
-        raise PipelineRunError(f"RNA RAG hebergement pivot failed: {e}") from e
+        raise PipelineRunError(f"RNA hebergement pivot failed: {e}") from e
 
 
 def _attach_bassin_de_vie(

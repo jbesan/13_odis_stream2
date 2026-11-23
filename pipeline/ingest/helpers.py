@@ -107,6 +107,32 @@ def _rna_v6_refugee_verified_table_id(config: Optional[Dict[str, Any]] = None) -
     return f"{_data_project()}.{table}"
 
 
+def _rna_v6_hebergement_verified_table_id(
+    config: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Resolve the qualified housing associations BigQuery table ID from config.
+
+    Args:
+        config: Optional pipeline configuration dictionary.
+
+    Returns:
+        Fully-qualified BigQuery table ID ``project.dataset.table``.
+
+    Raises:
+        ValueError: If ``sources.rna_v6.hebergement_verified_table`` is not in ``dataset.table`` format.
+    """
+    source_config = (config or {}).get("sources", {}).get("rna_v6", {})
+    table = source_config.get(
+        "hebergement_verified_table", "rna_rag.hebergement_v6_verified"
+    )
+    if not isinstance(table, str) or table.count(".") != 1:
+        raise ValueError(
+            "sources.rna_v6.hebergement_verified_table must use the dataset.table form "
+            "(for example rna_rag.hebergement_v6_verified)"
+        )
+    return f"{_data_project()}.{table}"
+
+
 def _materialize_rag_cache(
     candidate_path: Path,
     shared_path: Path,

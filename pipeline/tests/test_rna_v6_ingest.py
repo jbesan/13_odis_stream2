@@ -11,9 +11,11 @@ import pytest
 
 from pipeline.common import PipelineLogger
 from pipeline.ingest import (
+    _rna_v6_hebergement_verified_table_id,
     _rna_v6_refugee_verified_table_id,
     _rna_v6_table_id,
     _rna_v6_tags_ref_table_id,
+    clean_hebergement_rna,
     clean_refugee_associations,
     fetch_rna_v6_commune_stats,
     fetch_rna_v6_tags_bdv,
@@ -34,6 +36,7 @@ def _v6_config():
                 "table": "rna_rag.national_v6_consolidated",
                 "tags_ref_table": "rna_rag.referentiel_tags_canoniques_n50",
                 "refugee_verified_table": "rna_rag.refugee_v6_verified",
+                "hebergement_verified_table": "rna_rag.hebergement_v6_verified",
                 "ttl_days": 30,
             },
             "bassins_de_vie": {},
@@ -53,6 +56,10 @@ def test_rna_v6_table_resolvers_validate_format(monkeypatch):
         _rna_v6_refugee_verified_table_id(cfg)
         == "odis-test-proj.rna_rag.refugee_v6_verified"
     )
+    assert (
+        _rna_v6_hebergement_verified_table_id(cfg)
+        == "odis-test-proj.rna_rag.hebergement_v6_verified"
+    )
 
     bad_cfg = {
         "sources": {
@@ -60,6 +67,7 @@ def test_rna_v6_table_resolvers_validate_format(monkeypatch):
                 "table": "bad_table",
                 "tags_ref_table": "a.b.c",
                 "refugee_verified_table": "invalid",
+                "hebergement_verified_table": "invalid_heb",
             }
         }
     }
@@ -69,6 +77,8 @@ def test_rna_v6_table_resolvers_validate_format(monkeypatch):
         _rna_v6_tags_ref_table_id(bad_cfg)
     with pytest.raises(ValueError, match="sources.rna_v6.refugee_verified_table"):
         _rna_v6_refugee_verified_table_id(bad_cfg)
+    with pytest.raises(ValueError, match="sources.rna_v6.hebergement_verified_table"):
+        _rna_v6_hebergement_verified_table_id(bad_cfg)
 
 
 def test_inclusion_referential_csv_covers_all_69_themes():
@@ -388,3 +398,191 @@ def test_sync_refugee_verified_delta_from_bq_evaluates_and_merges(tmp_path, monk
     mock_merge.assert_called_once()
     merged_arg = mock_merge.call_args.args[1]
     assert merged_arg["is_refugee_verified"].to_list() == [True]
+
+
+def test_clean_hebergement_rna_v6_queries_multi_antenna_and_caches(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("ODIS_DATA_PROJECT", "odis-test-proj")
+    shared_dir = tmp_path / "shared"
+    candidate_dir = tmp_path / "candidate"
+    # Pre-existing legacy V5 cache must NOT shadow V6 rna_v6_hebergement_cols.parquet
+    shared_dir.mkdir(parents=True)
+    pd.DataFrame(
+        {"codgeo": ["75115"], "heb_loc_iml_count": [99], "heb_habitant_count": [99]}
+    ).to_parquet(shared_dir / "hebergement_rna_cols.parquet", index=False)
+
+    fake_client = MagicMock()
+    fake_client.query.return_value.to_dataframe.return_value = pd.DataFrame(
+        {
+            "codgeo": ["75056", "33063"],
+            "heb_loc_iml_count": [14, 6],
+            "heb_habitant_count": [5, 3],
+        }
+    )
+
+    with (
+        patch("pipeline.ingest.SHARED_CLEAN_DIR", shared_dir),
+        patch("pipeline.ingest.CLEAN_DIR", candidate_dir),
+        patch("pipeline.ingest.bigquery.Client", return_value=fake_client),
+    ):
+        logger = PipelineLogger(tmp_path / "run.json")
+        clean_hebergement_rna(_v6_config(), logger)
+
+    assert fake_client.query.call_count == 1
+    sql = fake_client.query.call_args.args[0]
+    assert "odis-test-proj.rna_rag.national_v6_consolidated" in sql
+    assert "odis-test-proj.rna_rag.hebergement_v6_verified" in sql
+    assert "INNER JOIN verified" in sql
+    assert "is_iml_verified = TRUE" in sql
+    assert "is_hebergement_citoyen_verified = TRUE" in sql
+    assert "75056" in sql
+    assert fake_client.query.call_args.kwargs["location"] == "europe-west1"
+
+    out_df = pd.read_parquet(candidate_dir / "hebergement_rna_cols.parquet")
+    assert list(out_df.columns) == [
+        "codgeo",
+        "heb_loc_iml_count",
+        "heb_habitant_count",
+    ]
+    assert out_df["heb_loc_iml_count"].tolist() == [14, 6]
+    assert out_df["heb_habitant_count"].tolist() == [5, 3]
+    assert (shared_dir / "rna_v6_hebergement_cols.parquet").exists()
+    status = json.loads((tmp_path / "run.json").read_text(encoding="utf-8"))
+    assert "rna_v6_hebergement" in status["sources"]
+
+
+def test_clean_hebergement_rna_v6_fails_closed_on_empty_result(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("ODIS_DATA_PROJECT", "odis-test-proj")
+    fake_client = MagicMock()
+    fake_client.query.return_value.to_dataframe.return_value = pd.DataFrame(
+        columns=["codgeo", "heb_loc_iml_count", "heb_habitant_count"]
+    )
+
+    with (
+        patch("pipeline.ingest.SHARED_CLEAN_DIR", tmp_path / "shared"),
+        patch("pipeline.ingest.CLEAN_DIR", tmp_path / "candidate"),
+        patch("pipeline.ingest.bigquery.Client", return_value=fake_client),
+        pytest.raises(PipelineRunError, match="RNA V6 hébergement query returned 0 rows"),
+    ):
+        clean_hebergement_rna(_v6_config(), PipelineLogger(tmp_path / "fail.json"))
+
+
+def test_needs_rna_v6_hebergement_refresh_respects_ttl(tmp_path):
+    from pipeline.ingest import context
+    from pipeline.ingest.main import _needs_rna_v6_hebergement_refresh
+
+    shared_dir = tmp_path / "shared"
+    clean_dir = tmp_path / "clean"
+    shared_dir.mkdir()
+    clean_dir.mkdir()
+    cfg = _v6_config()
+
+    with (
+        patch.object(context, "SHARED_CLEAN_DIR", shared_dir),
+        patch.object(context, "CLEAN_DIR", clean_dir),
+    ):
+        assert _needs_rna_v6_hebergement_refresh(cfg) is True
+
+        # Legacy hebergement_rna_cols.parquet in shared_dir must NOT satisfy V6 refresh
+        (shared_dir / "hebergement_rna_cols.parquet").write_bytes(b"legacy")
+        assert _needs_rna_v6_hebergement_refresh(cfg) is True
+
+        (shared_dir / "rna_v6_hebergement_cols.parquet").write_bytes(b"v6ok")
+        assert _needs_rna_v6_hebergement_refresh(cfg) is False
+
+
+def test_sync_hebergement_verified_delta_from_bq_noop_when_empty(monkeypatch):
+    import polars as pl
+    from pipeline.scripts import qualify_hebergement_associations as qh
+
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+    empty_df = pl.DataFrame(schema={"id": pl.String, "text_source_sha256": pl.String})
+    with (
+        patch.object(qh.bigquery, "Client") as mock_bq_cls,
+        patch.object(qh, "fetch_bq_candidate_delta", return_value=empty_df) as mock_fetch,
+        patch.object(qh, "run_decisions_batch_generic") as mock_batch,
+        patch.object(qh, "merge_delta_to_bigquery") as mock_merge,
+    ):
+        count = qh.sync_hebergement_verified_delta_from_bq(project_id="odis-test-proj")
+
+    assert count == 0
+    mock_bq_cls.assert_called_once_with(project="odis-test-proj")
+    mock_fetch.assert_called_once()
+    mock_batch.assert_not_called()
+    mock_merge.assert_not_called()
+
+
+def test_sync_hebergement_verified_delta_from_bq_evaluates_and_merges_075(
+    tmp_path, monkeypatch
+):
+    import polars as pl
+    from pipeline.scripts import qualify_hebergement_associations as qh
+
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    delta_df = pl.DataFrame(
+        {
+            "id": ["W332999998"],
+            "text_source_sha256": ["def456"],
+            "is_siege": [True],
+            "adrs_codeinsee": ["33063"],
+            "bdv_codeinsee": ["33063"],
+            "title": ["ASSO TEST HEB"],
+            "titre_court": [""],
+            "objet": ["Intermédiation locative et sous-location solidaire"],
+            "waldec_labels_hierarchical": ["LOGEMENT"],
+            "tranche_effectifs": ["01"],
+            "date_decla": ["2026-11-01"],
+            "llm_tags_recherche": [["sous-location"]],
+            "llm_thematiques": [["Louer un logement"]],
+            "llm_publics_cibles": [["Familles"]],
+            "llm_est_urgence": [False],
+            "in_iml_regex": [True],
+            "in_cit_regex": [False],
+            "in_heb_theme": [True],
+            "in_heb_temp_theme": [False],
+            "in_topk_768d_iml": [False],
+            "in_topk_768d_cit": [False],
+            "cosine_768d_iml": [None],
+            "cosine_768d_cit": [None],
+        }
+    )
+    fake_rec = qh.HebergementDecisionRecord(
+        id="W332999998",
+        text_source_sha256="def456",
+        p_iml=0.73,  # below 0.75 calibrated threshold
+        iml_confidence=0.80,
+        p_hebergement_citoyen=0.86,  # above 0.75 calibrated threshold
+        citoyen_confidence=0.90,
+        p_habitat_partage_pension=0.20,
+        habitat_partage_confidence=0.85,
+        p_hebergement_collectif_urgent=0.10,
+        collectif_urgent_confidence=0.95,
+        input_tokens=500,
+        evaluated_at="2026-11-23T17:00:00+00:00",
+    )
+
+    async def fake_run_batch(*args, **kwargs):
+        return [fake_rec]
+
+    with (
+        patch.object(qh.bigquery, "Client"),
+        patch.object(qh, "fetch_bq_candidate_delta", return_value=delta_df),
+        patch.object(qh, "run_decisions_batch_generic", side_effect=fake_run_batch),
+        patch.object(qh, "merge_delta_to_bigquery") as mock_merge,
+    ):
+        count = qh.sync_hebergement_verified_delta_from_bq(
+            project_id="odis-test-proj",
+            jsonl_cache=tmp_path / "heb_cache.jsonl",
+        )
+
+    assert count == 1
+    mock_merge.assert_called_once()
+    merged_arg = mock_merge.call_args.args[1]
+    assert merged_arg["is_iml_verified"].to_list() == [False]
+    assert merged_arg["is_hebergement_citoyen_verified"].to_list() == [True]
+    assert merged_arg["is_hebergement_any_verified"].to_list() == [True]
