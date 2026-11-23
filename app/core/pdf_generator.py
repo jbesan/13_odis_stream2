@@ -959,7 +959,8 @@ def _render_commune_sheet(
     pdf.set_text_color(*COLOR_DARK_SLATE)
     refugee_assos = inc.asso_refugee_list if inc else []
     if refugee_assos:
-        for asso in refugee_assos:
+        displayed_refugees = refugee_assos[:10]
+        for asso in displayed_refugees:
             name = (asso.name or "Inconnu").strip()
             loc = (
                 " [Sur place]"
@@ -973,6 +974,16 @@ def _render_commune_sheet(
                 else (f" : {desc}" if desc else "")
             )
             pdf.multi_cell(pdf.epw, 3.8, f"  • {name}{loc}{desc_str}")
+        if len(refugee_assos) > len(displayed_refugees):
+            pdf.set_font("DejaVu", "I", 7)
+            pdf.cell(
+                pdf.epw,
+                3.8,
+                f"  ... et {len(refugee_assos) - len(displayed_refugees)} autres structures référencées sur le bassin de vie.",
+                new_x=XPos.LMARGIN,
+                new_y=YPos.NEXT,
+            )
+            pdf.set_font("DejaVu", "", 7.5)
     else:
         pdf.cell(
             pdf.epw,

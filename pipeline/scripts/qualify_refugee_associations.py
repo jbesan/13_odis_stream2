@@ -27,6 +27,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from dotenv import load_dotenv
 from google import genai
+from google.cloud import bigquery
 from google.genai import types
 import httpx
 import numpy as np
@@ -679,7 +680,53 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Build candidate pool and print diagnostics without calling Decisions API.",
     )
+    parser.add_argument(
+        "--upload-bq",
+        action="store_true",
+        help="Upload output Parquet to BigQuery (rna_rag.refugee_v6_verified).",
+    )
+    parser.add_argument(
+        "--bq-project",
+        default=os.getenv("ODIS_DATA_PROJECT")
+        or os.getenv("GOOGLE_CLOUD_PROJECT")
+        or "odis-stream2-app",
+        help="Target GCP project ID when --upload-bq is enabled.",
+    )
+    parser.add_argument(
+        "--bq-table",
+        default="rna_rag.refugee_v6_verified",
+        help="Target BigQuery dataset.table when --upload-bq is enabled.",
+    )
     return parser.parse_args(argv)
+
+
+def upload_parquet_to_bigquery(
+    parquet_path: Path,
+    *,
+    project_id: str,
+    dataset_table: str,
+    location: str = "europe-west1",
+) -> None:
+    """Load the qualified Parquet table into BigQuery (``WRITE_TRUNCATE``).
+
+    Args:
+        parquet_path: Local Parquet file to upload.
+        project_id: Target GCP project ID.
+        dataset_table: BigQuery ``dataset.table`` identifier.
+        location: BigQuery dataset location.
+    """
+    client = bigquery.Client(project=project_id)
+    table_id = f"{project_id}.{dataset_table}"
+    job_config = bigquery.LoadJobConfig(
+        source_format=bigquery.SourceFormat.PARQUET,
+        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+    )
+    with parquet_path.open("rb") as fh:
+        job = client.load_table_from_file(
+            fh, table_id, location=location, job_config=job_config
+        )
+    job.result()
+    logger.info("Uploaded %s to BigQuery table %s (%s)", parquet_path, table_id, location)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -801,6 +848,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         total_tokens,
         est_cost_new,
     )
+    if args.upload_bq:
+        upload_parquet_to_bigquery(
+            args.output,
+            project_id=args.bq_project,
+            dataset_table=args.bq_table,
+        )
     return 0
 
 

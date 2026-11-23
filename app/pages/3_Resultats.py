@@ -526,8 +526,11 @@ if st.session_state.get("processed_gdf") is not None:
                 )
 
             st.subheader("Meilleures Propositions")
-            if not is_highlighted:
-                st.caption("👇 Cliquez sur une ville pour afficher les détails.", text_alignment="center", width="stretch")
+            st.caption(
+                "👇 Cliquez sur une ville pour afficher les détails.",
+                text_alignment="center",
+                width="stretch",
+            )
             # A. Ville Souhaitée (if present)
             if search_results.commune_pressentie:
                 st.markdown(

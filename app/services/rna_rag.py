@@ -542,7 +542,7 @@ class RNARagService:
                         id,
                         entity_id,
                         is_siege,
-                        COALESCE(NULLIF(TRIM(titre_court), ''), NULLIF(TRIM(title), ''), 'Inconnu') AS name,
+                        COALESCE(NULLIF(TRIM(title), ''), NULLIF(TRIM(titre_court), ''), 'Inconnu') AS name,
                         NULLIF(TRIM(nom_etablissement), '') AS nom_etablissement,
                         COALESCE(TRIM(objet), '') AS description,
                         COALESCE(NULLIF(TRIM(waldec_labels_hierarchical), ''), COALESCE(TRIM(objet_social1), '')) AS waldec_label,
@@ -794,7 +794,7 @@ class RNARagService:
                 SELECT
                     id,
                     is_siege,
-                    COALESCE(NULLIF(TRIM(titre_court), ''), NULLIF(TRIM(title), ''), 'Inconnu') AS name,
+                    COALESCE(NULLIF(TRIM(title), ''), NULLIF(TRIM(titre_court), ''), 'Inconnu') AS name,
                     NULLIF(TRIM(nom_etablissement), '') AS nom_etablissement,
                     COALESCE(TRIM(objet), '') AS description,
                     COALESCE(TRIM(objet_social1), '') AS waldec_label,

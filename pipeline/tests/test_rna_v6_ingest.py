@@ -11,6 +11,7 @@ import pytest
 
 from pipeline.common import PipelineLogger
 from pipeline.ingest import (
+    _rna_v6_refugee_verified_table_id,
     _rna_v6_table_id,
     _rna_v6_tags_ref_table_id,
     clean_refugee_associations,
@@ -32,6 +33,7 @@ def _v6_config():
             "rna_v6": {
                 "table": "rna_rag.national_v6_consolidated",
                 "tags_ref_table": "rna_rag.referentiel_tags_canoniques_n50",
+                "refugee_verified_table": "rna_rag.refugee_v6_verified",
                 "ttl_days": 30,
             },
             "bassins_de_vie": {},
@@ -47,12 +49,26 @@ def test_rna_v6_table_resolvers_validate_format(monkeypatch):
         _rna_v6_tags_ref_table_id(cfg)
         == "odis-test-proj.rna_rag.referentiel_tags_canoniques_n50"
     )
+    assert (
+        _rna_v6_refugee_verified_table_id(cfg)
+        == "odis-test-proj.rna_rag.refugee_v6_verified"
+    )
 
-    bad_cfg = {"sources": {"rna_v6": {"table": "bad_table", "tags_ref_table": "a.b.c"}}}
+    bad_cfg = {
+        "sources": {
+            "rna_v6": {
+                "table": "bad_table",
+                "tags_ref_table": "a.b.c",
+                "refugee_verified_table": "invalid",
+            }
+        }
+    }
     with pytest.raises(ValueError, match="sources.rna_v6.table"):
         _rna_v6_table_id(bad_cfg)
     with pytest.raises(ValueError, match="sources.rna_v6.tags_ref_table"):
         _rna_v6_tags_ref_table_id(bad_cfg)
+    with pytest.raises(ValueError, match="sources.rna_v6.refugee_verified_table"):
+        _rna_v6_refugee_verified_table_id(bad_cfg)
 
 
 def test_inclusion_referential_csv_covers_all_69_themes():
@@ -92,6 +108,8 @@ def test_fetch_rna_v6_commune_stats_queries_and_caches(tmp_path, monkeypatch):
     assert "COUNT(DISTINCT id)" in sql
     assert "llm_action_sociale = TRUE" in sql
     assert "llm_perimetre_action != 'international'" in sql
+    assert "odis-test-proj.rna_rag.refugee_v6_verified" in sql
+    assert "is_refugee_verified = TRUE" in sql
     assert "75056" in sql
     assert fake_client.query.call_args.kwargs["location"] == "europe-west1"
 
@@ -238,6 +256,10 @@ def test_clean_refugee_associations_v6_ignores_legacy_shared_cache(
             "name": ["Accueil Réfugiés Gironde"],
             "description": ["Accompagnement des personnes exilées"],
             "waldec_code": ["019025"],
+            "nom_etablissement": ["Antenne Bordeaux"],
+            "commune_nom": ["Bordeaux"],
+            "tranche_effectifs": ["12"],
+            "date_decla": ["2026-05-01"],
         }
     )
 
@@ -249,9 +271,15 @@ def test_clean_refugee_associations_v6_ignores_legacy_shared_cache(
         clean_refugee_associations(_v6_config(), PipelineLogger(tmp_path / "run.json"))
 
     assert fake_client.query.call_count == 1
+    sql = fake_client.query.call_args.args[0]
+    assert "odis-test-proj.rna_rag.refugee_v6_verified" in sql
+    assert "is_refugee_verified = TRUE" in sql
+    assert "QUALIFY ROW_NUMBER()" in sql
     assert (shared_dir / "rna_v6_refugee_associations.parquet").exists()
     out_df = pd.read_parquet(candidate_dir / "refugee_associations.parquet")
     assert out_df["id"].tolist() == ["W332000111"]
     assert out_df["bassin_de_vie"].tolist() == ["33063"]
+    assert out_df["tranche_effectifs"].tolist() == ["12"]
+    assert out_df["date_decla"].tolist() == ["2026-05-01"]
     status = json.loads((tmp_path / "run.json").read_text(encoding="utf-8"))
     assert "rna_v6_refugee" in status["sources"]

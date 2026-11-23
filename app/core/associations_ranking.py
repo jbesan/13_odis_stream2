@@ -30,12 +30,23 @@ def _clean_text(value: Any) -> str:
     return text
 
 
-def _format_display_name(raw_name: Any, fallback: str = "Inconnu") -> str:
+_ASSOCIATION_NAME_MAX_LEN = 80
+
+
+def _format_display_name(
+    raw_name: Any,
+    fallback: str = "Inconnu",
+    *,
+    max_len: Optional[int] = None,
+) -> str:
     """Format association/commune names from ALL-CAPS RNA strings cleanly."""
     cleaned = _clean_text(raw_name)
     if not cleaned:
         return fallback
-    return string.capwords(cleaned.lower())
+    formatted = string.capwords(cleaned.lower())
+    if max_len is not None and len(formatted) > max_len:
+        return formatted[: max_len - 3].rstrip() + "..."
+    return formatted
 
 
 def _truncate_description(raw_desc: Any, max_len: int = 250) -> str:
@@ -217,10 +228,16 @@ def _row_to_association_detail(
     *,
     target_codgeo: str,
     matched_tags: Optional[List[str]] = None,
+    commune_names: Optional[Mapping[str, str]] = None,
     reference_date: Optional[date] = None,
+    refugee_focused: bool = False,
 ) -> AssociationDetail:
     """Project a V6 candidate dictionary into an enriched ``AssociationDetail``."""
-    name = _format_display_name(row.get("name"), fallback="Inconnu")
+    name = _format_display_name(
+        row.get("name"),
+        fallback="Inconnu",
+        max_len=_ASSOCIATION_NAME_MAX_LEN,
+    )
     raw_etab = _clean_text(row.get("nom_etablissement"))
     etab_name: Optional[str] = None
     if raw_etab and raw_etab.lower() != _clean_text(row.get("name")).lower():
@@ -228,19 +245,29 @@ def _row_to_association_detail(
 
     codgeo = _clean_text(row.get("codgeo")).zfill(5) or None
     raw_commune = _clean_text(row.get("commune_nom"))
-    commune_nom = _format_display_name(raw_commune) if raw_commune else None
+    if raw_commune:
+        commune_nom: Optional[str] = _format_display_name(raw_commune)
+    elif commune_names and codgeo and codgeo in commune_names:
+        commune_nom = commune_names[codgeo]
+    else:
+        commune_nom = None
     is_same_commune = codgeo == str(target_codgeo).strip().zfill(5) if codgeo else None
     parsed_date = parse_clamped_decla_date(
         row.get("date_decla"), reference_date=reference_date
     )
     raw_tranche = _clean_text(row.get("tranche_effectifs")) or None
+    waldec_label = (
+        _clean_text(row.get("waldec_label"))
+        or _clean_text(row.get("waldec_code"))
+        or "Action Sociale"
+    )
 
     return AssociationDetail(
         id=_clean_text(row.get("id")),
         name=name,
         nom_etablissement=etab_name,
         description=_truncate_description(row.get("description")),
-        waldec_label=_clean_text(row.get("waldec_label")) or "Action Sociale",
+        waldec_label=waldec_label,
         codgeo=codgeo,
         commune_nom=commune_nom,
         is_same_commune=is_same_commune,
@@ -248,7 +275,7 @@ def _row_to_association_detail(
         has_employees=has_active_employees(raw_tranche),
         tranche_effectifs=raw_tranche,
         matched_tags=list(matched_tags or []),
-        refugee_focused=False,
+        refugee_focused=refugee_focused,
     )
 
 
@@ -398,18 +425,25 @@ def build_refugee_associations_for_bdv(
     target_codgeo: str,
     target_bdv: str,
     commune_names: Optional[Mapping[str, str]] = None,
+    reference_date: Optional[date] = None,
 ) -> List[AssociationDetail]:
-    """Filter local RAM ``refugee_associations_data`` on BDV, commune-first, with NO cutoff.
+    """Filter local RAM ``refugee_associations_data`` on BDV and rank ``40 + 35 + 30``.
+
+    Returns the full deduplicated list (no hard truncation) so UI/snapshots retain
+    all qualified BDV associations and can toggle between Top 10 and full view.
+    Gracefully falls back when a legacy 6-column parquet lacks ``tranche_effectifs``
+    or ``date_decla``.
 
     Args:
         refugee_df: Loaded ``odis_refugee_associations.parquet`` DataFrame.
         target_codgeo: Target commune 5-digit INSEE code.
         target_bdv: Bassin de Vie code of ``target_codgeo``.
         commune_names: Optional lookup mapping ``codgeo -> commune_nom``.
+        reference_date: Reference date for declaration freshness scoring.
 
     Returns:
         Full deduplicated list of refugee-support associations across the BDV,
-        sorted by target commune first then alphabetically.
+        sorted by unified ``40 + 35 + 30`` score descending.
     """
     if refugee_df is None or not isinstance(refugee_df, pd.DataFrame) or refugee_df.empty:
         return []
@@ -433,37 +467,23 @@ def build_refugee_associations_for_bdv(
         return []
 
     target_norm = str(target_codgeo).strip().zfill(5)
-    seen: set[Tuple[str, str]] = set()
-    items: List[Tuple[bool, str, str, AssociationDetail]] = []
-
-    for row in sub.to_dict("records"):
-        asso_id = _clean_text(row.get("id"))
-        row_codgeo = _clean_text(row.get("codgeo")).zfill(5)
-        if not asso_id:
-            continue
-        dedup_key = (asso_id, row_codgeo)
-        if dedup_key in seen:
-            continue
-        seen.add(dedup_key)
-
-        is_same = row_codgeo == target_norm
-        name = _format_display_name(row.get("name"), fallback="Inconnu")
-        commune_label = (
-            commune_names.get(row_codgeo)
-            if commune_names and row_codgeo in commune_names
-            else None
-        )
-        detail = AssociationDetail(
-            id=asso_id,
-            name=name,
-            description=_truncate_description(row.get("description")),
-            waldec_label=_clean_text(row.get("waldec_code")) or "Action Sociale",
-            codgeo=row_codgeo or None,
-            commune_nom=commune_label,
-            is_same_commune=is_same,
+    deduped = _dedupe_by_id_and_commune(
+        sub.to_dict("records"),
+        reference_date=reference_date,
+    )
+    ranked = _rank_deduped_pairs(
+        deduped,
+        target_codgeo=target_norm,
+        reference_date=reference_date,
+    )
+    return [
+        _row_to_association_detail(
+            row,
+            target_codgeo=target_norm,
+            matched_tags=tags,
+            commune_names=commune_names,
+            reference_date=reference_date,
             refugee_focused=True,
         )
-        items.append((not is_same, name.lower(), asso_id, detail))
-
-    items.sort(key=lambda t: (t[0], t[1], t[2]))
-    return [t[3] for t in items]
+        for row, tags in ranked
+    ]

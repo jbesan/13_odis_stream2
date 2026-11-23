@@ -199,6 +199,52 @@ def _hydrate_inclusion_from_bg_store(commune: CommuneResult, h: Optional[str]) -
     return updated
 
 
+_REFUGEE_DEFAULT_DISPLAY_LIMIT = 10
+
+
+def _toggle_refugee_show_all(state_key: str) -> None:
+    """Toggle full-list display state for BDV refugee associations."""
+    st.session_state[state_key] = not bool(st.session_state.get(state_key, False))
+
+
+def _render_refugee_associations_expander(
+    refugee_list: List[AssociationDetail],
+    *,
+    cod_key: str,
+    label_prefix: str = "Structures référencées",
+    default_limit: int = _REFUGEE_DEFAULT_DISPLAY_LIMIT,
+) -> None:
+    """Render Top-10 refugee associations by default with an on-demand expand button."""
+    total = len(refugee_list)
+    state_key = f"odis_show_all_refugee_{cod_key}"
+    show_all = bool(st.session_state.get(state_key, False))
+    visible = (
+        refugee_list
+        if show_all or total <= default_limit
+        else refugee_list[:default_limit]
+    )
+    if total > len(visible):
+        header = f"{label_prefix} ({len(visible)} affichées sur {total} dans le BDV)"
+    else:
+        header = f"{label_prefix} ({total})"
+
+    with st.expander(header, expanded=show_all):
+        for asso in visible:
+            _render_association_entry(asso)
+        if total > default_limit:
+            btn_label = (
+                f"Réduire à {default_limit} associations"
+                if show_all
+                else f"Afficher toutes les associations ({total})"
+            )
+            st.button(
+                btn_label,
+                key=f"{state_key}_btn",
+                on_click=_toggle_refugee_show_all,
+                args=(state_key,),
+            )
+
+
 def _render_association_entry(
     asso: AssociationDetail, *, show_matched_tags: bool = False
 ) -> None:
@@ -382,15 +428,14 @@ def render_inclusion_guichet_unique(commune: CommuneResult, h: Optional[str]) ->
             "Aucun service ni association thématique identifié pour les besoins sélectionnés."
         )
 
-    # 2. Associations — Intégration des réfugiés (Bassin de Vie, sans cutoff)
+    # 2. Associations — Intégration des réfugiés (Bassin de Vie, Top 10 par défaut + bouton)
     st.markdown("##### Intégration des réfugiés (Bassin de Vie)")
     if inc_data.asso_refugee_list:
-        with st.expander(
-            f"Structures référencées ({len(inc_data.asso_refugee_list)})",
-            expanded=False,
-        ):
-            for asso in inc_data.asso_refugee_list:
-                _render_association_entry(asso)
+        _render_refugee_associations_expander(
+            inc_data.asso_refugee_list,
+            cod_key=f"{commune.codgeo}_v6",
+            label_prefix="Structures référencées",
+        )
     elif h and asso_status in {None, EnrichmentStatus.PENDING.value} and not is_snapshot:
         st.caption("Chargement des associations réfugiés…")
     else:
@@ -438,12 +483,11 @@ def render_associations_enrichment(commune: CommuneResult, h: Optional[str]):
     )
     if total_assos > 0:
         if inc_data.asso_refugee_list:
-            with st.expander(
-                f"**Intégration des réfugiés & migrants** ({len(inc_data.asso_refugee_list)})",
-                expanded=False,
-            ):
-                for asso in inc_data.asso_refugee_list:
-                    _render_association_entry(asso)
+            _render_refugee_associations_expander(
+                inc_data.asso_refugee_list,
+                cod_key=f"{commune.codgeo}_legacy",
+                label_prefix="**Intégration des réfugiés & migrants**",
+            )
         if inc_data.asso_inclusion_list_by_cat:
             for cat, asso_list in sorted(inc_data.asso_inclusion_list_by_cat.items()):
                 with st.expander(f"**{cat}** ({len(asso_list)})", expanded=False):

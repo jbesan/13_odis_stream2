@@ -270,6 +270,106 @@ def test_refugee_bdv_no_cutoff_and_assoce_url_property() -> None:
     assert amalia_asso.assoce_url is None
 
 
+def test_refugee_bdv_40_35_30_ranking_and_dedupe() -> None:
+    """Enriched 10-column refugee rows rank by 40+35+30 and dedupe (id, codgeo)."""
+    ref_day = date(2026, 11, 23)
+    df_refug = pd.DataFrame(
+        [
+            {
+                "id": "W_OLD_COMMUNE",
+                "codgeo": "33063",
+                "bassin_de_vie": "33063",
+                "name": "AAA ANCIENNE SANS SALARIE",
+                "description": "Accueil",
+                "waldec_code": "019025",
+                "nom_etablissement": None,
+                "commune_nom": "BORDEAUX",
+                "tranche_effectifs": "NN",
+                "date_decla": "2010-01-01",
+            },
+            {
+                "id": "W_STRONG_LOCAL",
+                "codgeo": "33063",
+                "bassin_de_vie": "33063",
+                "name": "ZZZ SINGA BORDEAUX",
+                "description": "Accueil",
+                "waldec_code": "019025",
+                "nom_etablissement": "Antenne Bordeaux",
+                "commune_nom": "BORDEAUX",
+                "tranche_effectifs": "02",
+                "date_decla": "2026-05-01",
+            },
+            {
+                "id": "W_STRONG_LOCAL",
+                "codgeo": "33063",
+                "bassin_de_vie": "33063",
+                "name": "ZZZ SINGA BORDEAUX",
+                "description": "Accueil",
+                "waldec_code": "019025",
+                "nom_etablissement": "Doublon non employe",
+                "commune_nom": "BORDEAUX",
+                "tranche_effectifs": "NN",
+                "date_decla": "2020-01-01",
+            },
+            {
+                "id": "W_BDV_EMP",
+                "codgeo": "33522",
+                "bassin_de_vie": "33063",
+                "name": "COALLIA TALENCE",
+                "description": "Hébergement",
+                "waldec_code": "019025",
+                "nom_etablissement": None,
+                "commune_nom": "TALENCE",
+                "tranche_effectifs": "41",
+                "date_decla": "2026-02-01",
+            },
+        ]
+    )
+    items = build_refugee_associations_for_bdv(
+        df_refug,
+        target_codgeo="33063",
+        target_bdv="33063",
+        reference_date=ref_day,
+    )
+    assert [a.id for a in items] == ["W_STRONG_LOCAL", "W_BDV_EMP", "W_OLD_COMMUNE"]
+    assert items[0].has_employees is True
+    assert items[0].nom_etablissement == "Antenne Bordeaux"
+    assert items[0].commune_nom == "Bordeaux"
+    assert items[0].refugee_focused is True
+    assert items[1].is_same_commune is False
+    assert items[2].has_employees is False
+
+
+def test_long_association_name_truncated_to_80_chars() -> None:
+    """Full RNA association names exceeding 80 chars truncate cleanly with ellipsis."""
+    long_title = (
+        "ASSOCIATION POUR L'ACCOMPAGNEMENT ET L'INTEGRATION DES PERSONNES "
+        "EXILEES ET DEMANDEUSES D'ASILE EN LOIRE"
+    )
+    df_refug = pd.DataFrame(
+        [
+            {
+                "id": "W423099999",
+                "codgeo": "42218",
+                "bassin_de_vie": "42218",
+                "name": long_title,
+                "description": "Accueil",
+                "waldec_code": "019025",
+                "nom_etablissement": None,
+                "commune_nom": "SAINT-ETIENNE",
+                "tranche_effectifs": "02",
+                "date_decla": "2026-06-01",
+            }
+        ]
+    )
+    items = build_refugee_associations_for_bdv(
+        df_refug, target_codgeo="42218", target_bdv="42218"
+    )
+    assert len(items) == 1
+    assert len(items[0].name) <= 80
+    assert items[0].name.endswith("...")
+
+
 def test_prefetch_v6_short_circuits_bq_and_syncs_groups() -> None:
     """Zero-criteria searches skip BQ while hydrating RAM refugee data; criteria route cleanly."""
     engine = MagicMock()

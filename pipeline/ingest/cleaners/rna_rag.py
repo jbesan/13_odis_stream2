@@ -18,6 +18,7 @@ from pipeline.ingest.helpers import (
     _data_project,
     _materialize_rag_cache,
     _rna_rag_table_id,
+    _rna_v6_refugee_verified_table_id,
     _rna_v6_table_id,
     _rna_v6_tags_ref_table_id,
     _save_rag_cache,
@@ -321,23 +322,43 @@ def clean_refugee_associations(config: Dict[str, Any], logger: PipelineLogger) -
         client = ingest.bigquery.Client(project=_data_project())
         if use_v6:
             v6_table = _rna_v6_table_id(config)
+            verified_table = _rna_v6_refugee_verified_table_id(config)
             query = f"""
+            WITH verified_ids AS (
+                SELECT id
+                FROM `{verified_table}`
+                WHERE is_refugee_verified = TRUE
+            )
             SELECT
                 id,
                 {_SQL_NORMALIZE_CODGEO} AS codgeo,
-                ANY_VALUE(TRIM(bdv_codeinsee)) AS bassin_de_vie,
-                ANY_VALUE(COALESCE(NULLIF(TRIM(titre_court), ''), NULLIF(TRIM(title), ''), '')) AS name,
-                ANY_VALUE(COALESCE(TRIM(objet), '')) AS description,
-                ANY_VALUE(COALESCE(TRIM(objet_social1), '')) AS waldec_code
+                TRIM(bdv_codeinsee) AS bassin_de_vie,
+                COALESCE(NULLIF(TRIM(title), ''), NULLIF(TRIM(titre_court), ''), '') AS name,
+                COALESCE(TRIM(objet), '') AS description,
+                COALESCE(TRIM(objet_social1), '') AS waldec_code,
+                NULLIF(TRIM(nom_etablissement), '') AS nom_etablissement,
+                NULLIF(TRIM(adrs_libcommune), '') AS commune_nom,
+                NULLIF(TRIM(tranche_effectifs), '') AS tranche_effectifs,
+                NULLIF(TRIM(date_decla), '') AS date_decla
             FROM `{v6_table}`
             WHERE llm_action_sociale = TRUE
-              AND 'Personnes exilées' IN UNNEST(llm_publics_cibles)
+              AND (etat_admin IS NULL OR etat_admin != 'F')
               AND (llm_perimetre_action IS NULL OR llm_perimetre_action != 'international')
               AND adrs_codeinsee IS NOT NULL
               AND LENGTH(TRIM(adrs_codeinsee)) > 0
-            GROUP BY 1, 2
+              AND id IN (SELECT id FROM verified_ids)
+            QUALIFY ROW_NUMBER() OVER (
+                PARTITION BY id, {_SQL_NORMALIZE_CODGEO}
+                ORDER BY
+                    CASE
+                        WHEN UPPER(TRIM(COALESCE(tranche_effectifs, ''))) NOT IN ('', 'NN', '00', 'NONE', 'NAN') THEN 0
+                        ELSE 1
+                    END,
+                    COALESCE(is_siege, FALSE) DESC,
+                    COALESCE(date_decla, '') DESC
+            ) = 1
             """
-            logging.info("📡 [RNA V6] Fetching refugee associations from BigQuery...")
+            logging.info("📡 [RNA V6] Fetching verified refugee associations from BigQuery...")
             df_refug = client.query(query, location=_BQ_LOCATION).to_dataframe()
         else:
             query = f"""
@@ -378,6 +399,10 @@ def clean_refugee_associations(config: Dict[str, Any], logger: PipelineLogger) -
         "name",
         "description",
         "waldec_code",
+        "nom_etablissement",
+        "commune_nom",
+        "tranche_effectifs",
+        "date_decla",
     ]
     df_out = df_refug[[c for c in useful_cols if c in df_refug.columns]].copy()
 
@@ -551,12 +576,23 @@ def fetch_rna_v6_commune_stats(
     try:
         client = ingest.bigquery.Client(project=_data_project())
         v6_table = _rna_v6_table_id(config)
+        verified_table = _rna_v6_refugee_verified_table_id(config)
         sql = f"""
+        WITH verified_ids AS (
+            SELECT id
+            FROM `{verified_table}`
+            WHERE is_refugee_verified = TRUE
+        )
         SELECT
             {_SQL_NORMALIZE_CODGEO} AS codgeo,
             COUNT(DISTINCT id) AS lien_social_count,
             COUNT(
-                DISTINCT IF('Personnes exilées' IN UNNEST(llm_publics_cibles), id, NULL)
+                DISTINCT IF(
+                    (etat_admin IS NULL OR etat_admin != 'F')
+                    AND id IN (SELECT id FROM verified_ids),
+                    id,
+                    NULL
+                )
             ) AS inc_asso_refug_count
         FROM `{v6_table}`
         WHERE llm_action_sociale = TRUE
