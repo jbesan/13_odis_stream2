@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 from datetime import UTC, datetime
+import io
 import logging
 import os
 from pathlib import Path
@@ -695,9 +696,265 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--bq-table",
         default="rna_rag.refugee_v6_verified",
-        help="Target BigQuery dataset.table when --upload-bq is enabled.",
+        help="Target BigQuery dataset.table when --upload-bq or --from-bq is enabled.",
+    )
+    parser.add_argument(
+        "--from-bq",
+        action="store_true",
+        help=(
+            "Query BigQuery directly for un-evaluated (id, text_source_sha256) delta "
+            "candidates and MERGE updates into --bq-table (no-op if delta is 0)."
+        ),
+    )
+    parser.add_argument(
+        "--bq-v6-table",
+        default="rna_rag.national_v6_consolidated",
+        help="Source BigQuery V6 dataset.table when --from-bq is enabled.",
+    )
+    parser.add_argument(
+        "--bq-location",
+        default="europe-west1",
+        help="BigQuery dataset location.",
     )
     return parser.parse_args(argv)
+
+
+def fetch_bq_candidate_delta(
+    client: bigquery.Client,
+    *,
+    project_id: str,
+    v6_table: str,
+    verified_table: str,
+    location: str = "europe-west1",
+) -> pl.DataFrame:
+    """Fetch un-evaluated Stage 1 candidate rows via BigQuery ``NOT EXISTS`` anti-join.
+
+    Args:
+        client: Initialized BigQuery client.
+        project_id: GCP project ID hosting both tables.
+        v6_table: Source V6 ``dataset.table`` identifier.
+        verified_table: Qualified target ``dataset.table`` identifier.
+        location: BigQuery dataset location.
+
+    Returns:
+        Polars DataFrame of candidate associations missing ``(id, text_source_sha256)``
+        in ``verified_table``.
+    """
+    sql = f"""
+    WITH candidates AS (
+        SELECT
+            id,
+            text_source_sha256,
+            is_siege,
+            adrs_codeinsee,
+            bdv_codeinsee,
+            title,
+            titre_court,
+            objet,
+            waldec_labels_hierarchical,
+            tranche_effectifs,
+            date_decla,
+            llm_tags_recherche,
+            llm_thematiques,
+            llm_publics_cibles,
+            ('Personnes exilées' IN UNNEST(llm_publics_cibles)) AS in_exiles_tag,
+            REGEXP_CONTAINS(
+                LOWER(CONCAT(
+                    COALESCE(title, ''), ' ',
+                    COALESCE(titre_court, ''), ' ',
+                    COALESCE(objet, ''), ' ',
+                    ARRAY_TO_STRING(llm_tags_recherche, ' ')
+                )),
+                @regex_pattern
+            ) AS in_regex_match
+        FROM `{project_id}.{v6_table}`
+        WHERE llm_action_sociale = TRUE
+          AND (etat_admin IS NULL OR etat_admin != 'F')
+          AND (llm_perimetre_action IS NULL OR llm_perimetre_action != 'international')
+        QUALIFY ROW_NUMBER() OVER (
+            PARTITION BY id
+            ORDER BY
+                CASE
+                    WHEN UPPER(TRIM(COALESCE(tranche_effectifs, ''))) NOT IN ('', 'NN', '00', 'NONE', 'NAN') THEN 0
+                    ELSE 1
+                END,
+                COALESCE(is_siege, FALSE) DESC,
+                COALESCE(date_decla, '') DESC
+        ) = 1
+    )
+    SELECT
+        c.*,
+        FALSE AS in_topk_768d,
+        CAST(NULL AS FLOAT64) AS cosine_768d
+    FROM candidates AS c
+    WHERE (c.in_exiles_tag OR c.in_regex_match)
+      AND NOT EXISTS (
+          SELECT 1
+          FROM `{project_id}.{verified_table}` AS v
+          WHERE v.id = c.id
+            AND COALESCE(v.text_source_sha256, '') = COALESCE(c.text_source_sha256, '')
+      )
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("regex_pattern", "STRING", REFUGEE_REGEX_PATTERN)
+        ]
+    )
+    arrow_tbl = client.query(sql, job_config=job_config, location=location).to_arrow()
+    return pl.DataFrame(arrow_tbl)
+
+
+def merge_delta_to_bigquery(
+    client: bigquery.Client,
+    delta_df: pl.DataFrame,
+    *,
+    project_id: str,
+    verified_table: str,
+    location: str = "europe-west1",
+) -> None:
+    """Upsert evaluated delta rows into BigQuery ``verified_table`` via staging ``MERGE``.
+
+    Args:
+        client: Initialized BigQuery client.
+        delta_df: Evaluated Polars DataFrame matching ``verified_table`` schema.
+        project_id: Target GCP project ID.
+        verified_table: Target ``dataset.table`` identifier.
+        location: BigQuery dataset location.
+    """
+    if delta_df.is_empty():
+        return
+
+    target_id = f"{project_id}.{verified_table}"
+    target_table = client.get_table(target_id)
+    target_cols = [field.name for field in target_table.schema]
+    aligned_df = delta_df.select(target_cols)
+
+    staging_id = f"{target_id}_staging_{int(time.time())}"
+    buf = io.BytesIO()
+    aligned_df.write_parquet(buf)
+    buf.seek(0)
+
+    load_cfg = bigquery.LoadJobConfig(
+        schema=target_table.schema,
+        source_format=bigquery.SourceFormat.PARQUET,
+        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+    )
+    try:
+        load_job = client.load_table_from_file(
+            buf, staging_id, location=location, job_config=load_cfg
+        )
+        load_job.result()
+
+        update_cols = [c for c in target_cols if c != "id"]
+        update_clause = ", ".join(f"T.{c} = S.{c}" for c in update_cols)
+        insert_cols = ", ".join(target_cols)
+        insert_vals = ", ".join(f"S.{c}" for c in target_cols)
+        merge_sql = f"""
+        MERGE `{target_id}` AS T
+        USING `{staging_id}` AS S
+        ON T.id = S.id
+        WHEN MATCHED THEN
+            UPDATE SET {update_clause}
+        WHEN NOT MATCHED THEN
+            INSERT ({insert_cols}) VALUES ({insert_vals})
+        """
+        client.query(merge_sql, location=location).result()
+        logger.info("Merged %d delta rows into %s", aligned_df.height, target_id)
+    finally:
+        client.delete_table(staging_id, not_found_ok=True)
+
+
+def sync_refugee_verified_delta_from_bq(
+    *,
+    project_id: str,
+    v6_table: str = "rna_rag.national_v6_consolidated",
+    verified_table: str = "rna_rag.refugee_v6_verified",
+    location: str = "europe-west1",
+    rate_limit_rpm: int = 900,
+    concurrency: int = 15,
+    jsonl_cache: Optional[Path] = DEFAULT_JSONL_CACHE,
+    dry_run: bool = False,
+) -> int:
+    """Incrementally qualify and ``MERGE`` new/modified associations in BigQuery.
+
+    Returns immediately (no-op, without requiring a Gemini API key) when no
+    ``(id, text_source_sha256)`` delta exists between ``v6_table`` and
+    ``verified_table``.
+
+    Args:
+        project_id: GCP project ID.
+        v6_table: Source V6 ``dataset.table``.
+        verified_table: Target qualified ``dataset.table``.
+        location: BigQuery dataset location.
+        rate_limit_rpm: Max Gemini Decisions RPM.
+        concurrency: Max concurrent HTTP requests.
+        jsonl_cache: Optional local JSONL checkpoint path.
+        dry_run: When True, report delta count without calling Decisions API.
+
+    Returns:
+        Number of delta rows discovered (or evaluated and merged).
+    """
+    client = bigquery.Client(project=project_id)
+    delta_df = fetch_bq_candidate_delta(
+        client,
+        project_id=project_id,
+        v6_table=v6_table,
+        verified_table=verified_table,
+        location=location,
+    )
+    if delta_df.is_empty():
+        logger.info(
+            "✅ [RNA V6 Refugees] BigQuery delta is 0 (%s up to date). No-op.",
+            verified_table,
+        )
+        return 0
+
+    logger.info(
+        "📡 [RNA V6 Refugees] Found %d delta candidates to qualify vs %s.",
+        delta_df.height,
+        verified_table,
+    )
+    if dry_run:
+        return delta_df.height
+
+    api_key = resolve_gemini_api_key()
+    cache: Dict[Tuple[str, str], RefugeeDecisionRecord] = (
+        load_jsonl_cache(jsonl_cache) if jsonl_cache else {}
+    )
+    delta_rows = delta_df.to_dicts()
+    pending_rows = [
+        row
+        for row in delta_rows
+        if (str(row["id"]), str(row.get("text_source_sha256") or "")) not in cache
+    ]
+    new_records = asyncio.run(
+        run_decisions_batch(
+            pending_rows,
+            api_key=api_key,
+            cache_path=jsonl_cache or DEFAULT_JSONL_CACHE,
+            rpm=rate_limit_rpm,
+            concurrency=concurrency,
+        )
+    )
+    for rec in new_records:
+        cache[(rec.id, rec.text_source_sha256)] = rec
+
+    records_for_delta = [
+        cache[(str(row["id"]), str(row.get("text_source_sha256") or ""))].model_dump()
+        for row in delta_rows
+    ]
+    decisions_df = pl.DataFrame(records_for_delta)
+    merged_delta = compute_verified_flag(
+        delta_df.join(decisions_df, on=["id", "text_source_sha256"], how="inner")
+    )
+    merge_delta_to_bigquery(
+        client,
+        merged_delta,
+        project_id=project_id,
+        verified_table=verified_table,
+        location=location,
+    )
+    return merged_delta.height
 
 
 def upload_parquet_to_bigquery(
@@ -732,6 +989,19 @@ def upload_parquet_to_bigquery(
 def main(argv: Optional[Sequence[str]] = None) -> int:
     """Run the qualification pipeline."""
     args = parse_args(argv)
+    if args.from_bq:
+        sync_refugee_verified_delta_from_bq(
+            project_id=args.bq_project,
+            v6_table=args.bq_v6_table,
+            verified_table=args.bq_table,
+            location=args.bq_location,
+            rate_limit_rpm=args.rate_limit_rpm,
+            concurrency=args.concurrency,
+            jsonl_cache=None if args.no_resume else args.jsonl_cache,
+            dry_run=args.dry_run,
+        )
+        return 0
+
     api_key = resolve_gemini_api_key()
 
     logger.info("Loading universe from %s (bdv=%s)...", args.consolidated_parquet, args.bdv)

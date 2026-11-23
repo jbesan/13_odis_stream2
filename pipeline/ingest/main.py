@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import logging
-from typing import Sequence
+from pathlib import Path
+from typing import Any, Dict, Sequence
 
 from pipeline.common import PipelineLogger, load_config
 from pipeline.ingest.cleaners import (
@@ -47,6 +49,7 @@ from pipeline.ingest.cleaners import (
 from pipeline.ingest import context
 from pipeline.ingest.config import get_domain_contracts
 from pipeline.ingest.fetcher import fetch_source
+from pipeline.ingest.helpers import _data_project
 from pipeline.ingest.cleaners.rna_rag import (
     fetch_rna_rag_stats,
     fetch_rna_v6_commune_stats,
@@ -54,6 +57,34 @@ from pipeline.ingest.cleaners.rna_rag import (
     fetch_rna_v6_thematiques_agg,
 )
 from pipeline.ingest.runner import run_clean_step_safely
+from pipeline.scripts.qualify_refugee_associations import (
+    sync_refugee_verified_delta_from_bq,
+)
+
+
+def _is_cache_fresh(path: Path, ttl_days: int) -> bool:
+    """Return True when ``path`` exists, is non-empty, and is within ``ttl_days``."""
+    if not path.exists() or path.stat().st_size == 0:
+        return False
+    age_days = (
+        datetime.now() - datetime.fromtimestamp(path.stat().st_mtime)
+    ).total_seconds() / 86400
+    return age_days < ttl_days
+
+
+def _needs_rna_v6_refugee_refresh(config: Dict[str, Any]) -> bool:
+    """Return True when either RNA V6 stats or refugee cache is missing/expired."""
+    rna_v6_cfg = config.get("sources", {}).get("rna_v6", {})
+    ttl_days = int(rna_v6_cfg.get("ttl_days", 30))
+    required_artifacts = (
+        ("rna_v6_inclusion_agg.parquet", context.CLEAN_DIR / "rna_v6_inclusion_agg.parquet"),
+        ("rna_v6_refugee_associations.parquet", context.CLEAN_DIR / "refugee_associations.parquet"),
+    )
+    for shared_name, candidate_path in required_artifacts:
+        shared_path = context.SHARED_CLEAN_DIR / shared_name
+        if not (_is_cache_fresh(candidate_path, ttl_days) or _is_cache_fresh(shared_path, ttl_days)):
+            return True
+    return False
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -127,6 +158,15 @@ def main(argv: Sequence[str] | None = None) -> None:
         for s in ["associations", "refugee_associations", "rna", "rna_v6"]
     ):
         if "rna_v6" in config.get("sources", {}):
+            if _needs_rna_v6_refugee_refresh(config):
+                rna_v6_cfg = config["sources"]["rna_v6"]
+                sync_refugee_verified_delta_from_bq(
+                    project_id=_data_project(),
+                    v6_table=rna_v6_cfg.get("table", "rna_rag.national_v6_consolidated"),
+                    verified_table=rna_v6_cfg.get(
+                        "refugee_verified_table", "rna_rag.refugee_v6_verified"
+                    ),
+                )
             fetch_rna_v6_commune_stats(logger, config)
             fetch_rna_v6_thematiques_agg(logger, config)
             fetch_rna_v6_tags_bdv(logger, config)

@@ -283,3 +283,108 @@ def test_clean_refugee_associations_v6_ignores_legacy_shared_cache(
     assert out_df["date_decla"].tolist() == ["2026-05-01"]
     status = json.loads((tmp_path / "run.json").read_text(encoding="utf-8"))
     assert "rna_v6_refugee" in status["sources"]
+
+
+def test_needs_rna_v6_refugee_refresh_respects_ttl(tmp_path):
+    from pipeline.ingest import context
+    from pipeline.ingest.main import _needs_rna_v6_refugee_refresh
+
+    shared_dir = tmp_path / "shared"
+    clean_dir = tmp_path / "clean"
+    shared_dir.mkdir()
+    clean_dir.mkdir()
+    cfg = _v6_config()
+
+    with (
+        patch.object(context, "SHARED_CLEAN_DIR", shared_dir),
+        patch.object(context, "CLEAN_DIR", clean_dir),
+    ):
+        assert _needs_rna_v6_refugee_refresh(cfg) is True
+
+        (shared_dir / "rna_v6_inclusion_agg.parquet").write_bytes(b"ok")
+        (shared_dir / "rna_v6_refugee_associations.parquet").write_bytes(b"ok")
+        assert _needs_rna_v6_refugee_refresh(cfg) is False
+
+
+def test_sync_refugee_verified_delta_from_bq_noop_when_empty(monkeypatch):
+    import polars as pl
+    from pipeline.scripts import qualify_refugee_associations as q
+
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+    empty_df = pl.DataFrame(schema={"id": pl.String, "text_source_sha256": pl.String})
+    with (
+        patch.object(q.bigquery, "Client") as mock_bq_cls,
+        patch.object(q, "fetch_bq_candidate_delta", return_value=empty_df) as mock_fetch,
+        patch.object(q, "run_decisions_batch") as mock_batch,
+        patch.object(q, "merge_delta_to_bigquery") as mock_merge,
+    ):
+        count = q.sync_refugee_verified_delta_from_bq(project_id="odis-test-proj")
+
+    assert count == 0
+    mock_bq_cls.assert_called_once_with(project="odis-test-proj")
+    mock_fetch.assert_called_once()
+    mock_batch.assert_not_called()
+    mock_merge.assert_not_called()
+
+
+def test_sync_refugee_verified_delta_from_bq_evaluates_and_merges(tmp_path, monkeypatch):
+    import polars as pl
+    from pipeline.scripts import qualify_refugee_associations as q
+
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    delta_df = pl.DataFrame(
+        {
+            "id": ["W332999999"],
+            "text_source_sha256": ["abc123"],
+            "is_siege": [True],
+            "adrs_codeinsee": ["33063"],
+            "bdv_codeinsee": ["33063"],
+            "title": ["ASSO TEST"],
+            "titre_court": [""],
+            "objet": ["Accueil des réfugiés"],
+            "waldec_labels_hierarchical": ["ACTION SOCIALE"],
+            "tranche_effectifs": ["01"],
+            "date_decla": ["2026-11-01"],
+            "llm_tags_recherche": [["réfugiés"]],
+            "llm_thematiques": [["Accompagnement"]],
+            "llm_publics_cibles": [["Personnes exilées"]],
+            "in_exiles_tag": [True],
+            "in_regex_match": [True],
+            "in_topk_768d": [False],
+            "cosine_768d": [None],
+        }
+    )
+    fake_rec = q.RefugeeDecisionRecord(
+        id="W332999999",
+        text_source_sha256="abc123",
+        p_noul=0.95,
+        noul_confidence=0.95,
+        role_choice="accompagnement_accueil",
+        role_confidence=0.98,
+        p_accompagnement_accueil=0.98,
+        p_amicale_culture_culte=0.01,
+        p_autre=0.01,
+        input_tokens=400,
+        evaluated_at="2026-11-23T15:00:00+00:00",
+    )
+
+    async def fake_run_batch(*args, **kwargs):
+        return [fake_rec]
+
+    with (
+        patch.object(q.bigquery, "Client"),
+        patch.object(q, "fetch_bq_candidate_delta", return_value=delta_df),
+        patch.object(q, "run_decisions_batch", side_effect=fake_run_batch),
+        patch.object(q, "merge_delta_to_bigquery") as mock_merge,
+    ):
+        count = q.sync_refugee_verified_delta_from_bq(
+            project_id="odis-test-proj",
+            jsonl_cache=tmp_path / "cache.jsonl",
+        )
+
+    assert count == 1
+    mock_merge.assert_called_once()
+    merged_arg = mock_merge.call_args.args[1]
+    assert merged_arg["is_refugee_verified"].to_list() == [True]
