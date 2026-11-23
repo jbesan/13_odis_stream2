@@ -261,7 +261,7 @@ def format_detail_item(item: Any) -> Any:
         return {
             "recherche": getattr(item, "label", ""),
             "total_bdv": getattr(item, "total_bdv_count", len(assos)),
-            "associations": assos,
+            "top_associations_affichees": assos,
         }
 
     if cname == "JobOfferDetail":
@@ -325,8 +325,8 @@ def format_model(model: Optional[BaseModel]) -> Dict[str, Any]:
 
         label = fld.description or name
 
-        # Skip raw un-geocoded services_grouped; keep rich services_detailed only
-        if name == "services_grouped":
+        # Skip raw un-geocoded services_grouped and redundant post-cutoff count
+        if name in {"services_grouped", "asso_centres_interet_count"}:
             continue
 
         # Special Handling for refugee associations in RNA

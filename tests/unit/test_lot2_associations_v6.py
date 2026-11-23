@@ -490,13 +490,20 @@ def test_context_renderer_and_bq_v6_sql(monkeypatch: pytest.MonkeyPatch) -> None
                 total_bdv_count=12,
                 associations=[v6_asso],
             )
-        ]
+        ],
+        asso_centres_interet_count=1,
     )
     rendered = format_model(inc_model)
+    assert (
+        "Nombre total d'associations retournées dans les recherches de centres d'intérêt"
+        not in rendered
+    )
     grp_serialized = rendered[
         "Associations BDV groupées par recherche de besoins spécifiques et centres d'intérêt"
     ]
     assert grp_serialized[0]["total_bdv"] == 12
+    assert "associations" not in grp_serialized[0]
+    assert len(grp_serialized[0]["top_associations_affichees"]) == 1
 
     monkeypatch.setenv("ODIS_DATA_PROJECT", "proj-test")
     with (
