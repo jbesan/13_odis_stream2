@@ -50,6 +50,12 @@ def format_criteria_value(val: Any) -> Any:
         return None
     if val.__class__.__name__ == "CriteriaItem" or isinstance(val, CriteriaItem):
         return getattr(val, "label", str(val))
+    if val.__class__.__name__ == "AssociationSearchGroup":
+        return [
+            format_criteria_value(item)
+            for item in getattr(val, "tags", [])
+            if item is not None
+        ]
     if isinstance(val, list):
         return [format_criteria_value(item) for item in val if item is not None]
     if isinstance(val, dict):
@@ -73,6 +79,10 @@ def format_criteria(criteria: Optional[SearchCriterias]) -> Dict[str, Any]:
     ctx: Dict[str, Any] = {}
     for name, fld in criteria.__class__.model_fields.items():
         if name in EXCLUDE_CRITERIA_FIELDS:
+            continue
+        if name == "inc_asso_add_selection" and getattr(
+            criteria, "inc_asso_add_groups", None
+        ):
             continue
         val = getattr(criteria, name)
         if val is None:
@@ -112,7 +122,10 @@ def format_commune_identity(commune: Optional[CommuneResult]) -> Dict[str, Any]:
 
 
 def format_association(item: Any) -> str:
-    """Formats association item as 'ID | Nom | Description'.
+    """Formats association item compactly as 'ID | Nom (+ contexte) | Description'.
+
+    Preserves exact 'ID | Nom | Description' format when optional V6 location/tag
+    fields are absent.
 
     Args:
         item: AssociationDetail or duck-typed object.
@@ -122,8 +135,24 @@ def format_association(item: Any) -> str:
     """
     asso_id = (getattr(item, "id", None) or "").strip()
     name = (getattr(item, "name", None) or "").strip()
+    etab = (getattr(item, "nom_etablissement", None) or "").strip()
+    is_same = getattr(item, "is_same_commune", None)
+    commune_nom = (getattr(item, "commune_nom", None) or "").strip()
+    matched_tags = list(getattr(item, "matched_tags", None) or [])
+
+    title = f"{name} ({etab})" if name and etab else name
+    markers: List[str] = []
+    if is_same is True:
+        markers.append("Sur place")
+    elif commune_nom:
+        markers.append(commune_nom)
+    if matched_tags:
+        markers.append(", ".join(matched_tags))
+    if markers and title:
+        title = f"{title} [{' · '.join(markers)}]"
+
     desc = (getattr(item, "description", None) or "").strip()
-    parts = [p for p in [asso_id, name, desc] if p]
+    parts = [p for p in [asso_id, title, desc] if p]
     return " | ".join(parts)
 
 
@@ -226,6 +255,14 @@ def format_detail_item(item: Any) -> Any:
 
     if cname == "AssociationDetail":
         return format_association(item)
+
+    if cname == "InterestSearchGroupResult":
+        assos = [format_association(a) for a in getattr(item, "associations", [])]
+        return {
+            "recherche": getattr(item, "label", ""),
+            "total_bdv": getattr(item, "total_bdv_count", len(assos)),
+            "associations": assos,
+        }
 
     if cname == "JobOfferDetail":
         return format_job_offer(item)

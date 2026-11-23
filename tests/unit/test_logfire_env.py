@@ -39,8 +39,8 @@ def test_setup_logfire_prod():
             send_to_logfire=False,
             console=False,
         )
-        mock_logfire.instrument_pydantic_ai.assert_called_once()
-        mock_logfire.instrument_httpx.assert_called_once()
+        mock_logfire.instrument_pydantic_ai.assert_not_called()
+        mock_logfire.instrument_httpx.assert_not_called()
 
 
 def test_setup_logfire_staging():

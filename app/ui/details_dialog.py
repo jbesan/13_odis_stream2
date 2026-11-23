@@ -9,6 +9,7 @@ from core.models import (
     CommuneScoreDetail,
     AssociationDetail,
     InclusionServiceDetail,
+    InterestSearchGroupResult,
     JobOfferDetail,
 )
 from core.scoring import _format_kpi_value
@@ -143,50 +144,311 @@ def render_jaccueille_housing_info(commune: CommuneResult):
     )
 
 
+def _hydrate_inclusion_from_bg_store(commune: CommuneResult, h: Optional[str]) -> bool:
+    """Sync available association and DI service payloads into ``commune.inclusion``."""
+    if not h:
+        return False
+    bg_res = odis_get_bg_result(h)
+    if not isinstance(bg_res, dict):
+        return False
+
+    inc_data = commune.inclusion
+    updated = False
+
+    has_asso_data = bool(
+        inc_data.asso_inclusion_list_by_cat
+        or inc_data.asso_centres_interet_groups
+        or inc_data.asso_refugee_list
+    )
+    if not has_asso_data and "enrichment" in bg_res:
+        enrich_data = bg_res["enrichment"].get(str(commune.codgeo))
+        if enrich_data:
+            inc_data.asso_refugee_list = [
+                AssociationDetail.model_validate(a)
+                for a in enrich_data.get("refugee", [])
+            ]
+            inc_data.asso_refugee_count = len(inc_data.asso_refugee_list)
+            raw_inclusion = enrich_data.get("inclusion", {})
+            inc_data.asso_inclusion_list_by_cat = {
+                cat: [AssociationDetail.model_validate(a) for a in asso_list]
+                for cat, asso_list in raw_inclusion.items()
+            }
+            inc_data.asso_inclusion_count = sum(
+                len(items) for items in inc_data.asso_inclusion_list_by_cat.values()
+            )
+            inc_data.asso_centres_interet_groups = [
+                InterestSearchGroupResult.model_validate(g)
+                for g in enrich_data.get("centres_interet_groups", [])
+            ]
+            inc_data.asso_centres_interet_count = sum(
+                len(g.associations) for g in inc_data.asso_centres_interet_groups
+            )
+            updated = True
+
+    if not inc_data.services_detailed and "inclusion_services_enrichment" in bg_res:
+        incl_services_data = bg_res["inclusion_services_enrichment"].get(
+            str(commune.codgeo)
+        )
+        if incl_services_data:
+            inc_data.services_detailed = {
+                cat: [InclusionServiceDetail.model_validate(s) for s in svc_list]
+                for cat, svc_list in incl_services_data.items()
+            }
+            updated = True
+
+    return updated
+
+
+def _render_association_entry(
+    asso: AssociationDetail, *, show_matched_tags: bool = False
+) -> None:
+    """Render one association row with location badge, antenne, tags, and safe RNA link."""
+    if asso.is_same_commune is True:
+        pill = " :blue-badge[Sur place]"
+    elif asso.commune_nom:
+        pill = f" :gray-badge[{asso.commune_nom}]"
+    else:
+        pill = ""
+
+    etab_part = f" — *{asso.nom_etablissement}*" if asso.nom_etablissement else ""
+    tags_part = (
+        " " + " ".join(f":gray-badge[{tg}]" for tg in asso.matched_tags)
+        if show_matched_tags and asso.matched_tags
+        else ""
+    )
+    url = asso.assoce_url
+    url_part = f" [↗ assoce.fr]({url})" if url else ""
+
+    st.markdown(f"• **{asso.name}**{etab_part}{pill}{tags_part}{url_part}")
+    if asso.description:
+        st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;{asso.description}")
+
+
+def _build_deduped_di_structures(
+    services_detailed: dict[str, List[InclusionServiceDetail]],
+) -> dict[str, List[dict]]:
+    """Group DI structures by thematic with global cross-expander deduplication."""
+    seen_struct_keys: set[str] = set()
+    grouped_structs: dict[str, List[dict]] = {}
+
+    for thematique, services in sorted(services_detailed.items()):
+        if not services:
+            continue
+        struct_map: dict[str, dict] = {}
+        for srv in services:
+            struct_key = srv.structure_id or srv.nom_structure or srv.name
+            if struct_key in seen_struct_keys:
+                continue
+            if struct_key not in struct_map:
+                struct_map[struct_key] = {
+                    "nom": (srv.nom_structure or srv.name).title(),
+                    "presentation_structure": getattr(
+                        srv, "presentation_structure", None
+                    )
+                    or "",
+                    "lien_source": srv.lien_source,
+                    "distance_km": getattr(srv, "distance_km", None),
+                    "commune_nom": getattr(srv, "commune_nom", "") or "",
+                    "services": [],
+                }
+            elif getattr(srv, "distance_km", None) is not None:
+                curr_dist = struct_map[struct_key]["distance_km"]
+                if curr_dist is None or srv.distance_km < curr_dist:
+                    struct_map[struct_key]["distance_km"] = srv.distance_km
+
+            svc_label = srv.name
+            if svc_label and not any(
+                item["name"] == svc_label.capitalize()
+                for item in struct_map[struct_key]["services"]
+            ):
+                struct_map[struct_key]["services"].append(
+                    {
+                        "name": svc_label.capitalize(),
+                        "description": srv.description or "",
+                    }
+                )
+
+        if not struct_map:
+            continue
+        seen_struct_keys.update(struct_map.keys())
+        grouped_structs[thematique] = sorted(
+            struct_map.values(),
+            key=lambda item: (
+                item["distance_km"]
+                if item.get("distance_km") is not None
+                else 999,
+                item["nom"],
+            ),
+        )
+    return grouped_structs
+
+
+def _render_di_structure_entry(struct_data: dict) -> None:
+    """Render one Data Inclusion structure row and its child services."""
+    url_part = (
+        f" [↗ Fiche]({struct_data['lien_source']})"
+        if struct_data.get("lien_source")
+        else ""
+    )
+    dist_val = struct_data.get("distance_km")
+    commune_val = struct_data.get("commune_nom")
+    if dist_val == 0:
+        pill = " :blue-badge[Sur place]"
+    elif dist_val is not None:
+        pill = (
+            f" :gray-badge[{commune_val} · {dist_val} km]"
+            if commune_val
+            else f" :gray-badge[{dist_val} km]"
+        )
+    else:
+        pill = ""
+
+    header_text = f"• **{struct_data['nom']}**{pill}{url_part}"
+    if struct_data.get("presentation_structure"):
+        st.markdown(header_text, help=struct_data["presentation_structure"])
+    else:
+        st.markdown(header_text)
+
+    for service in struct_data.get("services", []):
+        if service.get("description"):
+            st.caption(
+                f"&nbsp;&nbsp;&nbsp;&nbsp;└ {service['name']}",
+                help=service["description"],
+            )
+        else:
+            st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;└ {service['name']}")
+
+
+def render_inclusion_guichet_unique(commune: CommuneResult, h: Optional[str]) -> None:
+    """Render Lot 2 Guichet Unique view: Action sociale, Réfugiés BDV, and Recherches."""
+    if _hydrate_inclusion_from_bg_store(commune, h):
+        st.rerun()
+
+    inc_data = commune.inclusion
+    bg_res = odis_get_bg_result(h) if h else None
+    is_snapshot = bool(st.session_state.get("immutable_shared_snapshot"))
+    svc_status = _enrichment_status_for_city(
+        h, "inclusion_services_status", commune.codgeo
+    )
+    asso_status = _enrichment_status_for_city(
+        h, "association_enrichment_status", commune.codgeo
+    )
+
+    # 1. Guichet Unique Action sociale (Services DI + Associations V6 par sous-thématique)
+    st.markdown("##### Action sociale — Guichet unique")
+    di_by_theme = (
+        _build_deduped_di_structures(inc_data.services_detailed)
+        if inc_data.services_detailed
+        else {}
+    )
+    assos_by_theme = inc_data.asso_inclusion_list_by_cat or {}
+    all_themes = sorted(set(di_by_theme.keys()) | set(assos_by_theme.keys()))
+
+    if all_themes:
+        for thematique in all_themes:
+            di_structs = di_by_theme.get(thematique, [])
+            assos_list = assos_by_theme.get(thematique, [])
+            total_count = len(di_structs) + len(assos_list)
+            if total_count == 0:
+                continue
+            with st.expander(f"{thematique} ({total_count})", expanded=False):
+                if di_structs:
+                    st.caption("**Services & Structures (Data·Inclusion)**")
+                    for struct_data in di_structs:
+                        _render_di_structure_entry(struct_data)
+                if assos_list:
+                    if di_structs:
+                        st.divider()
+                    st.caption("**Associations locales**")
+                    for asso in assos_list:
+                        _render_association_entry(asso)
+    elif inc_data.services_grouped:
+        for thematique, names in sorted(inc_data.services_grouped.items()):
+            items = sorted({name for name in names if pd.notna(name)})
+            if items:
+                with st.expander(f"{thematique} ({len(items)})", expanded=False):
+                    for name in items:
+                        st.markdown(f"- {name}")
+    elif is_snapshot:
+        st.caption("Services et associations non inclus dans cet instantané partagé.")
+    elif h and (
+        svc_status in {None, EnrichmentStatus.PENDING.value}
+        or asso_status in {None, EnrichmentStatus.PENDING.value}
+        or not isinstance(bg_res, dict)
+    ):
+        st.caption("Recherche des services et associations en cours…")
+    else:
+        st.caption(
+            "Aucun service ni association thématique identifié pour les besoins sélectionnés."
+        )
+
+    # 2. Associations — Intégration des réfugiés (Bassin de Vie, sans cutoff)
+    st.markdown("##### Intégration des réfugiés (Bassin de Vie)")
+    if inc_data.asso_refugee_list:
+        with st.expander(
+            f"Structures référencées ({len(inc_data.asso_refugee_list)})",
+            expanded=False,
+        ):
+            for asso in inc_data.asso_refugee_list:
+                _render_association_entry(asso)
+    elif h and asso_status in {None, EnrichmentStatus.PENDING.value} and not is_snapshot:
+        st.caption("Chargement des associations réfugiés…")
+    else:
+        st.caption("Aucune association dédiée répertoriée dans le Bassin de Vie.")
+
+    # 3. Besoins spécifiques et centres d'intérêt (1 expander par Recherche structurée)
+    st.markdown("##### Besoins spécifiques & centres d'intérêt")
+    if inc_data.asso_centres_interet_groups:
+        for grp in inc_data.asso_centres_interet_groups:
+            if grp.total_bdv_count > len(grp.associations):
+                header = (
+                    f"{grp.label} ({len(grp.associations)} affichées "
+                    f"sur {grp.total_bdv_count} dans le BDV)"
+                )
+            else:
+                header = f"{grp.label} ({len(grp.associations)})"
+            with st.expander(header, expanded=False):
+                if not grp.associations:
+                    st.caption("Aucune association correspondante dans le Bassin de Vie.")
+                else:
+                    show_tags = len(grp.tags) > 1
+                    for asso in grp.associations:
+                        _render_association_entry(asso, show_matched_tags=show_tags)
+    elif h and asso_status in {None, EnrichmentStatus.PENDING.value} and not is_snapshot:
+        st.caption("Chargement des centres d'intérêt…")
+    elif not all_themes:
+        st.caption(
+            "Sélectionnez des besoins d'inclusion ou des recherches dans vos critères "
+            "pour afficher les structures locales correspondantes."
+        )
+    else:
+        st.caption("Aucune recherche de centre d'intérêt renseignée.")
+
+
 def render_associations_enrichment(commune: CommuneResult, h: Optional[str]):
     """Render association enrichment once; polling is controlled by the caller."""
     inc_data = commune.inclusion
-    if h and not inc_data.asso_inclusion_list_by_cat:
-        bg_res = odis_get_bg_result(h)
-        if isinstance(bg_res, dict) and "enrichment" in bg_res:
-            enrich_data = bg_res["enrichment"].get(str(commune.codgeo))
-            if enrich_data:
-                # We use the new AssociationDetail model instead of raw strings
-                inc_data.asso_refugee_list = [
-                    AssociationDetail.model_validate(a)
-                    for a in enrich_data.get("refugee", [])
-                ]
-                inc_data.asso_refugee_count = len(inc_data.asso_refugee_list)
-                raw_inclusion = enrich_data.get("inclusion", {})
-                inc_data.asso_inclusion_list_by_cat = {
-                    cat: [AssociationDetail.model_validate(a) for a in asso_list]
-                    for cat, asso_list in raw_inclusion.items()
-                }
-                inc_data.asso_inclusion_count = sum(
-                    len(l) for l in inc_data.asso_inclusion_list_by_cat.values()
-                )
-                st.rerun()  # Trigger dialog rerun to reveal content
+    if _hydrate_inclusion_from_bg_store(commune, h):
+        st.rerun()
 
-    total_assos = (inc_data.asso_refugee_count or 0) + (
-        inc_data.asso_inclusion_count or 0
+    total_assos = (
+        (inc_data.asso_refugee_count or 0)
+        + (inc_data.asso_inclusion_count or 0)
+        + (inc_data.asso_centres_interet_count or 0)
     )
     if total_assos > 0:
-        categories_to_show = {}
         if inc_data.asso_refugee_list:
-            categories_to_show["Intégration des réfugiés & migrants"] = (
-                inc_data.asso_refugee_list
-            )
+            with st.expander(
+                f"**Intégration des réfugiés & migrants** ({len(inc_data.asso_refugee_list)})",
+                expanded=False,
+            ):
+                for asso in inc_data.asso_refugee_list:
+                    _render_association_entry(asso)
         if inc_data.asso_inclusion_list_by_cat:
-            for cat, asso_list in inc_data.asso_inclusion_list_by_cat.items():
-                categories_to_show[cat] = asso_list
-
-        for cat, asso_list in sorted(categories_to_show.items()):
-            with st.expander(f"**{cat}** ({len(asso_list)})", expanded=False):
-                for asso in asso_list:
-                    url = f"https://www.assoce.fr/waldec/{asso.id}" if asso.id else "#"
-                    st.markdown(
-                        f"**{asso.name}**: {asso.description or ''} [Détails]({url})"
-                    )
+            for cat, asso_list in sorted(inc_data.asso_inclusion_list_by_cat.items()):
+                with st.expander(f"**{cat}** ({len(asso_list)})", expanded=False):
+                    for asso in asso_list:
+                        _render_association_entry(asso)
     else:
         bg_res = odis_get_bg_result(h) if h else None
         status_data = (
@@ -248,94 +510,12 @@ def render_inclusion_services_enrichment(commune: CommuneResult, h: Optional[str
     )
 
     if inc_data.services_detailed:
-        # Global deduplication: each structure appears in at most one expander.
-        seen_struct_keys: set[str] = set()
-        for thematique, services in sorted(inc_data.services_detailed.items()):
-            if not services:
-                continue
-            struct_map: dict[str, dict] = {}
-            for srv in services:
-                struct_key = srv.structure_id or srv.nom_structure or srv.name
-                if struct_key in seen_struct_keys:
-                    continue
-                if struct_key not in struct_map:
-                    struct_map[struct_key] = {
-                        "nom": srv.nom_structure.title() or srv.name.title(),
-                        "presentation_structure": getattr(
-                            srv, "presentation_structure", None
-                        )
-                        or "",
-                        "lien_source": srv.lien_source,
-                        "distance_km": getattr(srv, "distance_km", None),
-                        "commune_nom": getattr(srv, "commune_nom", "") or "",
-                        "services": [],
-                    }
-                elif getattr(srv, "distance_km", None) is not None:
-                    curr_dist = struct_map[struct_key]["distance_km"]
-                    if curr_dist is None or srv.distance_km < curr_dist:
-                        struct_map[struct_key]["distance_km"] = srv.distance_km
-
-                svc_label = srv.name
-                if svc_label and not any(
-                    item["name"] == svc_label.capitalize()
-                    for item in struct_map[struct_key]["services"]
-                ):
-                    struct_map[struct_key]["services"].append(
-                        {
-                            "name": svc_label.capitalize(),
-                            "description": srv.description or "",
-                        }
-                    )
-
-            if not struct_map:
-                continue
-            seen_struct_keys.update(struct_map.keys())
-
-            with st.expander(f"{thematique} ({len(struct_map)})", expanded=False):
-                sorted_structs = sorted(
-                    struct_map.values(),
-                    key=lambda item: (
-                        item["distance_km"]
-                        if item.get("distance_km") is not None
-                        else 999,
-                        item["nom"],
-                    ),
-                )
+        for thematique, sorted_structs in sorted(
+            _build_deduped_di_structures(inc_data.services_detailed).items()
+        ):
+            with st.expander(f"{thematique} ({len(sorted_structs)})", expanded=False):
                 for struct_data in sorted_structs:
-                    url_part = (
-                        f" [↗ Fiche]({struct_data['lien_source']})"
-                        if struct_data["lien_source"]
-                        else ""
-                    )
-                    dist_val = struct_data.get("distance_km")
-                    commune_val = struct_data.get("commune_nom")
-                    if dist_val == 0:
-                        pill = " :blue-badge[Sur place]"
-                    elif dist_val is not None:
-                        if commune_val:
-                            pill = f" :gray-badge[{commune_val} · {dist_val} km]"
-                        else:
-                            pill = f" :gray-badge[{dist_val} km]"
-                    else:
-                        pill = ""
-
-                    header_text = f"• **{struct_data['nom']}**{pill}{url_part}"
-                    if struct_data["presentation_structure"]:
-                        st.markdown(
-                            header_text,
-                            help=struct_data["presentation_structure"],
-                        )
-                    else:
-                        st.markdown(header_text)
-
-                    for service in struct_data["services"]:
-                        if service["description"]:
-                            st.caption(
-                                f"&nbsp;&nbsp;&nbsp;&nbsp;└ {service['name']}",
-                                help=service["description"],
-                            )
-                        else:
-                            st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;└ {service['name']}")
+                    _render_di_structure_entry(struct_data)
     else:
         services_grouped = inc_data.services_grouped
         if services_grouped:
@@ -517,6 +697,17 @@ def polling_inclusion_services_fragment(commune: CommuneResult, h: Optional[str]
     """Poll inclusion services only until their provider state becomes terminal."""
     render_inclusion_services_enrichment(commune, h)
     if not _should_poll_enrichment(h, "inclusion_services_status", commune.codgeo):
+        st.rerun()
+
+
+@st.fragment(run_every=3.0)
+def polling_inclusion_guichet_fragment(commune: CommuneResult, h: Optional[str]):
+    """Poll both services and associations until both providers reach terminal state."""
+    render_inclusion_guichet_unique(commune, h)
+    still_polling = _should_poll_enrichment(
+        h, "inclusion_services_status", commune.codgeo
+    ) or _should_poll_enrichment(h, "association_enrichment_status", commune.codgeo)
+    if not still_polling:
         st.rerun()
 
 
@@ -993,23 +1184,16 @@ def show_details_dialog(index: Any):
         with c1:
             with st.container(border=False):
                 st.markdown(
-                    "#### :material/volunteer_activism: Services d'Inclusion à moins de 10km"
+                    "#### :material/volunteer_activism: Accompagnement, inclusion & vie associative"
                 )
                 if _should_poll_enrichment(
                     h, "inclusion_services_status", commune.codgeo
-                ):
-                    polling_inclusion_services_fragment(commune, h)
-                else:
-                    render_inclusion_services_enrichment(commune, h)
-
-                st.markdown("#### :material/groups: Associations de l'inclusion")
-
-                if _should_poll_enrichment(
+                ) or _should_poll_enrichment(
                     h, "association_enrichment_status", commune.codgeo
                 ):
-                    polling_associations_fragment(commune, h)
+                    polling_inclusion_guichet_fragment(commune, h)
                 else:
-                    render_associations_enrichment(commune, h)
+                    render_inclusion_guichet_unique(commune, h)
 
                 _render_cat_scores("inclusion", metric_filter="discrete")
 

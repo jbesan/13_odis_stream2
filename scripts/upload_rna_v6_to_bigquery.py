@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Sequence
 
 from dotenv import load_dotenv
+from google.api_core.exceptions import NotFound
 from google.cloud import bigquery, storage
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -76,6 +77,8 @@ EXPECTED_CONSOLIDATED_LIST_COLS = (
     "llm_publics_cibles",
 )
 EXPECTED_CONSOLIDATED_CLUSTERING = ("bdv_codeinsee", "llm_action_sociale")
+EMBEDDING_COLUMN = "embedding_gemini_768"
+EXPECTED_EMBEDDING_DIM = 768
 
 
 def validate_target_table_name(table_name: str) -> None:
@@ -407,6 +410,158 @@ def verify_embeddings_table(
     return int(table.num_rows)
 
 
+def _table_exists(bq_client: bigquery.Client, table_id: str) -> bool:
+    """Return True when ``table_id`` exists in BigQuery, False on NotFound."""
+    try:
+        bq_client.get_table(table_id)
+        return True
+    except NotFound:
+        logger.info("Table %s does not exist yet in BigQuery.", table_id)
+        return False
+
+
+def merge_embeddings_into_consolidated(
+    bq_client: bigquery.Client | None,
+    consolidated_table_id: str,
+    embeddings_table_id: str,
+    *,
+    location: str = DEFAULT_LOCATION,
+    dry_run: bool = False,
+) -> int:
+    """Merge ``embedding_gemini_768`` from staging table into consolidated table.
+
+    Rebuilds ``consolidated_table_id`` in place with ``CLUSTER BY bdv_codeinsee,
+    llm_action_sociale`` so semantic queries scan only target BDV clusters and
+    non-embedding queries pay zero columnar scan cost.
+
+    Args:
+        bq_client: Authenticated BigQuery client (optional when ``dry_run=True``).
+        consolidated_table_id: Target consolidated table ID.
+        embeddings_table_id: Staging embeddings table ID keyed by ``id``.
+        location: BigQuery job location.
+        dry_run: If True, log SQL plan without executing BigQuery jobs.
+
+    Returns:
+        Resulting consolidated row count (0 when ``dry_run=True``).
+    """
+    clustering_sql = ", ".join(EXPECTED_CONSOLIDATED_CLUSTERING)
+    if dry_run:
+        logger.info(
+            "[DRY RUN] Would merge %s.%s into %s (CLUSTER BY %s).",
+            embeddings_table_id,
+            EMBEDDING_COLUMN,
+            consolidated_table_id,
+            clustering_sql,
+        )
+        return 0
+
+    if bq_client is None:
+        raise ValueError("bq_client must be provided when dry_run is False.")
+
+    existing_table = bq_client.get_table(consolidated_table_id)
+    has_embedding_col = any(
+        field.name == EMBEDDING_COLUMN for field in existing_table.schema
+    )
+    select_clause = (
+        f"c.* EXCEPT ({EMBEDDING_COLUMN}), e.{EMBEDDING_COLUMN}"
+        if has_embedding_col
+        else f"c.*, e.{EMBEDDING_COLUMN}"
+    )
+    sql = (
+        f"CREATE OR REPLACE TABLE `{consolidated_table_id}`\n"
+        f"CLUSTER BY {clustering_sql} AS\n"
+        f"SELECT {select_clause}\n"
+        f"FROM `{consolidated_table_id}` AS c\n"
+        f"LEFT JOIN `{embeddings_table_id}` AS e USING (id)"
+    )
+    logger.info(
+        "Merging %s into %s (CLUSTER BY %s) ...",
+        embeddings_table_id,
+        consolidated_table_id,
+        clustering_sql,
+    )
+    job = bq_client.query(sql, location=location)
+    job.result()
+    updated = bq_client.get_table(consolidated_table_id)
+    logger.info("Merged table %s has %s rows.", consolidated_table_id, updated.num_rows)
+    return int(updated.num_rows or 0)
+
+
+def verify_merged_embeddings(
+    bq_client: bigquery.Client,
+    consolidated_table_id: str,
+    *,
+    location: str = DEFAULT_LOCATION,
+) -> dict[str, int]:
+    """Verify embedding column schema, completeness, and clustering after merge.
+
+    Args:
+        bq_client: Authenticated BigQuery client.
+        consolidated_table_id: Consolidated BigQuery table ID.
+        location: BigQuery job location.
+
+    Returns:
+        Dictionary with ``total_rows``, ``null_embeddings``, and ``invalid_dim_rows``.
+
+    Raises:
+        RuntimeError: If clustering, schema, row count, or vector dimensions fail validation.
+    """
+    table = bq_client.get_table(consolidated_table_id)
+    if table.num_rows != EXPECTED_CONSOLIDATED_ROWS:
+        raise RuntimeError(
+            f"Row count mismatch on {consolidated_table_id} after merge: "
+            f"got {table.num_rows}, expected {EXPECTED_CONSOLIDATED_ROWS}."
+        )
+    actual_clustering = list(table.clustering_fields or [])
+    if actual_clustering != list(EXPECTED_CONSOLIDATED_CLUSTERING):
+        raise RuntimeError(
+            f"Clustering mismatch on {consolidated_table_id} after merge: "
+            f"got {actual_clustering}, expected {list(EXPECTED_CONSOLIDATED_CLUSTERING)}."
+        )
+    emb_field = next(
+        (field for field in table.schema if field.name == EMBEDDING_COLUMN),
+        None,
+    )
+    if (
+        emb_field is None
+        or emb_field.mode != "REPEATED"
+        or emb_field.field_type not in {"FLOAT", "FLOAT64"}
+    ):
+        raise RuntimeError(
+            f"Invalid schema for {EMBEDDING_COLUMN} on {consolidated_table_id}: {emb_field}."
+        )
+
+    sql = (
+        f"SELECT\n"
+        f"  COUNT(*) AS total_rows,\n"
+        f"  COUNTIF({EMBEDDING_COLUMN} IS NULL) AS null_embeddings,\n"
+        f"  COUNTIF(ARRAY_LENGTH({EMBEDDING_COLUMN}) != {EXPECTED_EMBEDDING_DIM}) AS invalid_dim_rows\n"
+        f"FROM `{consolidated_table_id}`"
+    )
+    rows = list(bq_client.query(sql, location=location).result())
+    row = dict(rows[0])
+    total_rows = int(row["total_rows"])
+    null_embeddings = int(row["null_embeddings"])
+    invalid_dim_rows = int(row["invalid_dim_rows"])
+    if total_rows != EXPECTED_CONSOLIDATED_ROWS:
+        raise RuntimeError(
+            f"SQL row count mismatch on {consolidated_table_id}: {total_rows}."
+        )
+    if null_embeddings != 0:
+        raise RuntimeError(
+            f"Found {null_embeddings} NULL {EMBEDDING_COLUMN} rows in {consolidated_table_id}."
+        )
+    if invalid_dim_rows != 0:
+        raise RuntimeError(
+            f"Found {invalid_dim_rows} rows with dimension != {EXPECTED_EMBEDDING_DIM}."
+        )
+    return {
+        "total_rows": total_rows,
+        "null_embeddings": null_embeddings,
+        "invalid_dim_rows": invalid_dim_rows,
+    }
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments for the RNA V6 uploader."""
     parser = argparse.ArgumentParser(
@@ -464,6 +619,20 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Also upload and load national_v6_embeddings_768d.parquet into a separate table clustered by id",
     )
     parser.add_argument(
+        "--merge-embeddings",
+        action="store_true",
+        help=(
+            "Upload/load national_v6_embeddings_768d.parquet into a staging table, merge "
+            "embedding_gemini_768 into consolidated table (CLUSTER BY bdv_codeinsee, llm_action_sociale), "
+            "verify 0 NULLs, and drop the staging table unless --with-embeddings is also set."
+        ),
+    )
+    parser.add_argument(
+        "--reload-consolidated",
+        action="store_true",
+        help="Force reloading consolidated and tags-ref tables when used with --merge-embeddings",
+    )
+    parser.add_argument(
         "--skip-upload",
         action="store_true",
         help="Skip GCS upload and load directly from existing gs:// URIs",
@@ -483,7 +652,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     validate_target_table_name(args.consolidated_table)
     validate_target_table_name(args.tags_ref_table)
-    if args.with_embeddings:
+    need_embeddings = args.with_embeddings or args.merge_embeddings
+    if need_embeddings:
         validate_target_table_name(args.embeddings_table)
         if args.embeddings_table in {args.consolidated_table, args.tags_ref_table}:
             raise ValueError("Embeddings table name must be distinct from consolidated and tags-ref tables.")
@@ -501,11 +671,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     storage_client = None if args.dry_run or args.skip_upload else storage.Client(project=args.project)
     bq_client = None if args.dry_run else bigquery.Client(project=args.project)
 
-    targets: list[tuple[str, str, Sequence[str] | None]] = [
-        (CONSOLIDATED_FILENAME, consolidated_table_id, EXPECTED_CONSOLIDATED_CLUSTERING),
-        (TAGS_REF_FILENAME, tags_ref_table_id, None),
-    ]
-    if args.with_embeddings:
+    load_base_tables = not args.merge_embeddings or args.reload_consolidated
+    if args.merge_embeddings and not load_base_tables and bq_client is not None:
+        load_base_tables = not _table_exists(bq_client, consolidated_table_id)
+
+    targets: list[tuple[str, str, Sequence[str] | None]] = []
+    if load_base_tables:
+        targets.extend(
+            [
+                (CONSOLIDATED_FILENAME, consolidated_table_id, EXPECTED_CONSOLIDATED_CLUSTERING),
+                (TAGS_REF_FILENAME, tags_ref_table_id, None),
+            ]
+        )
+    if need_embeddings:
         targets.append((EMBEDDINGS_FILENAME, embeddings_table_id, ("id",)))
 
     for filename, table_id, clustering in targets:
@@ -530,16 +708,42 @@ def main(argv: Sequence[str] | None = None) -> int:
             dry_run=args.dry_run,
         )
 
-    if bq_client is not None:
-        summary = verify_loaded_tables(
+    if args.merge_embeddings:
+        if bq_client is not None:
+            verify_embeddings_table(bq_client, embeddings_table_id)
+        merge_embeddings_into_consolidated(
             bq_client,
             consolidated_table_id,
-            tags_ref_table_id,
-            project=args.project,
-            dataset=args.dataset,
+            embeddings_table_id,
             location=args.location,
+            dry_run=args.dry_run,
         )
-        if args.with_embeddings:
+
+    if bq_client is not None:
+        summary: dict[str, int] = {}
+        if load_base_tables or _table_exists(bq_client, tags_ref_table_id):
+            summary.update(
+                verify_loaded_tables(
+                    bq_client,
+                    consolidated_table_id,
+                    tags_ref_table_id,
+                    project=args.project,
+                    dataset=args.dataset,
+                    location=args.location,
+                )
+            )
+        if args.merge_embeddings:
+            summary.update(
+                verify_merged_embeddings(
+                    bq_client,
+                    consolidated_table_id,
+                    location=args.location,
+                )
+            )
+            if not args.with_embeddings:
+                logger.info("Dropping staging embeddings table %s ...", embeddings_table_id)
+                bq_client.delete_table(embeddings_table_id, not_found_ok=True)
+        elif args.with_embeddings:
             emb_rows = verify_embeddings_table(bq_client, embeddings_table_id)
             summary["embeddings_rows"] = emb_rows
         logger.info("Verification complete: %s", summary)

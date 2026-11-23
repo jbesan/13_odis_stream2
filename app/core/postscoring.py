@@ -17,11 +17,17 @@ from core.enrichment_status import (
     is_terminal_enrichment_status,
     is_terminal_refiner_status,
 )
+from core.associations_ranking import (
+    build_refugee_associations_for_bdv,
+    build_v6_inclusion_buckets,
+)
+from core.inclusion_referential import resolve_slug_to_v6_label
 from core.models import (
     AssociationDetail,
     CityAnalysisReport,
     CommuneResult,
     InclusionServiceDetail,
+    InterestSearchGroupResult,
     JobOfferDetail,
     SearchCriterias,
     SearchResultsData,
@@ -95,10 +101,34 @@ def hydration_providers(
         i.code if hasattr(i, "code") else str(i)
         for i in getattr(config, "inc_services_selection", [])
     ]
+    raw_groups = getattr(config, "inc_asso_add_groups", None) or []
+    tag_groups: List[List[str]] = []
+    for grp in raw_groups:
+        raw_tags = grp.tags if hasattr(grp, "tags") else grp
+        cleaned = [
+            str(t.code if hasattr(t, "code") else t).strip()
+            for t in (raw_tags or [])
+            if (t.code if hasattr(t, "code") else t)
+        ]
+        if cleaned:
+            tag_groups.append(cleaned)
+    if not tag_groups and getattr(config, "inc_asso_add_selection", None):
+        tag_groups = [
+            [str(i.code if hasattr(i, "code") else i).strip()]
+            for i in config.inc_asso_add_selection
+            if (i.code if hasattr(i, "code") else i)
+        ]
+
     return (
         HydrationProvider(
             "associations",
-            partial(fetch_associations, engine),
+            partial(
+                fetch_associations,
+                engine,
+                thematique_slugs=slugs,
+                tag_groups=tag_groups,
+                use_v6=True,
+            ),
             apply_associations,
             project_associations,
             ("inclusion",),
@@ -589,18 +619,158 @@ def prefetch_associations(engine: Any, codgeos: List[str]) -> Dict[str, Dict[str
         raise RuntimeError("association_fetch_failed") from e
 
 
+def _resolve_bdv_and_commune_names(
+    engine: Any, codgeos: List[str]
+) -> tuple[Dict[str, str], Dict[str, str]]:
+    """Map target codgeos to normalized Bassin de Vie codes and commune names."""
+    df_communes = getattr(engine, "df_all_communes", None)
+    if df_communes is None or not isinstance(df_communes, pd.DataFrame) or df_communes.empty:
+        return {}, {}
+
+    bdv_map: Dict[str, str] = {}
+    for cg in codgeos:
+        cg_str = str(cg).strip().zfill(5)
+        if cg_str in df_communes.index and "bassin_de_vie" in df_communes.columns:
+            raw_bv = df_communes.loc[cg_str, "bassin_de_vie"]
+            if pd.notna(raw_bv):
+                bdv_map[cg_str] = str(raw_bv).strip().removesuffix(".0")
+
+    commune_names: Dict[str, str] = {}
+    if "libgeo" in df_communes.columns:
+        commune_names = {
+            str(idx).strip().zfill(5): str(val).strip()
+            for idx, val in df_communes["libgeo"].dropna().items()
+        }
+    return bdv_map, commune_names
+
+
+def prefetch_associations_v6(
+    engine: Any,
+    codgeos: List[str],
+    *,
+    thematique_slugs: Optional[List[str]] = None,
+    tag_groups: Optional[List[List[str]]] = None,
+) -> Dict[str, Dict[str, Any]]:
+    """Hydrate deterministic V6 associations (BdV social, interest groups, local refugee).
+
+    Args:
+        engine: Territorial data and RNA service owner.
+        codgeos: Target 5-digit INSEE commune codes.
+        thematique_slugs: Requested Data Inclusion thematic slugs.
+        tag_groups: Structured interest search groups (canonical tags).
+
+    Returns:
+        Per-commune dictionaries conforming to ``AssociationsPayload``.
+    """
+    slugs = list(thematique_slugs or [])
+    groups = [list(g) for g in (tag_groups or []) if g]
+    requested_themes = [
+        lbl for lbl in (resolve_slug_to_v6_label(s) for s in slugs) if lbl
+    ]
+    requested_tags = list(dict.fromkeys(t for g in groups for t in g if t))
+
+    bdv_map, commune_names = _resolve_bdv_and_commune_names(engine, codgeos)
+    bdv_codes = list(dict.fromkeys(b for b in bdv_map.values() if b))
+
+    v6_rows: List[Dict[str, Any]] = []
+    if (requested_themes or requested_tags) and bdv_codes:
+        if not getattr(engine, "rna_rag_service", None):
+            raise RuntimeError("association_service_not_configured")
+        v6_rows = engine.rna_rag_service.get_associations_v6_bdv(
+            bdv_codes=bdv_codes,
+            requested_themes=requested_themes,
+            requested_tags=requested_tags,
+        )
+
+    refugee_df = getattr(engine, "refugee_associations_data", None)
+    temp_results: Dict[str, Dict[str, Any]] = {}
+    for cg in codgeos:
+        cg_str = str(cg).strip().zfill(5)
+        city_bdv = bdv_map.get(cg_str, "")
+        refugee_list = build_refugee_associations_for_bdv(
+            refugee_df,
+            target_codgeo=cg_str,
+            target_bdv=city_bdv,
+            commune_names=commune_names,
+        )
+        inclusion_by_theme, interest_groups = build_v6_inclusion_buckets(
+            v6_rows,
+            target_codgeo=cg_str,
+            target_bdv=city_bdv,
+            requested_thematique_slugs=slugs,
+            tag_groups=groups,
+        )
+        temp_results[str(cg)] = {
+            "refugee": [item.model_dump() for item in refugee_list],
+            "inclusion": {
+                theme: [item.model_dump() for item in items]
+                for theme, items in inclusion_by_theme.items()
+            },
+            "centres_interet_groups": [grp.model_dump() for grp in interest_groups],
+        }
+
+    if hasattr(engine, "_associations_cache") and isinstance(
+        engine._associations_cache, dict
+    ):
+        engine._associations_cache.update(temp_results)
+    return temp_results
+
+
 def fetch_associations(
-    engine: Any, codgeos: tuple[str, ...]
+    engine: Any,
+    codgeos: tuple[str, ...],
+    *,
+    thematique_slugs: Optional[List[str]] = None,
+    tag_groups: Optional[List[List[str]]] = None,
+    use_v6: bool = False,
 ) -> dict[str, HydrationTaskResult]:
     """Fetch one association batch and validate individual commune results.
 
     Args:
         engine: Association service owner.
         codgeos: Deduplicated target codes.
+        thematique_slugs: Selected Data Inclusion slugs (V6 mode).
+        tag_groups: Structured interest search groups (V6 mode).
+        use_v6: Use deterministic V6 BdV hydration instead of legacy ``rna_rag_clustered``.
 
     Returns:
         Typed outcomes for the batch.
     """
+    if use_v6:
+        needs_bq = bool(thematique_slugs or tag_groups)
+        if needs_bq and not getattr(engine, "rna_rag_service", None):
+            logger.warning("Association service is not configured")
+            return {
+                code: HydrationTaskResult(
+                    status=EnrichmentStatus.NOT_CONFIGURED,
+                    error_code="association_service_not_configured",
+                )
+                for code in codgeos
+            }
+        data = prefetch_associations_v6(
+            engine,
+            list(codgeos),
+            thematique_slugs=thematique_slugs,
+            tag_groups=tag_groups,
+        )
+        outcomes: dict[str, HydrationTaskResult] = {}
+        for code in codgeos:
+            payload_obj = AssociationsPayload.model_validate(data.get(code, {}))
+            has_items = bool(
+                payload_obj.refugee
+                or any(payload_obj.inclusion.values())
+                or any(g.associations for g in payload_obj.centres_interet_groups)
+            )
+            outcomes[code] = HydrationTaskResult(
+                status=(
+                    EnrichmentStatus.SUCCESS_NONEMPTY
+                    if has_items
+                    else EnrichmentStatus.SUCCESS_EMPTY
+                ),
+                payload=payload_obj,
+            )
+        return outcomes
+
     if not engine.rna_rag_service:
         logger.warning("Association service is not configured")
         return {
@@ -1513,9 +1683,14 @@ def _sync_legacy_commune_data(
     # 1. Sync Enrichment (Associations)
     if "enrichment" in bg_res:
         enrich_data = bg_res["enrichment"].get(str(commune.codgeo))
-        if enrich_data and not commune.inclusion.asso_inclusion_list_by_cat:
+        inc_data = commune.inclusion
+        has_existing = bool(
+            inc_data.asso_inclusion_list_by_cat
+            or inc_data.asso_centres_interet_groups
+            or inc_data.asso_refugee_list
+        )
+        if enrich_data and not has_existing:
             logger.debug("✨ [SYNC] Associations sync for %s", commune.codgeo)
-            inc_data = commune.inclusion
             inc_data.asso_refugee_list = [
                 AssociationDetail.model_validate(a)
                 for a in enrich_data.get("refugee", [])
@@ -1530,6 +1705,13 @@ def _sync_legacy_commune_data(
             inc_data.asso_inclusion_count = sum(
                 len(asso_list)
                 for asso_list in inc_data.asso_inclusion_list_by_cat.values()
+            )
+            inc_data.asso_centres_interet_groups = [
+                InterestSearchGroupResult.model_validate(g)
+                for g in enrich_data.get("centres_interet_groups", [])
+            ]
+            inc_data.asso_centres_interet_count = sum(
+                len(g.associations) for g in inc_data.asso_centres_interet_groups
             )
 
     # 1b. Sync Enrichment (Job Offers)

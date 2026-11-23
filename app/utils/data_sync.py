@@ -16,7 +16,7 @@ import sys
 import threading
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from google.cloud import storage
 
@@ -91,6 +91,7 @@ def download_and_verify_release(
     manifest_blob_name: Optional[str] = None,
     expected_manifest_sha: Optional[str] = None,
     pointer_raw: Optional[bytes] = None,
+    required_artifacts: Optional[Sequence[str]] = RUNTIME_DATASET_FILENAMES,
 ) -> Dict[str, Any]:
     """Download and verify all artifacts for one release in an isolated staging dir.
 
@@ -109,12 +110,16 @@ def download_and_verify_release(
         manifest_blob_name: Optional explicit manifest blob name.
         expected_manifest_sha: Optional expected SHA-256 for the manifest.
         pointer_raw: Optional raw bytes of current.json to persist locally.
+        required_artifacts: Optional filenames required by the active runtime
+            contract. Missing entries fail validation before any downloads so
+            ``sync_active_release`` can fall back to ``previous_version``.
 
     Returns:
         Dictionary with sync summary: version, downloaded_files, skipped_files.
 
     Raises:
-        RuntimeError: If download fails or any SHA-256 checksum mismatches.
+        RuntimeError: If download fails, required runtime artifacts are missing,
+            or any SHA-256 checksum mismatches.
     """
     manifest_name = manifest_blob_name or "data_manifest.json"
     manifest_blob = bucket.blob(
@@ -142,6 +147,14 @@ def download_and_verify_release(
         raise RuntimeError(
             f"Release manifest for {release_version} contains no outputs"
         )
+    if required_artifacts:
+        output_names = {item.get("name") for item in outputs if item.get("name")}
+        missing_required = sorted(set(required_artifacts) - output_names)
+        if missing_required:
+            raise RuntimeError(
+                f"Release manifest for {release_version} is missing required runtime artifacts: "
+                + ", ".join(missing_required)
+            )
 
     downloaded: List[str] = []
     skipped: List[str] = []
@@ -271,6 +284,7 @@ def sync_active_release(
     force: bool = False,
     storage_client: Optional[storage.Client] = None,
     allow_fallback: bool = True,
+    required_artifacts: Optional[Sequence[str]] = RUNTIME_DATASET_FILENAMES,
 ) -> Dict[str, Any]:
     """Synchronize the active GCS dataset release with automatic fallback.
 
@@ -282,6 +296,8 @@ def sync_active_release(
         force: If True, re-download all files regardless of local checksums.
         storage_client: Optional injected google.cloud.storage.Client.
         allow_fallback: If True, falls back to previous_version on error.
+        required_artifacts: Optional filenames required by the active runtime
+            contract (defaults to ``RUNTIME_DATASET_FILENAMES``).
 
     Returns:
         Dictionary with sync summary: version, downloaded_files, skipped_files, and optional fallback flag.
@@ -337,6 +353,7 @@ def sync_active_release(
             manifest_blob_name=manifest_blob_name,
             expected_manifest_sha=expected_manifest_sha,
             pointer_raw=pointer_raw,
+            required_artifacts=required_artifacts,
         )
         return summary
     except Exception as exc:
@@ -369,6 +386,7 @@ def sync_active_release(
                     manifest_blob_name="data_manifest.json",
                     expected_manifest_sha=None,
                     pointer_raw=fallback_pointer_raw,
+                    required_artifacts=required_artifacts,
                 )
                 summary["fallback"] = True
                 summary["target_version"] = release_version

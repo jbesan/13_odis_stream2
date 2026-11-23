@@ -489,3 +489,60 @@ async def test_expert_worker_standalone_fallback_all_six_experts(
     assert len(caps) == 1
     assert caps[0].id == expected_cap_id
 
+
+@pytest.mark.asyncio
+async def test_search_rna_rag_batch_precomputes_vectors_and_dedups_by_id_codgeo():
+    """Verify batch embeddings are passed to parallel queries and (id, codgeo) keeps distinct communes."""
+    from agents.tools import search_rna_rag_batch
+
+    vec_map = {"cours fle": [0.1] * 768, "soutien psy": [0.2] * 768}
+
+    def _fake_single(query, codgeo, top_k=10, *, query_vector=None):
+        assert query_vector == vec_map[query]
+        if query == "cours fle":
+            return [
+                {
+                    "id": "W330001",
+                    "name": "Asso Alpha",
+                    "codgeo": "33063",
+                    "is_same_commune": True,
+                    "is_siege": True,
+                    "score": 0.03,
+                    "matched_terms": ["cours", "fle"],
+                },
+                {
+                    "id": "W330001",
+                    "name": "Asso Alpha",
+                    "codgeo": "33281",
+                    "is_same_commune": False,
+                    "is_siege": False,
+                    "score": 0.02,
+                    "matched_terms": ["fle"],
+                },
+            ]
+        return [
+            {
+                "id": "W330001",
+                "name": "Asso Alpha",
+                "codgeo": "33063",
+                "is_same_commune": True,
+                "is_siege": True,
+                "score": 0.05,
+                "matched_terms": ["soutien"],
+            }
+        ]
+
+    with (
+        patch("agents.tools._compute_rna_query_vectors", return_value=vec_map) as mock_vecs,
+        patch("agents.tools._search_rna_rag_logic", side_effect=_fake_single),
+    ):
+        results = await search_rna_rag_batch(["cours fle", "soutien psy"], "33063", top_k=5)
+
+    mock_vecs.assert_called_once_with(["cours fle", "soutien psy"])
+    # Distinct (id, codgeo) entries preserved; same (id, codgeo) merged keeping higher score + all matched_terms
+    assert len(results) == 2
+    assert results[0]["codgeo"] == "33063"
+    assert results[0]["score"] == 0.05
+    assert set(results[0]["matched_terms"]) == {"cours", "fle", "soutien"}
+    assert results[1]["codgeo"] == "33281"
+

@@ -85,6 +85,94 @@ def test_execute_isolates_repeated_searches_with_identical_criteria():
     assert results.search_hash == "run-hash"
 
 
+def test_execute_skips_share_id_and_clears_query_param_when_auto_persist_disabled():
+    from agents.utils import get_odis_bg_store
+
+    state = {}
+    controller = SearchController(AppSession(state))
+    config = SearchCriterias(loc_search_area="france")
+    results = SearchResultsData(
+        search_hash="run-hash",
+        results=[],
+        current_geo=CommuneResult(codgeo="33063", name="Bordeaux", global_score=0),
+    )
+    engine = Mock()
+    engine.run_optimized.return_value = (results, pd.DataFrame())
+    app_data = {"odis": pd.DataFrame(), "odis_geo": pd.DataFrame()}
+    fake_query_params = {"search": "stale123"}
+
+    with patch.object(controller, "_build_engine", return_value=engine), patch(
+        "services.search_controller.data_loader.get_data_mtime",
+        return_value="release-3",
+    ), patch(
+        "services.search_controller.telemetry.reset_interaction_id"
+    ), patch(
+        "services.search_controller.launch_post_scoring_tasks"
+    ), patch(
+        "services.share_service.should_schedule_auto_persist",
+        return_value=False,
+    ), patch(
+        "services.search_controller.submit_background_work"
+    ) as submit_bg, patch(
+        "services.search_controller.get_script_run_ctx",
+        return_value=object(),
+    ), patch(
+        "services.search_controller.st.query_params",
+        fake_query_params,
+    ):
+        controller.execute(config, app_data)
+
+    assert state["active_share_id"] is None
+    assert "search" not in fake_query_params
+    submit_bg.assert_not_called()
+    assert "snapshot_meta" not in get_odis_bg_store().get(results.execution_id, {})
+
+
+def test_execute_sets_share_id_query_param_and_schedules_when_auto_persist_enabled():
+    from agents.utils import get_odis_bg_store
+
+    state = {}
+    controller = SearchController(AppSession(state))
+    config = SearchCriterias(loc_search_area="france")
+    results = SearchResultsData(
+        search_hash="run-hash",
+        results=[],
+        current_geo=CommuneResult(codgeo="33063", name="Bordeaux", global_score=0),
+    )
+    engine = Mock()
+    engine.run_optimized.return_value = (results, pd.DataFrame())
+    app_data = {"odis": pd.DataFrame(), "odis_geo": pd.DataFrame()}
+    fake_query_params = {}
+
+    with patch.object(controller, "_build_engine", return_value=engine), patch(
+        "services.search_controller.data_loader.get_data_mtime",
+        return_value="release-3",
+    ), patch(
+        "services.search_controller.telemetry.reset_interaction_id"
+    ), patch(
+        "services.search_controller.launch_post_scoring_tasks"
+    ), patch(
+        "services.share_service.should_schedule_auto_persist",
+        return_value=True,
+    ), patch(
+        "services.search_controller.submit_background_work"
+    ) as submit_bg, patch(
+        "services.search_controller.get_script_run_ctx",
+        return_value=object(),
+    ), patch(
+        "services.search_controller.st.query_params",
+        fake_query_params,
+    ):
+        controller.execute(config, app_data)
+
+    share_id = state["active_share_id"]
+    assert isinstance(share_id, str) and len(share_id) == 8
+    assert fake_query_params["search"] == share_id
+    submit_bg.assert_called_once()
+    bg_entry = get_odis_bg_store().get(results.execution_id, {})
+    assert bg_entry["snapshot_meta"]["share_id"] == share_id
+
+
 def test_center_map_sets_initial_center_and_unhighlight_restores():
     from ui.results import _result_highlight_callback
 

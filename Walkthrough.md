@@ -1,44 +1,17 @@
-# Walkthrough — Résolution Échecs Tests deploy-staging
-
-## Contexte & Objectif
-
-Lors d'un `deploy-staging`, le Step #0 de Cloud Build a échoué sur 2 tests :
-1. `tests/unit/test_mcp_local.py::test_search_referentiels_inclusion` (`assert 0 > 0`) accompagné du warning `Relevance calculation failed for row nan: 'numpy.float64' object has no attribute 'split'`.
-2. `tests/integration/test_vacant_housing.py::test_vacant_housing_criterion` (`assert np.float32(210.0) == 207.0`).
-
----
+# Walkthrough — Optimisation Boot Cold-Start & Résilience Contrat Datasets
 
 ## 1. Modifications réalisées
 
-### Correction de l'invariant logique de test ([`tests/integration/test_vacant_housing.py`](file:///Users/jacques/dev/13_odis_stream2/tests/integration/test_vacant_housing.py))
-- Remplacement du snapshot scalaire fragile `assert sample["log_priv_vacant_plus_2ans"] == 207.0` par l'invariant logique `assert sample["log_priv_vacant_plus_2ans"] > 0`.
-- Permet la compatibilité ascendante avec les rafraîchissements réels des données amont LOVAC (où Ambérieu-en-Bugey est passé de 207 à 210 logements vacants).
+### A. Performance au premier chargement (CPU=2 conservé)
+- **Skip de l'instrumentation Logfire en production** ([`app/utils/logger.py`](file:///Users/jacques/dev/13_odis_stream2/app/utils/logger.py)) : `setup_logfire()` retourne après `logfire.configure(..., send_to_logfire=False)` sans appeler `instrument_pydantic_ai()` ni `instrument_httpx()`. Évite l'import synchrone de ~1 200 modules (`pydantic_ai`, `fastmcp`, `mcp`) sur `main.py`. Test mis à jour dans [`tests/unit/test_logfire_env.py`](file:///Users/jacques/dev/13_odis_stream2/tests/unit/test_logfire_env.py).
+- **Pré-chauffe in-process au boot** ([`app/server_boot.py`](file:///Users/jacques/dev/13_odis_stream2/app/server_boot.py), [`app/Dockerfile`](file:///Users/jacques/dev/13_odis_stream2/app/Dockerfile)) : remplace `python3 -m utils.data_sync && streamlit run main.py ...` par `python3 server_boot.py main.py ...`. Pré-importe les modules backend lourds, synchronise GCS et pré-charge `@st.cache_resource` (`get_app_data()`, `get_tag_search_index()`) + `mcp_server.DATA_CONTEXT` pendant le `--cpu-boost` de démarrage, tout en évitant d'importer `ui.idle_sleep`/`ui.page_shell` avant la création du `Runtime` Streamlit. Tests ajoutés dans [`tests/unit/test_server_boot.py`](file:///Users/jacques/dev/13_odis_stream2/tests/unit/test_server_boot.py).
 
-### Court-circuit précoce sur domaine vide ([`app/services/mcp_server.py`](file:///Users/jacques/dev/13_odis_stream2/app/services/mcp_server.py))
-- Ajout d'une condition immédiate `if df.empty: return []` directement après le filtrage par domaine (`df = df[df["key"] == domain]`).
-- Élimine le comportement interne de Pandas qui applique la fonction de scoring sur une ligne factice de `NaN` pour inférer les types, ce qui évitait le plantage mais polluait les logs avec un warning trompeur `Relevance calculation failed for row nan: 'numpy.float64' object has no attribute 'split'`.
-
-### Résilience du repli référentiels inclusion ([`pipeline/build.py`](file:///Users/jacques/dev/13_odis_stream2/pipeline/build.py))
-- Prise en charge de la condition `if incl_df is None or incl_df.empty:`.
-- Résolution multi-chemins pour le repli local : `CACHE_DIR / incl_name` puis `pipeline/local / incl_name`.
-- Restaure les 69 services d'inclusion même en cas d'erreur réseau, de serveur ou d'épuisement de budget quotidien de l'API ODAS (HTTP 429).
-
----
+### B. Backfill `odis_associations_agg.parquet` & garde-fou de contrat
+- **Émission duale temporaire dans le pipeline** ([`pipeline/build.py`](file:///Users/jacques/dev/13_odis_stream2/pipeline/build.py), [`pipeline/etl.py`](file:///Users/jacques/dev/13_odis_stream2/pipeline/etl.py), [`pipeline/data_contracts.yaml`](file:///Users/jacques/dev/13_odis_stream2/pipeline/data_contracts.yaml), [`pipeline/tests/test_plm_consolidation.py`](file:///Users/jacques/dev/13_odis_stream2/pipeline/tests/test_plm_consolidation.py)) : régénération de `odis_associations_agg.parquet` aux côtés des 3 fichiers RNA V6 tant que la production reste sur `c645c7c`.
+- **Contrôle du contrat dans `data_sync.py`** ([`app/utils/data_sync.py`](file:///Users/jacques/dev/13_odis_stream2/app/utils/data_sync.py), [`tests/unit/test_sync_datasets.py`](file:///Users/jacques/dev/13_odis_stream2/tests/unit/test_sync_datasets.py)) : `download_and_verify_release()` vérifie `RUNTIME_DATASET_FILENAMES` sur `manifest["outputs"]` avant tout téléchargement afin de déclencher automatiquement le rollback vers `previous_version` en cas de rupture de contrat.
 
 ## 2. Validation & Tests
-
-- **Linter & Formatter** :
-  ```bash
-  uv run ruff check app tests
-  # All checks passed!
-  ```
-- **Type Checker** :
-  ```bash
-  uv run ty check app
-  # All checks passed!
-  ```
-- **Test d'intégration logement vacant** :
-  ```bash
-  uv run pytest tests/integration/test_vacant_housing.py --tb=line
-  # 1 passed in 2.35s
-  ```
+- `uv run ruff check app tests pipeline` : **All checks passed**
+- `uv run ty check app` : **All checks passed**
+- `uv run pytest tests/unit pipeline/tests --tb=line` : **890 passed, 1 skipped** (`tests/unit/test_refiner_agent.py`)
+- `uv run pytest tests/integration --tb=line` : **9 passed**

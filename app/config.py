@@ -495,7 +495,7 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     "recherche_siae": True,
     "classe_enfants": [],
     "inc_services_selection": DEFAULT_INC_SERVICES_CORE,
-    "inc_asso_add_selection": [],
+    "inc_asso_add_groups": [],
     "loc_search_code": [],
     "type_logement": "appt_all",
     "weight_profile": "Équilibré",
@@ -554,7 +554,7 @@ DEMO_SCENARIOS = {
         "besoin_sante": ["Maternité"],
         "inc_services_selection": DEFAULT_INC_SERVICES_CORE
         + ["lecture-ecriture-calcul--maitriser-le-francais"],
-        "inc_asso_add_selection": ["chant choral"],
+        "inc_asso_add_groups": [["chant choral"]],
         "notes_qualitatives": "Famille monoparentale recherchant des services de mobilité et d'accompagnement.",
     },
     "agir": {
@@ -571,7 +571,7 @@ DEMO_SCENARIOS = {
         "classe_enfants": ["Elémentaire"],
         "inc_services_selection": DEFAULT_INC_SERVICES_CORE
         + ["lecture-ecriture-calcul--maitriser-le-francais"],
-        "inc_asso_add_selection": ["sport"],
+        "inc_asso_add_groups": [["sport"]],
         "weight_profile": "Economique",
         "poids_emploi": 1.0,
         "poids_logement": 0.75,
@@ -601,7 +601,7 @@ DEMO_SCENARIOS = {
         "classe_enfants": ["Maternelle", "Elémentaire"],
         "inc_services_selection": DEFAULT_INC_SERVICES_CORE
         + ["lecture-ecriture-calcul--maitriser-le-francais"],
-        "inc_asso_add_selection": ["sport"],
+        "inc_asso_add_groups": [["sport"]],
         "weight_profile": "Profil personnalisé",
         "poids_emploi": 1.0,
         "poids_logement": 1.0,
@@ -631,7 +631,7 @@ DEMO_SCENARIOS = {
         "classe_enfants": ["Maternelle", "Elémentaire"],
         "inc_services_selection": DEFAULT_INC_SERVICES_CORE
         + ["lecture-ecriture-calcul--maitriser-le-francais"],
-        "inc_asso_add_selection": ["sport"],
+        "inc_asso_add_groups": [["sport"]],
         "weight_profile": "Profil personnalisé",
         "poids_emploi": 1.0,
         "poids_logement": 1.0,

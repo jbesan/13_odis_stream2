@@ -14,7 +14,7 @@ from typing import Any, Callable, Dict, Literal, Optional, TYPE_CHECKING, cast
 import logfire
 import pandas as pd
 
-from core.models import SearchCriterias, CriteriaItem
+from core.models import AssociationSearchGroup, CriteriaItem, SearchCriterias
 from services.telemetry import resolve_interaction_id
 
 logger = logging.getLogger(__name__)
@@ -422,6 +422,7 @@ def map_ui_config_to_search_criterias(
         codes_formations=codes_formations,
         inc_services_selection=inc_services,
         inc_asso_add_selection=inc_assos,
+        inc_asso_add_groups=[AssociationSearchGroup(tags=[item]) for item in inc_assos],
         hebergement_cible=config.hebergement_cible,
         logement=config.logement,
         type_logement=type_log,

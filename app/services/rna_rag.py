@@ -11,8 +11,80 @@ from google.cloud import bigquery
 from requests.adapters import HTTPAdapter
 
 from agents.agent_config import get_gemini_client
+from core.associations_ranking import has_active_employees
+from core.models import format_assoce_url
 
 logger = logging.getLogger("RNARagService")
+
+_EMBEDDING_MODEL = "gemini-embedding-001"
+_EMBEDDING_DIM = 768
+_RRF_K = 60
+_DENSE_CANDIDATE_LIMIT = 200
+_LEXICAL_CANDIDATE_LIMIT = 200
+_CODGEO_PLM_SQL_EXPR = """CASE
+    WHEN REGEXP_CONTAINS(LPAD(TRIM(adrs_codeinsee), 5, '0'), r'^751(0[1-9]|1[0-9]|20)$') THEN '75056'
+    WHEN REGEXP_CONTAINS(LPAD(TRIM(adrs_codeinsee), 5, '0'), r'^6938[1-9]$') THEN '69123'
+    WHEN REGEXP_CONTAINS(LPAD(TRIM(adrs_codeinsee), 5, '0'), r'^132(0[1-9]|1[0-6])$') THEN '13055'
+    ELSE LPAD(TRIM(adrs_codeinsee), 5, '0')
+END"""
+_PLM_PARIS_RE = re.compile(r"^751(0[1-9]|1[0-9]|20)$")
+_PLM_LYON_RE = re.compile(r"^6938[1-9]$")
+_PLM_MARSEILLE_RE = re.compile(r"^132(0[1-9]|1[0-6])$")
+
+
+def normalize_codgeo_plm(codgeo: Any) -> str:
+    """Normalize Paris/Lyon/Marseille arrondissement codes to commune INSEE code."""
+    raw = str(codgeo or "").strip().zfill(5)
+    if _PLM_PARIS_RE.match(raw):
+        return "75056"
+    if _PLM_LYON_RE.match(raw):
+        return "69123"
+    if _PLM_MARSEILLE_RE.match(raw):
+        return "13055"
+    return raw
+
+
+def _clean_optional_str(value: Any) -> Optional[str]:
+    """Normalize nullable/NaN dataframe scalar values to stripped string or None."""
+    if value is None:
+        return None
+    if isinstance(value, float) and math.isnan(value):
+        return None
+    text = str(value).strip()
+    if not text or text.lower() in {"nan", "none", "<na>"}:
+        return None
+    return text
+
+
+def _optional_int(value: Any) -> Optional[int]:
+    """Convert nullable/NaN numeric value to int or None."""
+    if value is None:
+        return None
+    if isinstance(value, float) and math.isnan(value):
+        return None
+    return int(value)
+
+
+def _optional_float(value: Any) -> Optional[float]:
+    """Convert nullable/NaN numeric value to float or None."""
+    if value is None:
+        return None
+    if isinstance(value, float) and math.isnan(value):
+        return None
+    return float(value)
+
+
+def _join_text_sequence(value: Any) -> str:
+    """Join list/array/scalar tag values into a single space-delimited string."""
+    if isinstance(value, (list, tuple, np.ndarray)):
+        return " ".join(
+            str(item).strip()
+            for item in value
+            if item is not None and str(item).strip()
+        )
+    if isinstance(value, str):
+        return value
+    return ""
 
 # French stopwords to filter common syntactic noise while preserving domain terms
 FRENCH_STOPWORDS = {
@@ -160,9 +232,17 @@ class BM25Ranker:
             if isinstance(name_text, str):
                 for t in normalize_tokens(name_text):
                     doc_counter[t] += title_boost
-            cat_text = row.get("categorie")
+            estab_text = row.get("nom_etablissement")
+            if isinstance(estab_text, str) and estab_text != name_text:
+                for t in normalize_tokens(estab_text):
+                    doc_counter[t] += title_boost
+            cat_text = row.get("categorie") or row.get("waldec_label")
             if isinstance(cat_text, str):
                 for t in normalize_tokens(cat_text):
+                    doc_counter[t] += waldec_boost
+            tags_text = _join_text_sequence(row.get("llm_tags_recherche"))
+            if tags_text:
+                for t in normalize_tokens(tags_text):
                     doc_counter[t] += waldec_boost
             desc_text = row.get("description")
             if isinstance(desc_text, str):
@@ -253,9 +333,13 @@ class RNARagService:
             self.bq_client = bigquery.Client(project=self.data_project)
             configure_bigquery_pool(self.bq_client, pool_size=50)
             self.bm25_ranker = BM25Ranker()
+            self.v6_table_id = os.getenv(
+                "RNA_V6_BQ_TABLE",
+                f"{self.data_project}.rna_rag.national_v6_consolidated",
+            )
 
-            # Optional GenAI client for backwards compatibility
-            self.embedding_model = "text-multilingual-embedding-002"
+            self.embedding_model = _EMBEDDING_MODEL
+            self.embedding_dim = _EMBEDDING_DIM
             try:
                 embedding_location = (
                     os.getenv("ODIS_EMBEDDING_LOCATION")
@@ -302,8 +386,53 @@ class RNARagService:
 
         raise ValueError(f"Unsupported embedding type: {type(raw_embedding)}")
 
+    def get_embeddings_batch(
+        self,
+        texts: List[str],
+        *,
+        task_type: str = "RETRIEVAL_QUERY",
+    ) -> List[np.ndarray]:
+        """Generate normalized 768d ``gemini-embedding-001`` vectors in a single batch call.
+
+        Args:
+            texts: List of query strings to embed.
+            task_type: Vertex AI embedding task type (default ``RETRIEVAL_QUERY``).
+
+        Returns:
+            List of L2-normalized float64 numpy vectors aligned with ``texts``.
+
+        Raises:
+            RuntimeError: If GenAI client is not initialized.
+        """
+        if not texts:
+            return []
+        if not self.genai_client:
+            raise RuntimeError("GenAI client is not initialized.")
+        try:
+            response = self.genai_client.models.embed_content(
+                model=self.embedding_model,
+                contents=list(texts),
+                config={
+                    "output_dimensionality": self.embedding_dim,
+                    "task_type": task_type,
+                },
+            )
+            vectors: List[np.ndarray] = []
+            for emb in response.embeddings or []:
+                vec = self._flatten_embedding(emb.values)
+                norm = np.linalg.norm(vec)
+                vectors.append(vec / norm if norm > 0 else vec)
+            if len(vectors) != len(texts):
+                raise RuntimeError(
+                    f"Embedding count mismatch: requested {len(texts)}, got {len(vectors)}"
+                )
+            return vectors
+        except Exception as e:
+            logger.error(f"Batch embedding generation failed: {e}")
+            raise
+
     def _get_embedding(self, text: str) -> np.ndarray:
-        """Generates embedding for text (kept for backwards compatibility).
+        """Generates a single L2-normalized embedding vector.
 
         Args:
             text: Input string.
@@ -311,20 +440,7 @@ class RNARagService:
         Returns:
             Normalized float numpy vector.
         """
-        if not self.genai_client:
-            raise RuntimeError("GenAI client is not initialized.")
-        try:
-            response = self.genai_client.models.embed_content(
-                model=self.embedding_model,
-                contents=[text],
-                config={"output_dimensionality": 128},
-            )
-            v = np.array(response.embeddings[0].values)
-            norm = np.linalg.norm(v)
-            return v / norm if norm > 0 else v
-        except Exception as e:
-            logger.error(f"Embedding generation failed: {e}")
-            raise
+        return self.get_embeddings_batch([text])[0]
 
     def get_associations_semantic(
         self,
@@ -334,31 +450,54 @@ class RNARagService:
         top_k: int = 10,
         inclusion_only: bool = False,
         threshold: float = 0.0,
+        exclude_international: bool = True,
+        query_vector: Optional[List[float]] = None,
     ) -> List[Dict[str, Any]]:
-        """Performs BM25-ranked lookup for associations in a commune or Bassin de Vie.
+        """Perform BDV-scoped Hybrid RRF search (768d cosine + BM25) over RNA V6.
 
-        Uses BigQuery SEARCH to pre-filter candidates by geography and keywords,
-        then ranks them using field-weighted BM25 (Robertson-Spärck Jones).
+        Always restricts execution to a Bassin de Vie (``TRIM(bdv_codeinsee) = @bv_code``)
+        or explicit commune scope (``codgeos``) so full-table scans never happen.
+        BigQuery computes dense top-200 (`COSINE_DISTANCE`) and lexical top-200
+        (`SEARCH`) inside the target BDV cluster, transfers only scalar metadata
+        (never 768d vectors), and fuses ranks in Python with BM25 via RRF (k=60).
 
         Args:
-            query: The search term (e.g. 'football', 'hébergement', 'mosquée').
-            codgeos: List of 5-digit INSEE codes (fallback or commune filter).
-            bv_code: Optional Bassin de Vie code for broader search.
-            top_k: Number of results to return.
-            inclusion_only: If True, filters strictly for is_inclusion_relevant.
-            threshold: Minimum BM25 score threshold (default 0.0).
+            query: Search query terms (2-4 concrete keywords, no city name).
+            codgeos: List of 5-digit INSEE codes (used for same-commune flag and fallback geo scope).
+            bv_code: Bassin de Vie INSEE code for BDV cluster filtering.
+            top_k: Maximum number of deduplicated associations to return (default 10).
+            inclusion_only: If True, restricts to ``llm_action_sociale = TRUE``.
+            threshold: Minimum RRF score threshold (default 0.0).
+            exclude_international: If True (default), excludes ``llm_perimetre_action = 'international'``.
+            query_vector: Optional pre-computed 768d query vector (from batch embedding).
 
         Returns:
-            List of matching associations sorted by BM25 score descending.
+            Deduplicated associations sorted by RRF score descending.
+
+        Raises:
+            ValueError: If neither ``bv_code`` nor non-empty ``codgeos`` is provided.
+            RuntimeError: If BigQuery or embedding generation fails.
         """
         if isinstance(codgeos, str):
-            codgeos = [codgeos]
+            raw_codgeos = [codgeos]
         elif codgeos is None:
-            codgeos = []
+            raw_codgeos = []
+        else:
+            raw_codgeos = list(codgeos)
 
-        codgeos = [str(c) for c in codgeos]
+        codgeos_clean = [
+            normalize_codgeo_plm(c) for c in raw_codgeos if str(c).strip()
+        ]
+        bv_code_clean = (
+            str(bv_code).strip().removesuffix(".0")
+            if bv_code is not None and str(bv_code).strip()
+            else ""
+        )
+        if not bv_code_clean and not codgeos_clean:
+            raise ValueError(
+                "Semantic search requires bv_code (BDV) or non-empty codgeos; full-table scan is forbidden."
+            )
 
-        # 1. Tokenize query and build bivalent search expression (unaccented + raw)
         q_tokens = normalize_tokens(query)
         if not q_tokens:
             logger.debug(f"No valid tokens extracted from query '{query}'")
@@ -371,69 +510,220 @@ class RNARagService:
         raw_tokens = [
             t for t in raw_tokens if len(t) >= 2 and t not in FRENCH_STOPWORDS
         ]
-
-        # Combine unaccented and raw tokens for maximum candidate recall in BigQuery
         search_terms = set(q_tokens) | set(raw_tokens)
         search_expr = " OR ".join(
             f'"{t}"' if " " in t else t for t in sorted(search_terms)
         )
 
         try:
-            # 2. Query BigQuery candidates using SEARCH and clustering
-            table_id = f"{self.data_project}.rna_rag.rna_rag_clustered"
+            vec_list = (
+                [float(x) for x in query_vector]
+                if query_vector is not None
+                else self._get_embedding(query).tolist()
+            )
+
             where_geo = (
-                "code_bdv = @bv_code" if bv_code else "codgeo IN UNNEST(@codgeos)"
+                "TRIM(bdv_codeinsee) = @bv_code"
+                if bv_code_clean
+                else f"({_CODGEO_PLM_SQL_EXPR}) IN UNNEST(@codgeos)"
+            )
+            filter_international = (
+                "AND (llm_perimetre_action IS NULL OR LOWER(TRIM(llm_perimetre_action)) != 'international')"
+                if exclude_international
+                else ""
             )
             filter_inclusion = (
-                "AND is_inclusion_relevant = TRUE" if inclusion_only else ""
+                "AND llm_action_sociale = TRUE" if inclusion_only else ""
             )
 
             query_bq = f"""
-                SELECT id, 
-                       COALESCE(titre_court, '') as name, 
-                       primary_category, 
-                       code_waldec, 
-                       COALESCE(categorie, '') as categorie, 
-                       COALESCE(description, '') as description, 
-                       codgeo
-                FROM `{table_id}`
-                WHERE {where_geo}
-                  {filter_inclusion}
-                  AND SEARCH((titre_court, categorie, description), @search_expr)
-                LIMIT 500
+                WITH scoped AS (
+                    SELECT
+                        id,
+                        entity_id,
+                        is_siege,
+                        COALESCE(NULLIF(TRIM(titre_court), ''), NULLIF(TRIM(title), ''), 'Inconnu') AS name,
+                        NULLIF(TRIM(nom_etablissement), '') AS nom_etablissement,
+                        COALESCE(TRIM(objet), '') AS description,
+                        COALESCE(NULLIF(TRIM(waldec_labels_hierarchical), ''), COALESCE(TRIM(objet_social1), '')) AS waldec_label,
+                        {_CODGEO_PLM_SQL_EXPR} AS codgeo,
+                        NULLIF(TRIM(adrs_libcommune), '') AS commune_nom,
+                        date_decla,
+                        tranche_effectifs,
+                        llm_tags_recherche,
+                        titre_court,
+                        title,
+                        objet,
+                        embedding_gemini_768
+                    FROM `{self.v6_table_id}`
+                    WHERE {where_geo}
+                      AND (etat_admin IS NULL OR etat_admin != 'F')
+                      AND adrs_codeinsee IS NOT NULL
+                      AND LENGTH(TRIM(adrs_codeinsee)) > 0
+                      {filter_international}
+                      {filter_inclusion}
+                ),
+                dense_top AS (
+                    SELECT
+                        * EXCEPT (titre_court, title, objet, embedding_gemini_768),
+                        ROW_NUMBER() OVER (
+                            ORDER BY COSINE_DISTANCE(embedding_gemini_768, @query_vec) ASC
+                        ) AS dense_rank,
+                        (1.0 - COSINE_DISTANCE(embedding_gemini_768, @query_vec)) AS cosine_sim
+                    FROM scoped
+                    WHERE embedding_gemini_768 IS NOT NULL
+                      AND ARRAY_LENGTH(embedding_gemini_768) = {self.embedding_dim}
+                    ORDER BY COSINE_DISTANCE(embedding_gemini_768, @query_vec) ASC
+                    LIMIT {_DENSE_CANDIDATE_LIMIT}
+                ),
+                lexical_top AS (
+                    SELECT
+                        * EXCEPT (titre_court, title, objet, embedding_gemini_768),
+                        CAST(NULL AS INT64) AS dense_rank,
+                        IF(
+                            embedding_gemini_768 IS NOT NULL AND ARRAY_LENGTH(embedding_gemini_768) = {self.embedding_dim},
+                            1.0 - COSINE_DISTANCE(embedding_gemini_768, @query_vec),
+                            CAST(NULL AS FLOAT64)
+                        ) AS cosine_sim
+                    FROM scoped
+                    WHERE SEARCH(
+                        (titre_court, title, nom_etablissement, objet, ARRAY_TO_STRING(llm_tags_recherche, ' ')),
+                        @search_expr
+                    )
+                    LIMIT {_LEXICAL_CANDIDATE_LIMIT}
+                )
+                SELECT *
+                FROM (
+                    SELECT * FROM dense_top
+                    UNION ALL
+                    SELECT * FROM lexical_top
+                )
+                QUALIFY ROW_NUMBER() OVER (
+                    PARTITION BY entity_id
+                    ORDER BY COALESCE(dense_rank, 999999) ASC
+                ) = 1
             """
 
-            params = [
+            params: List[Any] = [
+                bigquery.ArrayQueryParameter("query_vec", "FLOAT64", vec_list),
                 bigquery.ScalarQueryParameter("search_expr", "STRING", search_expr),
             ]
-            if bv_code:
+            if bv_code_clean:
                 params.append(
-                    bigquery.ScalarQueryParameter("bv_code", "STRING", bv_code)
+                    bigquery.ScalarQueryParameter("bv_code", "STRING", bv_code_clean)
                 )
             else:
                 params.append(
-                    bigquery.ArrayQueryParameter("codgeos", "STRING", codgeos)
+                    bigquery.ArrayQueryParameter("codgeos", "STRING", codgeos_clean)
                 )
 
             job_config = bigquery.QueryJobConfig(query_parameters=params)
             df = self.bq_client.query(query_bq, job_config=job_config).to_dataframe()
-
             if df.empty:
                 return []
 
-            candidates = df.to_dict(orient="records")
+            raw_candidates = df.to_dict(orient="records")
+            indexed_candidates: List[Dict[str, Any]] = []
+            for idx, row in enumerate(raw_candidates):
+                cand = dict(row)
+                cand["_row_idx"] = idx
+                indexed_candidates.append(cand)
 
-            # 3. In-process BM25 Robertson-Spärck Jones ranking
-            return self.bm25_ranker.rank(
-                candidates=candidates,
+            bm25_hits = self.bm25_ranker.rank(
+                candidates=indexed_candidates,
                 query=query,
-                top_k=top_k,
-                threshold=threshold,
+                top_k=len(indexed_candidates),
+                threshold=0.0,
             )
+            bm25_by_idx: Dict[int, tuple[int, List[str]]] = {
+                int(hit["_row_idx"]): (rank_pos, list(hit.get("matched_terms") or []))
+                for rank_pos, hit in enumerate(bm25_hits, start=1)
+            }
+
+            target_codgeo_set = set(codgeos_clean)
+            fused_rows: List[tuple[tuple[float, float, int, str], Dict[str, Any]]] = []
+            for cand in indexed_candidates:
+                dense_rank = _optional_int(cand.get("dense_rank"))
+                cosine_sim = _optional_float(cand.get("cosine_sim"))
+                bm25_rank, matched_terms = bm25_by_idx.get(
+                    int(cand["_row_idx"]), (None, [])
+                )
+
+                rrf_score = (
+                    (1.0 / (_RRF_K + dense_rank) if dense_rank is not None else 0.0)
+                    + (1.0 / (_RRF_K + bm25_rank) if bm25_rank is not None else 0.0)
+                )
+                if rrf_score <= 0.0 or rrf_score < threshold:
+                    continue
+
+                assoc_id = _clean_optional_str(cand.get("id")) or ""
+                codgeo_val = _clean_optional_str(cand.get("codgeo")) or ""
+                if codgeo_val:
+                    codgeo_val = normalize_codgeo_plm(codgeo_val)
+                raw_is_siege = cand.get("is_siege")
+                is_siege_val = (
+                    True
+                    if _clean_optional_str(raw_is_siege) is None
+                    else bool(raw_is_siege)
+                )
+
+                payload = {
+                    "id": assoc_id,
+                    "is_siege": is_siege_val,
+                    "name": _clean_optional_str(cand.get("name")) or "Inconnu",
+                    "nom_etablissement": _clean_optional_str(
+                        cand.get("nom_etablissement")
+                    ),
+                    "description": _clean_optional_str(cand.get("description")) or "",
+                    "waldec_label": (
+                        _clean_optional_str(cand.get("waldec_label"))
+                        or _clean_optional_str(cand.get("categorie"))
+                        or ""
+                    ),
+                    "codgeo": codgeo_val,
+                    "commune_nom": _clean_optional_str(cand.get("commune_nom")),
+                    "is_same_commune": bool(
+                        codgeo_val and codgeo_val in target_codgeo_set
+                    ),
+                    "has_employees": has_active_employees(cand.get("tranche_effectifs")),
+                    "date_decla": _clean_optional_str(cand.get("date_decla")),
+                    "assoce_url": format_assoce_url(assoc_id),
+                    "score": round(rrf_score, 6),
+                    "cosine_sim": (
+                        round(cosine_sim, 4) if cosine_sim is not None else None
+                    ),
+                    "matched_terms": matched_terms,
+                }
+                sort_key = (
+                    -rrf_score,
+                    -(cosine_sim if cosine_sim is not None else 0.0),
+                    0 if is_siege_val else 1,
+                    assoc_id,
+                )
+                fused_rows.append((sort_key, payload))
+
+            fused_rows.sort(key=lambda item: item[0])
+
+            deduped: List[Dict[str, Any]] = []
+            seen_keys: set[tuple[str, str]] = set()
+            for _, payload in fused_rows:
+                dedup_key = (
+                    (payload["id"], payload["codgeo"])
+                    if payload["id"]
+                    else (payload["name"], payload["codgeo"])
+                )
+                if dedup_key in seen_keys:
+                    continue
+                seen_keys.add(dedup_key)
+                deduped.append(payload)
+                if len(deduped) >= top_k:
+                    break
+
+            return deduped
 
         except Exception as e:
             logger.error(f"get_associations_semantic failed: {e}")
-            raise RuntimeError(f"BigQuery BM25 candidate search failed: {e}")
+            raise RuntimeError(f"BigQuery Hybrid RRF candidate search failed: {e}")
 
     def get_associations_by_codgeo(self, codgeos: List[str]) -> List[Dict[str, Any]]:
         """Fetches all inclusion-relevant associations for a list of communes.
@@ -471,3 +761,90 @@ class RNARagService:
         except Exception as e:
             logger.error(f"get_associations_by_codgeo failed: {e}")
             raise RuntimeError(f"BigQuery connection failed: {e}")
+
+    def get_associations_v6_bdv(
+        self,
+        bdv_codes: List[str],
+        requested_themes: List[str],
+        requested_tags: List[str],
+    ) -> List[Dict[str, Any]]:
+        """Fetch deterministic V6 associations across target Bassins de Vie.
+
+        Args:
+            bdv_codes: Normalized 5-digit Bassin de Vie codes.
+            requested_themes: Exact RNA V6 ``llm_thematiques`` labels to match.
+            requested_tags: Canonical tags to match against ``llm_tags_normalises``.
+
+        Returns:
+            Raw BigQuery candidate dictionaries ready for per-commune ranking.
+
+        Raises:
+            RuntimeError: If the BigQuery query fails.
+        """
+        clean_bdvs = list(
+            dict.fromkeys(str(b).strip().removesuffix(".0") for b in bdv_codes if b)
+        )
+        clean_themes = list(dict.fromkeys(str(t).strip() for t in requested_themes if t))
+        clean_tags = list(dict.fromkeys(str(t).strip() for t in requested_tags if t))
+        if not clean_bdvs or (not clean_themes and not clean_tags):
+            return []
+
+        try:
+            query_bq = f"""
+                SELECT
+                    id,
+                    is_siege,
+                    COALESCE(NULLIF(TRIM(titre_court), ''), NULLIF(TRIM(title), ''), 'Inconnu') AS name,
+                    NULLIF(TRIM(nom_etablissement), '') AS nom_etablissement,
+                    COALESCE(TRIM(objet), '') AS description,
+                    COALESCE(TRIM(objet_social1), '') AS waldec_label,
+                    {_CODGEO_PLM_SQL_EXPR} AS codgeo,
+                    NULLIF(TRIM(adrs_libcommune), '') AS commune_nom,
+                    TRIM(bdv_codeinsee) AS bdv_codeinsee,
+                    date_decla,
+                    tranche_effectifs,
+                    llm_action_sociale,
+                    llm_perimetre_action,
+                    ARRAY(
+                        SELECT t FROM UNNEST(llm_thematiques) AS t
+                        WHERE t IN UNNEST(@requested_themes)
+                    ) AS matched_themes,
+                    ARRAY(
+                        SELECT tg FROM UNNEST(llm_tags_normalises) AS tg
+                        WHERE tg IN UNNEST(@requested_tags)
+                    ) AS matched_tags
+                FROM `{self.v6_table_id}`
+                WHERE TRIM(bdv_codeinsee) IN UNNEST(@bdv_codes)
+                  AND (etat_admin IS NULL OR etat_admin != 'F')
+                  AND adrs_codeinsee IS NOT NULL
+                  AND LENGTH(TRIM(adrs_codeinsee)) > 0
+                  AND (
+                      (
+                          ARRAY_LENGTH(@requested_themes) > 0
+                          AND llm_action_sociale = TRUE
+                          AND (llm_perimetre_action IS NULL OR llm_perimetre_action != 'international')
+                          AND EXISTS(SELECT 1 FROM UNNEST(llm_thematiques) AS t WHERE t IN UNNEST(@requested_themes))
+                      )
+                      OR
+                      (
+                          ARRAY_LENGTH(@requested_tags) > 0
+                          AND EXISTS(SELECT 1 FROM UNNEST(llm_tags_normalises) AS tg WHERE tg IN UNNEST(@requested_tags))
+                      )
+                  )
+            """
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ArrayQueryParameter("bdv_codes", "STRING", clean_bdvs),
+                    bigquery.ArrayQueryParameter(
+                        "requested_themes", "STRING", clean_themes
+                    ),
+                    bigquery.ArrayQueryParameter("requested_tags", "STRING", clean_tags),
+                ]
+            )
+            df = self.bq_client.query(
+                query_bq, job_config=job_config, location="europe-west1"
+            ).to_dataframe(create_bqstorage_client=True)
+            return df.to_dict("records")
+        except Exception as e:
+            logger.error(f"get_associations_v6_bdv failed: {e}")
+            raise RuntimeError(f"BigQuery V6 associations fetch failed: {e}") from e

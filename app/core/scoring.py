@@ -940,7 +940,9 @@ class ScoringEngine:
             active.add("inc_services_incl_scaled")
             active.add("inc_asso_thematiques_scaled")
 
-        if getattr(config, "inc_asso_add_selection", []):
+        if getattr(config, "inc_asso_add_selection", []) or any(
+            getattr(g, "tags", g) for g in getattr(config, "inc_asso_add_groups", [])
+        ):
             active.add("inc_asso_add_scaled")
 
         # 8. Territory (Partners & Strategic Locations)
@@ -2373,6 +2375,35 @@ class ScoringEngine:
                 tags.append(code)
         return tags
 
+    @classmethod
+    def _extract_association_tag_groups(cls, config: SearchCriterias) -> List[List[str]]:
+        """Resolve structured OR-groups of canonical association tags.
+
+        Uses ``config.inc_asso_add_groups`` when present; falls back to treating
+        each item in ``config.inc_asso_add_selection`` as a standalone single-tag
+        group for legacy profiles and snapshots.
+
+        Args:
+            config: Search criteria instance.
+
+        Returns:
+            Non-empty list of tag lists, one per logical interest search.
+        """
+        raw_groups = getattr(config, "inc_asso_add_groups", None) or []
+        groups: List[List[str]] = []
+        for grp in raw_groups:
+            raw_tags = grp.tags if hasattr(grp, "tags") else grp
+            cleaned = cls._extract_valid_tags(raw_tags)
+            if cleaned:
+                groups.append(cleaned)
+        if groups:
+            return groups
+
+        legacy_tags = cls._extract_valid_tags(
+            getattr(config, "inc_asso_add_selection", [])
+        )
+        return [[tag] for tag in legacy_tags]
+
     def _compute_inclusion_scores(
         self, df: pd.DataFrame, config: SearchCriterias
     ) -> pd.DataFrame:
@@ -2384,9 +2415,8 @@ class ScoringEngine:
             if col in df.columns:
                 df.drop(columns=[col], inplace=True)
 
-        selected_tags = self._extract_valid_tags(
-            getattr(config, "inc_asso_add_selection", [])
-        )
+        tag_groups = self._extract_association_tag_groups(config)
+        selected_tags = list(dict.fromkeys(t for group in tag_groups for t in group))
         if (
             selected_tags
             and not self.asso_tags_bdv_data.empty
@@ -2404,17 +2434,28 @@ class ScoringEngine:
                     .str.strip()
                     .str.replace(r"\.0$", "", regex=True)
                 )
-                counts = pd.to_numeric(subset["count"], errors="coerce").fillna(0.0)
-                # Graduated per-tag coverage on BdV: 0 -> 0.0, 1 -> 0.7, >= 2 -> 1.0
-                subset["_tier"] = np.where(
-                    counts >= 2, 1.0, np.where(counts >= 1, 0.7, 0.0)
-                )
-                bv_scores = subset.groupby("_bv", observed=True)["_tier"].sum() / len(
-                    selected_tags
-                )
+                subset["_count"] = pd.to_numeric(
+                    subset["count"], errors="coerce"
+                ).fillna(0.0)
+                # Intra-group logical OR via conservative max(count), averaged across groups:
+                # 0 -> 0.0, 1 -> 0.7, >= 2 -> 1.0
+                group_scores_sum = pd.Series(0.0, index=df.index, dtype=float)
+                for group_tags in tag_groups:
+                    grp_sub = subset[
+                        subset["tag_canonique"].astype(str).isin(group_tags)
+                    ]
+                    if grp_sub.empty:
+                        continue
+                    grp_max = grp_sub.groupby("_bv", observed=True)["_count"].max()
+                    mapped_max = (
+                        bv_series.map(grp_max).fillna(0.0).to_numpy(dtype=float)
+                    )
+                    group_scores_sum += np.where(
+                        mapped_max >= 2, 1.0, np.where(mapped_max >= 1, 0.7, 0.0)
+                    )
                 df["inc_asso_add_scaled_bdv"] = (
-                    bv_series.map(bv_scores).fillna(0.0).astype(float)
-                )
+                    group_scores_sum / len(tag_groups)
+                ).astype(float)
 
         # 2. Unified Inclusion Needs (inc_services_selection):
         #    a) inc_services_incl_scaled (DI Services: Commune + Bassin de Vie)

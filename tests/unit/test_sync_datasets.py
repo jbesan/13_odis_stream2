@@ -90,6 +90,7 @@ def test_sync_active_release_downloads_and_verifies_artifacts(tmp_path):
         target_dir=target_dir,
         static_dir=static_dir,
         storage_client=mock_storage,
+        required_artifacts=(),
     )
 
     assert summary["version"] == "run-test-123"
@@ -107,6 +108,7 @@ def test_sync_active_release_downloads_and_verifies_artifacts(tmp_path):
         target_dir=target_dir,
         static_dir=static_dir,
         storage_client=mock_storage,
+        required_artifacts=(),
     )
     assert len(second_summary["downloaded_files"]) == 0
     assert "odis_communes.parquet" in second_summary["skipped_files"]
@@ -173,6 +175,7 @@ def test_sync_active_release_fails_on_corrupted_checksum(tmp_path):
             target_dir=target_dir,
             static_dir=static_dir,
             storage_client=mock_storage,
+            required_artifacts=(),
         )
 
 
@@ -253,6 +256,7 @@ def test_sync_active_release_recovers_via_previous_version_on_corruption(tmp_pat
         static_dir=static_dir,
         storage_client=mock_storage,
         allow_fallback=True,
+        required_artifacts=(),
     )
 
     assert summary.get("fallback") is True
@@ -346,6 +350,7 @@ def test_atomic_staging_preserves_existing_files_on_mid_sync_failure(tmp_path):
             static_dir=static_dir,
             force=True,
             storage_client=mock_storage,
+            required_artifacts=(),
         )
 
     # Existing file in target_dir must be untouched and staging dirs cleaned up
@@ -368,3 +373,92 @@ def test_default_dirs_anchored_on_app_dir(monkeypatch):
         get_default_datasets_dir() == Path(cfg.APP_DIR) / "data" / "datasets" / "active"
     )
     assert get_default_static_dir() == Path(cfg.APP_DIR) / "static" / "data"
+
+
+def test_sync_active_release_falls_back_when_required_artifact_missing(tmp_path):
+    """Missing contract artifact triggers rollback to previous_version before any download."""
+    from utils.data_sync import RUNTIME_DATASET_FILENAMES
+
+    target_dir = tmp_path / "target"
+    static_dir = tmp_path / "static"
+
+    payload = b"VALID_CONTRACT_ARTIFACT"
+    payload_sha = hashlib.sha256(payload).hexdigest()
+
+    incomplete_manifest = {
+        "pipeline_run_id": "run-active-missing-contract",
+        "outputs": [
+            {
+                "name": name,
+                "sha256": payload_sha,
+                "size_bytes": len(payload),
+            }
+            for name in RUNTIME_DATASET_FILENAMES[:-1]
+        ],
+    }
+    complete_manifest = {
+        "pipeline_run_id": "run-previous-complete",
+        "outputs": [
+            {
+                "name": name,
+                "sha256": payload_sha,
+                "size_bytes": len(payload),
+            }
+            for name in RUNTIME_DATASET_FILENAMES
+        ],
+    }
+    pointer_dict = {
+        "version": "run-active-missing-contract",
+        "previous_version": "run-previous-complete",
+        "manifest": {"name": "data_manifest.json"},
+    }
+
+    mock_storage = MagicMock()
+    mock_bucket = MagicMock()
+    mock_storage.bucket.return_value = mock_bucket
+    active_parquet_downloads: list[str] = []
+
+    def get_blob(blob_path: str):
+        blob = MagicMock()
+        blob.exists.return_value = True
+        if blob_path.endswith("current.json"):
+            blob.download_as_bytes.return_value = json.dumps(pointer_dict).encode(
+                "utf-8"
+            )
+        elif "run-active-missing-contract" in blob_path:
+            if blob_path.endswith("data_manifest.json"):
+                blob.download_as_bytes.return_value = json.dumps(
+                    incomplete_manifest
+                ).encode("utf-8")
+            else:
+                blob.download_to_filename.side_effect = (
+                    lambda p, bp=blob_path: active_parquet_downloads.append(bp)
+                )
+        elif "run-previous-complete" in blob_path:
+            if blob_path.endswith("data_manifest.json"):
+                blob.download_as_bytes.return_value = json.dumps(
+                    complete_manifest
+                ).encode("utf-8")
+            else:
+                blob.download_to_filename.side_effect = lambda p: Path(p).write_bytes(
+                    payload
+                )
+        else:
+            blob.exists.return_value = False
+        return blob
+
+    mock_bucket.blob.side_effect = get_blob
+
+    summary = sync_active_release(
+        bucket_name="test-bucket",
+        target_dir=target_dir,
+        static_dir=static_dir,
+        storage_client=mock_storage,
+        allow_fallback=True,
+    )
+
+    assert active_parquet_downloads == []
+    assert summary.get("fallback") is True
+    assert summary["version"] == "run-previous-complete"
+    assert set(RUNTIME_DATASET_FILENAMES).issubset(set(summary["downloaded_files"]))
+

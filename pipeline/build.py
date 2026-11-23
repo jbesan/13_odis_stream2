@@ -1088,6 +1088,16 @@ def build_vertical_tables(config: Dict[str, Any], logger: PipelineLogger):
     """Generates vertical lookup tables."""
     logger.log_step("build_vertical_tables", "STARTED")
     try:
+        # 2. Associations (legacy WALDEC vertical table kept for prod backwards-compatibility until promote)
+        assoc_path = CLEAN_DIR / "associations_vertical.parquet"
+        if assoc_path.exists():
+            df = pd.read_parquet(assoc_path)
+            df = consolidate_plm_vertical(df, "codgeo", ["id_waldec"], "count")
+            df = df[~df["codgeo"].isin(PLM_ARRONDISSEMENTS)].copy()
+            out = OUTPUT_DIR / "odis_associations_agg.parquet"
+            df.to_parquet(out, compression="brotli", index=False)
+            logger.log_step("build_vertical_tables", "ASSOCIATIONS", {"path": str(out)})
+
         # 2a. Associations V6 (Data Inclusion themes by grain: commune & bdv)
         themes_path = CLEAN_DIR / "rna_v6_thematiques_agg.parquet"
         if themes_path.exists():
@@ -1738,6 +1748,7 @@ def main(argv=None):
         "communes": ["odis_communes_pre.parquet"],
         "bassins_de_vie": ["odis_bassins_de_vie.parquet"],
         "vertical_tables": [
+            "odis_associations_agg.parquet",
             "odis_associations_thematiques_agg.parquet",
             "odis_associations_tags_bdv.parquet",
             "odis_association_tags_ref.parquet",

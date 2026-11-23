@@ -200,3 +200,61 @@ def test_verify_loaded_tables_success_and_guards() -> None:
             dataset="rna_rag",
             location="europe-west1",
         )
+
+
+def test_merge_embeddings_and_verify_guards() -> None:
+    """Merge SQL handles first-time vs idempotent runs and verifies 0 NULLs."""
+    cons_without_emb = _valid_consolidated_table()
+    cons_with_emb = _valid_consolidated_table()
+    cons_with_emb.schema.append(
+        _make_schema_field("embedding_gemini_768", "FLOAT", "REPEATED")
+    )
+
+    bq_first = MagicMock()
+    bq_first.get_table.return_value = cons_without_emb
+    rows = uploader.merge_embeddings_into_consolidated(
+        bq_first,
+        "proj.rna_rag.national_v6_consolidated",
+        "proj.rna_rag.national_v6_embeddings_768d",
+    )
+    assert rows == uploader.EXPECTED_CONSOLIDATED_ROWS
+    sql_first = bq_first.query.call_args.args[0]
+    assert "c.*, e.embedding_gemini_768" in sql_first
+    assert "CLUSTER BY bdv_codeinsee, llm_action_sociale" in sql_first
+
+    bq_rerun = MagicMock()
+    bq_rerun.get_table.return_value = cons_with_emb
+    bq_rerun.query.return_value.result.return_value = [
+        {
+            "total_rows": uploader.EXPECTED_CONSOLIDATED_ROWS,
+            "null_embeddings": 0,
+            "invalid_dim_rows": 0,
+        }
+    ]
+    uploader.merge_embeddings_into_consolidated(
+        bq_rerun,
+        "proj.rna_rag.national_v6_consolidated",
+        "proj.rna_rag.national_v6_embeddings_768d",
+    )
+    sql_rerun = bq_rerun.query.call_args_list[0].args[0]
+    assert "c.* EXCEPT (embedding_gemini_768), e.embedding_gemini_768" in sql_rerun
+
+    verified = uploader.verify_merged_embeddings(
+        bq_rerun,
+        "proj.rna_rag.national_v6_consolidated",
+    )
+    assert verified["null_embeddings"] == 0
+
+    bq_rerun.query.return_value.result.return_value = [
+        {
+            "total_rows": uploader.EXPECTED_CONSOLIDATED_ROWS,
+            "null_embeddings": 3,
+            "invalid_dim_rows": 0,
+        }
+    ]
+    with pytest.raises(RuntimeError, match="NULL embedding_gemini_768"):
+        uploader.verify_merged_embeddings(
+            bq_rerun,
+            "proj.rna_rag.national_v6_consolidated",
+        )
+

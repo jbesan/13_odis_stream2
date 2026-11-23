@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from core import scoring
-from core.models import CriteriaItem, SearchCriterias
+from core.models import AssociationSearchGroup, CriteriaItem, SearchCriterias
 
 
 def _build_fixture_engine(live_scores_cat):
@@ -147,3 +147,49 @@ def test_leisure_tags_pure_bdv_graduated_scoring_and_details(live_scores_cat):
     assert leisure.valeur_kpi_commune is None
     assert leisure.score_normalise_bdv == pytest.approx(0.85)
     assert leisure.valeur_kpi_bdv == "85"
+
+
+def test_leisure_tag_groups_or_max_count_and_inter_group_average(live_scores_cat):
+    """Intra-group synonyms act as logical OR via max(count), averaged across groups."""
+    engine, _ = _build_fixture_engine(live_scores_cat)
+
+    # Single OR group with 2 tags: BV_PAU has volley ball=1, chant choral=0 -> max=1 -> 0.70 (not 0.35)
+    cfg_single_group = SearchCriterias(
+        commune_actuelle=CriteriaItem(code="64445", label="Pau"),
+        loc_search_area="region",
+        loc_search_code=["75"],
+        inc_services_selection=[],
+        inc_asso_add_groups=[
+            AssociationSearchGroup(
+                tags=[
+                    CriteriaItem(code="volley ball", label="Volley ball"),
+                    CriteriaItem(code="chant choral", label="Chant choral"),
+                ]
+            )
+        ],
+    )
+    scored_single = engine.run(cfg_single_group)
+    assert scored_single.loc["33001", "inc_asso_add_scaled"] == pytest.approx(1.0)
+    assert scored_single.loc["64445", "inc_asso_add_scaled"] == pytest.approx(0.7)
+
+    # Two distinct groups: Group 1 covered OR-wise, Group 2 missing -> mean across 2 groups
+    cfg_two_groups = SearchCriterias(
+        commune_actuelle=CriteriaItem(code="64445", label="Pau"),
+        loc_search_area="region",
+        loc_search_code=["75"],
+        inc_services_selection=[],
+        inc_asso_add_groups=[
+            AssociationSearchGroup(
+                tags=[
+                    CriteriaItem(code="volley ball", label="Volley ball"),
+                    CriteriaItem(code="chant choral", label="Chant choral"),
+                ]
+            ),
+            AssociationSearchGroup(
+                tags=[CriteriaItem(code="afghanistan", label="Afghanistan")]
+            ),
+        ],
+    )
+    scored_two = engine.run(cfg_two_groups)
+    assert scored_two.loc["33001", "inc_asso_add_scaled"] == pytest.approx(0.5)
+    assert scored_two.loc["64445", "inc_asso_add_scaled"] == pytest.approx(0.35)

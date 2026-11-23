@@ -241,13 +241,13 @@ sources:
     description: "Population active et chômage (INSEE)"
 
   referentiel_services_inclusion:
-    use_odace: true
+    use_odace: false
     odace_table: "ref_service_inclusion"
     url: "file://pipeline/local/referentiel_services_inclusion.csv"
     format: "csv"
     local_name: "referentiel_services_inclusion.csv"
     ttl_days: 365
-    description: "Référentiel des services d'inclusion (Data Inclusion via ODAS)"
+    description: "Référentiel des 69 sous-thématiques Data Inclusion (CSV local)"
     used_columns:
       - code
       - libelle

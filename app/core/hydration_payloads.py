@@ -7,6 +7,7 @@ from core.models import (
     AssociationDetail,
     CommuneResult,
     InclusionServiceDetail,
+    InterestSearchGroupResult,
     JobOfferDetail,
 )
 
@@ -16,6 +17,9 @@ class AssociationsPayload(BaseModel):
 
     refugee: list[AssociationDetail] = Field(default_factory=list)
     inclusion: dict[str, list[AssociationDetail]] = Field(default_factory=dict)
+    centres_interet_groups: list[InterestSearchGroupResult] = Field(
+        default_factory=list
+    )
 
 
 class ServicesPayload(BaseModel):
@@ -43,6 +47,10 @@ def apply_associations(commune: CommuneResult, payload: BaseModel) -> None:
     commune.inclusion.asso_refugee_count = len(data.refugee)
     commune.inclusion.asso_inclusion_list_by_cat = data.inclusion
     commune.inclusion.asso_inclusion_count = sum(map(len, data.inclusion.values()))
+    commune.inclusion.asso_centres_interet_groups = data.centres_interet_groups
+    commune.inclusion.asso_centres_interet_count = sum(
+        len(g.associations) for g in data.centres_interet_groups
+    )
 
 
 def apply_services(commune: CommuneResult, payload: BaseModel) -> None:

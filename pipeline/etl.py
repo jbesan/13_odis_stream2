@@ -24,6 +24,7 @@ DATASET_FILES = [
     "odis_communes.parquet",
     "odis_bassins_de_vie.parquet",
     "odis_pois.parquet",
+    "odis_associations_agg.parquet",
     "odis_associations_thematiques_agg.parquet",
     "odis_associations_tags_bdv.parquet",
     "odis_association_tags_ref.parquet",

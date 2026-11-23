@@ -19,6 +19,7 @@ import streamlit as st
 import yaml
 
 import config as cfg
+from core.inclusion_referential import get_inclusion_thematiques_df
 from utils.data_sync import ensure_datasets_available
 
 logging.basicConfig(level=logging.INFO)
@@ -689,7 +690,7 @@ def load_referentiels_raw() -> Dict[str, Any]:
         "rome_index": rome_index,
         "rome_top_index": rome_index,
         "codformations_index": _index_df("formation_codes"),
-        "inclusion_services_index": _index_df("inclusion_services"),
+        "inclusion_services_index": get_inclusion_thematiques_df(),
         "waldec_index": _index_df("waldec_codes"),
         "waldec_top_index": _index_df("waldec_codes").head(500),
     }

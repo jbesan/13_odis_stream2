@@ -357,11 +357,18 @@ def share_search_modal():
         st.error("Aucune recherche active à partager.")
         return
 
-    # Generate or retrieve active share_id
-    if not st.session_state.get("active_share_id"):
-        with st.spinner("Génération du lien de partage..."):
-            from services import share_service
+    # Generate, refresh, or reuse active share_id
+    active_share_id = st.session_state.get("active_share_id")
+    is_immutable = bool(st.session_state.get("immutable_shared_snapshot"))
+    if not active_share_id or not is_immutable:
+        from services import share_service
 
+        spinner_msg = (
+            "Actualisation du lien de partage..."
+            if active_share_id
+            else "Génération du lien de partage..."
+        )
+        with st.spinner(spinner_msg):
             try:
                 share_id = share_service.save_shared_search(
                     config=config,
@@ -371,33 +378,15 @@ def share_search_modal():
                     data_release=st.session_state.get("active_data_release"),
                     map_center=st.session_state.get("center"),
                     map_zoom=st.session_state.get("zoom"),
+                    share_id=active_share_id,
+                    allow_overwrite=bool(active_share_id),
                 )
             except RuntimeError as exc:
                 st.error(str(exc))
                 return
-            st.session_state["active_share_id"] = share_id
+        st.session_state["active_share_id"] = share_id
     else:
-        share_id = st.session_state.get("active_share_id")
-        if share_id and not st.session_state.get("immutable_shared_snapshot"):
-            from services import share_service
-
-            if share_service.should_schedule_auto_persist():
-                with st.spinner("Actualisation du lien de partage..."):
-                    try:
-                        share_service.save_shared_search(
-                            config=config,
-                            search_results=search_results,
-                            processed_gdf=st.session_state.get("processed_gdf"),
-                            selected_geo=st.session_state.get("selected_geo"),
-                            data_release=st.session_state.get("active_data_release"),
-                            map_center=st.session_state.get("center"),
-                            map_zoom=st.session_state.get("zoom"),
-                            share_id=share_id,
-                            allow_overwrite=True,
-                        )
-                    except RuntimeError as exc:
-                        st.error(str(exc))
-                        return
+        share_id = active_share_id
 
     # Construct public shareable URL
     base_url = "https://myapp.fr"

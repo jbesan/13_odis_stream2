@@ -310,3 +310,42 @@ def test_render_housing_form_shows_chez_l_habitant_for_other_orgs():
         render_housing_form()
 
     assert "Chez l'habitant" in rendered_checkboxes
+
+
+def test_association_tag_groups_round_trip():
+    """Structured association search groups preserve OR grouping and sync flat selection."""
+    from core.models import AssociationSearchGroup
+
+    state = {}
+    form = FormState(state)
+    criteria = SearchCriterias(
+        commune_actuelle=CriteriaItem(code="33063", label="Bordeaux"),
+        inc_asso_add_groups=[
+            AssociationSearchGroup(tags=["afghanistan", "culture afghane"]),
+            AssociationSearchGroup(tags=["volley ball"]),
+        ],
+    )
+    form.hydrate(criteria, app_data=_app_data(), overwrite=True)
+
+    assert state["ui_inc_asso_add_groups_raw"] == [
+        ["afghanistan", "culture afghane"],
+        ["volley ball"],
+    ]
+    assert state["ui_inc_asso_add_selection_raw"] == [
+        "afghanistan",
+        "culture afghane",
+        "volley ball",
+    ]
+
+    collected = form.collect(_app_data())
+    assert len(collected.inc_asso_add_groups) == 2
+    assert [t.code for t in collected.inc_asso_add_groups[0].tags] == [
+        "afghanistan",
+        "culture afghane",
+    ]
+    assert [t.code for t in collected.inc_asso_add_groups[1].tags] == ["volley ball"]
+    assert [t.code for t in collected.inc_asso_add_selection] == [
+        "afghanistan",
+        "culture afghane",
+        "volley ball",
+    ]

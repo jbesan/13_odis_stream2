@@ -8,6 +8,7 @@ from ui.components import inject_custom_css
 from ui.form_state import (
     FormState,
     _filter_valid_association_tags,
+    _flatten_tag_groups,
     health_key,
     housing_key,
     long_term_housing_key,
@@ -266,24 +267,63 @@ def render_health_form() -> None:
         st.checkbox(label, key=cb_key)
 
 
-def _on_selected_pills_change(pills_key: str) -> None:
-    """Sync removed canonical tags from selected ``st.pills`` before rerun."""
+def _sync_association_groups_state(groups: list[list[str]]) -> list[list[str]]:
+    """Persist normalized structured association tag groups and flat union in session state."""
+    normalized = [list(g) for g in groups] if groups else [[]]
+    st.session_state["ui_inc_asso_add_groups_raw"] = normalized
+    st.session_state["ui_inc_asso_add_selection_raw"] = _flatten_tag_groups(normalized)
+    return normalized
+
+
+def _group_widget_keys(
+    group_idx: int, selected_nonce: int, sug_nonce: int
+) -> tuple[str, str, str]:
+    """Return stable widget keys for a search group (preserving legacy keys for group 0)."""
+    if group_idx == 0:
+        return (
+            "ui_asso_tag_search_query",
+            f"ui_asso_tag_selected_{selected_nonce}",
+            f"ui_asso_tag_suggestions_{sug_nonce}",
+        )
+    return (
+        f"ui_asso_group_{group_idx}_query",
+        f"ui_asso_group_{group_idx}_selected_{selected_nonce}",
+        f"ui_asso_group_{group_idx}_suggestions_{sug_nonce}",
+    )
+
+
+def _set_active_association_group(group_idx: int) -> None:
+    """Keep the interacted search group expanded across fragment reruns."""
+    st.session_state["ui_asso_active_group_idx"] = group_idx
+
+
+def _on_selected_pills_change(pills_key: str, group_idx: int) -> None:
+    """Sync removed canonical tags from selected ``st.pills`` for a given search group."""
     kept = list(st.session_state.get(pills_key) or [])
-    current = list(st.session_state.get("ui_inc_asso_add_selection_raw") or [])
-    st.session_state["ui_inc_asso_add_selection_raw"] = [
-        tag for tag in current if tag in kept
+    groups = [
+        list(g) for g in (st.session_state.get("ui_inc_asso_add_groups_raw") or [[]])
     ]
+    if 0 <= group_idx < len(groups):
+        groups[group_idx] = [tag for tag in groups[group_idx] if tag in kept]
+        _sync_association_groups_state(groups)
+    st.session_state["ui_asso_active_group_idx"] = group_idx
     st.session_state["ui_asso_tag_selected_nonce"] = (
         int(st.session_state.get("ui_asso_tag_selected_nonce", 0)) + 1
     )
 
 
-def _on_suggestion_pill_pick(pills_key: str) -> None:
-    """Append picked suggestion tag and rotate pill widget keys before rerun."""
+def _on_suggestion_pill_pick(pills_key: str, group_idx: int) -> None:
+    """Append picked suggestion tag to ``group_idx`` and rotate pill widget keys."""
     picked = st.session_state.get(pills_key)
-    current = list(st.session_state.get("ui_inc_asso_add_selection_raw") or [])
-    if picked and picked not in current:
-        st.session_state["ui_inc_asso_add_selection_raw"] = current + [picked]
+    groups = [
+        list(g) for g in (st.session_state.get("ui_inc_asso_add_groups_raw") or [[]])
+    ]
+    while len(groups) <= group_idx:
+        groups.append([])
+    if picked and picked not in groups[group_idx]:
+        groups[group_idx].append(picked)
+        _sync_association_groups_state(groups)
+        st.session_state["ui_asso_active_group_idx"] = group_idx
         st.session_state["ui_asso_tag_suggestions_nonce"] = (
             int(st.session_state.get("ui_asso_tag_suggestions_nonce", 0)) + 1
         )
@@ -292,31 +332,75 @@ def _on_suggestion_pill_pick(pills_key: str) -> None:
         )
 
 
-@st.fragment
-def _render_association_tags_selector(tag_search_index: TagSearchIndex) -> None:
-    """Render interactive canonical tag search & clickable pills inside a fragment.
+def _remove_association_group(group_idx: int) -> None:
+    """Clear group 0 when solo, or remove ``group_idx`` and shift remaining query keys."""
+    groups = [
+        list(g) for g in (st.session_state.get("ui_inc_asso_add_groups_raw") or [[]])
+    ]
+    if not (0 <= group_idx < len(groups)):
+        return
 
-    Args:
-        tag_search_index: Pre-indexed ``TagSearchIndex`` over canonical RNA V6 tags.
-    """
-    selected_tags = _filter_valid_association_tags(
-        st.session_state.get("ui_inc_asso_add_selection_raw", [])
-    )
-    st.session_state["ui_inc_asso_add_selection_raw"] = selected_tags
+    if len(groups) == 1:
+        _sync_association_groups_state([[]])
+        st.session_state["ui_asso_tag_search_query"] = ""
+        st.session_state["ui_asso_active_group_idx"] = 0
+    else:
+        old_queries = [
+            st.session_state.get(
+                "ui_asso_tag_search_query" if i == 0 else f"ui_asso_group_{i}_query", ""
+            )
+            for i in range(len(groups))
+        ]
+        groups.pop(group_idx)
+        old_queries.pop(group_idx)
 
-    selected_nonce = int(st.session_state.get("ui_asso_tag_selected_nonce", 0))
-    sug_nonce = int(st.session_state.get("ui_asso_tag_suggestions_nonce", 0))
+        for i, q_val in enumerate(old_queries):
+            q_key = "ui_asso_tag_search_query" if i == 0 else f"ui_asso_group_{i}_query"
+            st.session_state[q_key] = q_val
+        st.session_state.pop(f"ui_asso_group_{len(groups)}_query", None)
 
-    if selected_tags:
-        st.caption(
-            f"**{len(selected_tags)} sélectionné(s)** — cliquez sur un badge pour le retirer"
+        _sync_association_groups_state(groups)
+        active_idx = int(st.session_state.get("ui_asso_active_group_idx", 0))
+        st.session_state["ui_asso_active_group_idx"] = max(
+            0, min(active_idx, len(groups) - 1)
         )
-        selected_key = f"ui_asso_tag_selected_{selected_nonce}"
+
+    st.session_state["ui_asso_tag_selected_nonce"] = (
+        int(st.session_state.get("ui_asso_tag_selected_nonce", 0)) + 1
+    )
+    st.session_state["ui_asso_tag_suggestions_nonce"] = (
+        int(st.session_state.get("ui_asso_tag_suggestions_nonce", 0)) + 1
+    )
+
+
+def _add_association_group() -> None:
+    """Append a new empty search group and focus it."""
+    groups = [
+        list(g) for g in (st.session_state.get("ui_inc_asso_add_groups_raw") or [[]])
+    ]
+    groups.append([])
+    _sync_association_groups_state(groups)
+    st.session_state["ui_asso_active_group_idx"] = len(groups) - 1
+
+
+def _render_group_tag_picker(
+    tag_search_index: TagSearchIndex,
+    group_idx: int,
+    group_tags: list[str],
+    selected_nonce: int,
+    sug_nonce: int,
+) -> None:
+    """Render selected pills, query input, and suggestion pills for a single search group."""
+    query_key, selected_key, suggestions_key = _group_widget_keys(
+        group_idx, selected_nonce, sug_nonce
+    )
+
+    if group_tags:
         st.pills(
-            "Centres d'intérêt sélectionnés",
-            options=selected_tags,
+            f"Variantes de la recherche {group_idx + 1}",
+            options=group_tags,
             selection_mode="multi",
-            default=selected_tags,
+            default=group_tags,
             format_func=lambda t: (
                 f"{t.capitalize()} ({tag_search_index.get_count(t):,} assos) ✕".replace(
                     ",", " "
@@ -324,57 +408,47 @@ def _render_association_tags_selector(tag_search_index: TagSearchIndex) -> None:
                 if tag_search_index.get_count(t) is not None
                 else f"{t.capitalize()} ✕"
             ),
-            help="Cliquez sur un badge pour le retirer de votre sélection.",
+            help="Cliquez sur un badge pour le retirer de cette recherche.",
             key=selected_key,
             on_change=_on_selected_pills_change,
-            args=(selected_key,),
+            args=(selected_key, group_idx),
             label_visibility="collapsed",
         )
 
     query = st.text_input(
         "Rechercher un loisir ou centre d'intérêt",
-        key="ui_asso_tag_search_query",
-        placeholder="Ex : volley, chant choral, échecs, jardinage...",
+        key=query_key,
+        on_change=_set_active_association_group,
+        args=(group_idx,),
+        placeholder="Ex : afghan, lgbt, autisme, volley...",
+        label_visibility="collapsed",
     )
 
     clean_query = (query or "").strip()
-    is_fuzzy = False
-    if len(clean_query) >= 2:
-        search_res = tag_search_index.search(
-            clean_query, limit=12, exclude=selected_tags
+    if len(clean_query) < 2:
+        return
+
+    search_res = tag_search_index.search(clean_query, limit=12, exclude=group_tags)
+    matches = search_res.matches
+    if not matches:
+        has_selected_matches = bool(group_tags) and bool(
+            tag_search_index.search(clean_query, limit=1, exclude=None).matches
         )
-        matches = search_res.matches
-        is_fuzzy = search_res.is_fuzzy_fallback
-        if not matches:
-            has_selected_matches = bool(selected_tags) and bool(
-                tag_search_index.search(clean_query, limit=1, exclude=None).matches
-            )
-            if has_selected_matches:
-                st.caption(
-                    "Toutes les suggestions pour cette recherche sont déjà sélectionnées."
-                )
-            else:
-                st.info(
-                    "Aucune correspondance trouvée pour cette recherche. "
-                    "Essayez un terme plus général ou un synonyme."
-                )
-            return
-        if is_fuzzy:
-            st.caption(
-                f"Aucune correspondance exacte pour « {clean_query} » — suggestions proches :"
-            )
+        if has_selected_matches:
+            st.caption("Déjà sélectionné(s).")
         else:
-            st.caption("Suggestions correspondantes — cliquez pour ajouter :")
-    else:
-        matches = tag_search_index.popular(limit=12, exclude=selected_tags)
-        if not matches:
-            return
-        st.caption("Loisirs populaires en France — cliquez pour ajouter :")
+            st.info(
+                "Aucune correspondance trouvée. "
+                "Essayez un terme plus général ou un synonyme."
+            )
+        return
+
+    if search_res.is_fuzzy_fallback:
+        st.caption(f"Suggestions proches pour « {clean_query} » :")
 
     match_map = {m.tag: m for m in matches}
-    suggestions_key = f"ui_asso_tag_suggestions_{sug_nonce}"
     st.pills(
-        "Suggestions de centres d'intérêt",
+        f"Suggestions pour la recherche {group_idx + 1}",
         options=[m.tag for m in matches],
         selection_mode="single",
         format_func=lambda t: (
@@ -384,8 +458,88 @@ def _render_association_tags_selector(tag_search_index: TagSearchIndex) -> None:
         ),
         key=suggestions_key,
         on_change=_on_suggestion_pill_pick,
-        args=(suggestions_key,),
+        args=(suggestions_key, group_idx),
         label_visibility="collapsed",
+    )
+
+
+@st.fragment
+def _render_association_tags_selector(tag_search_index: TagSearchIndex) -> None:
+    """Render rule-builder search groups over canonical RNA V6 tags inside a fragment.
+
+    Args:
+        tag_search_index: Pre-indexed ``TagSearchIndex`` over canonical RNA V6 tags.
+    """
+    raw_groups = st.session_state.get("ui_inc_asso_add_groups_raw")
+    if isinstance(raw_groups, list) and raw_groups:
+        groups = [_filter_valid_association_tags(g) for g in raw_groups]
+    else:
+        initial_tags = _filter_valid_association_tags(
+            st.session_state.get("ui_inc_asso_add_selection_raw", [])
+        )
+        groups = [[t] for t in initial_tags] if initial_tags else [[]]
+
+    groups = _sync_association_groups_state(groups)
+    selected_nonce = int(st.session_state.get("ui_asso_tag_selected_nonce", 0))
+    sug_nonce = int(st.session_state.get("ui_asso_tag_suggestions_nonce", 0))
+    active_idx = max(
+        0,
+        min(
+            int(st.session_state.get("ui_asso_active_group_idx", 0)),
+            len(groups) - 1,
+        ),
+    )
+
+    for idx, group_tags in enumerate(groups):
+        if group_tags:
+            preview = ", ".join(t.capitalize() for t in group_tags[:4])
+            if len(group_tags) > 4:
+                preview = f"{preview}, +{len(group_tags) - 4}"
+            expander_label = f"Recherche {idx + 1} · {preview}"
+            step_icon = ":material/check_circle:"
+        else:
+            expander_label = f"Recherche {idx + 1} — Saisir un centre d'intérêt"
+            step_icon = ":material/search:"
+
+        col_exp, col_del = st.columns([0.9, 0.1], vertical_alignment="top")
+        with col_exp:
+            with st.expander(
+                expander_label,
+                expanded=(idx == active_idx),
+                icon=step_icon,
+                type="step",
+            ):
+                _render_group_tag_picker(
+                    tag_search_index=tag_search_index,
+                    group_idx=idx,
+                    group_tags=group_tags,
+                    selected_nonce=selected_nonce,
+                    sug_nonce=sug_nonce,
+                )
+        with col_del:
+            query_key = (
+                "ui_asso_tag_search_query" if idx == 0 else f"ui_asso_group_{idx}_query"
+            )
+            has_content = bool(group_tags) or bool(
+                (st.session_state.get(query_key) or "").strip()
+            )
+            st.button(
+                "🗑️",
+                key=f"asso_group_{idx}_remove_btn",
+                help=(
+                    "Réinitialiser cette recherche"
+                    if len(groups) == 1
+                    else "Supprimer cette recherche"
+                ),
+                disabled=(len(groups) == 1 and not has_content),
+                on_click=_remove_association_group,
+                args=(idx,),
+            )
+
+    st.button(
+        "➕ Ajouter une recherche",
+        key="asso_add_group_btn",
+        on_click=_add_association_group,
     )
 
 
@@ -395,16 +549,21 @@ def render_other_needs_form(app_data: dict[str, Any]) -> None:
 
     col1, col2 = st.columns(2)
     with col2:
-        st.markdown("#### Loisirs & Centres d'intérêt")
+        st.markdown("#### Besoins spécifiques et centres d'intérêt (Associations)")
         st.caption(
-            "Recherchez les loisirs, sports ou activités culturelles souhaités. "
-            "Le score évalue la présence d'associations correspondantes sur le territoire."
+            "Regroupez dans une même recherche un mot-clé et ses synonymes, "
+            "puis ajoutez d'autres recherches distinctes ci-dessous."
         )
 
-        if "ui_inc_asso_add_selection_raw" not in st.session_state:
-            legacy_values = st.session_state.get("ui_inc_asso_add_selection", [])
-            st.session_state["ui_inc_asso_add_selection_raw"] = (
-                _filter_valid_association_tags(legacy_values)
+        if "ui_inc_asso_add_groups_raw" not in st.session_state:
+            legacy_values = (
+                st.session_state.get("ui_inc_asso_add_selection_raw")
+                or st.session_state.get("ui_inc_asso_add_selection")
+                or []
+            )
+            cleaned_legacy = _filter_valid_association_tags(legacy_values)
+            _sync_association_groups_state(
+                [[tag] for tag in cleaned_legacy] if cleaned_legacy else [[]]
             )
 
         tag_search_index = get_tag_search_index(app_data)
@@ -414,7 +573,7 @@ def render_other_needs_form(app_data: dict[str, Any]) -> None:
             st.warning("Référentiel des tags associatifs non chargé.")
 
     with col1:
-        st.markdown("#### Besoins d'inclusion (Services & Associations)")
+        st.markdown("#### Besoins d'inclusion (Services publiques & Associations)")
         st.caption(
             "Guichet unique : chaque besoin sélectionné évalue à la fois les services d'accompagnement "
             "(Soliguide / Data·Inclusion) et les associations d'action sociale sur le territoire."
