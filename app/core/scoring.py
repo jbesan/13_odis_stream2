@@ -418,7 +418,17 @@ class ScoringEngine:
     def _compute_category_scores(
         self, df: pd.DataFrame, config: SearchCriterias
     ) -> pd.DataFrame:
-        df = df.copy()
+        """Computes per-category scores and combined commune/BdV criterion columns.
+
+        Args:
+            df: Candidate communes DataFrame with criterion and BdV columns.
+            config: Active search configuration.
+
+        Returns:
+            DataFrame augmented with ``{sid}_uncombined_commune``, combined
+            ``{sid}``, and ``{category}_cat_score`` columns.
+        """
+        col_updates: Dict[str, Any] = {}
 
         # Use cached active criteria if available
         active = (
@@ -450,7 +460,11 @@ class ScoringEngine:
                 bdv_f = float(s_row.get("bdv_factor", 0.0))
 
                 # 1. Get Commune Value
-                val_commune = df[sid] if sid in df.columns else None
+                val_commune = (
+                    col_updates[sid]
+                    if sid in col_updates
+                    else (df[sid] if sid in df.columns else None)
+                )
 
                 # 2. Get BDV Value
                 sid_bdv = f"{sid}_bdv"
@@ -514,7 +528,7 @@ class ScoringEngine:
 
                 # Save uncombined commune value for BdV transparency details
                 if val_commune is not None:
-                    df[f"{sid}_uncombined_commune"] = val_commune
+                    col_updates[f"{sid}_uncombined_commune"] = val_commune
 
                 # Track valid weights per row (using non-nullity of original sources)
                 # If both are null, weight is 0
@@ -552,7 +566,7 @@ class ScoringEngine:
 
                 # IMPORTANT: save the combined value back to the dataframe
                 # so it can be picked up by format_city_details for the UI breakdown.
-                df[sid] = val
+                col_updates[sid] = val
 
             if weights_val:
                 scores_arr = np.nan_to_num(sum(scores_val), nan=0.0).astype(float)
@@ -570,9 +584,15 @@ class ScoringEngine:
                 )
 
                 # Absolute Category Score (0.0 to 1.0): raw weighted mean of active criteria
-                df[f"{category}_cat_score"] = s
+                col_updates[f"{category}_cat_score"] = s
 
-        return df.copy()
+        if not col_updates:
+            return df.copy()
+
+        existing_cols = [c for c in col_updates if c in df.columns]
+        base_df = df.drop(columns=existing_cols) if existing_cols else df
+        updates_df = pd.DataFrame(col_updates, index=df.index)
+        return pd.concat([base_df, updates_df], axis=1)
 
     @logfire.instrument("_compute_weighted_score", extract_args=False)
     def _compute_weighted_score(

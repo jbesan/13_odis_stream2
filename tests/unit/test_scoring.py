@@ -1600,3 +1600,65 @@ class TestP108TieBreak:
         assert abs(modifier["metropole_centre"] - floor) < 1e-5
         # Deep rural (500) is below a (2k) -> floor
         assert abs(modifier["deep_rural"] - floor) < 1e-5
+
+
+@pytest.mark.unit
+def test_compute_category_scores_no_fragmentation_warning(global_stats):
+    """Verify _compute_category_scores emits no PerformanceWarning with 60+ active criteria."""
+    import warnings
+
+    categories = [
+        "education",
+        "emploi",
+        "inclusion",
+        "logement",
+        "mobilite",
+        "sante",
+        "territoire",
+    ]
+    rows = []
+    data: dict[str, list[float]] = {}
+    active_ids: set[str] = set()
+    for idx in range(60):
+        sid = f"crit_{idx}_scaled"
+        cat = categories[idx % len(categories)]
+        rows.append(
+            {
+                "score": sid,
+                "cat": cat,
+                "weight": 1.0,
+                "bdv_factor": 0.5,
+                "min_bound": 0.0,
+                "max_bound": 1.0,
+                "missing_strategy": "exclude",
+            }
+        )
+        data[sid] = [0.4, 0.8]
+        data[f"{sid}_bdv"] = [0.6, 0.2]
+        active_ids.add(sid)
+
+    scores_cat = pd.DataFrame(rows)
+    df = pd.DataFrame(data, index=pd.Index(["33063", "33064"], name="codgeo"))
+    engine = scoring.ScoringEngine(
+        df_all_communes=df,
+        df_bv_geo=pd.DataFrame(),
+        scores_cat=scores_cat,
+        incl_index=pd.DataFrame(),
+        global_stats=global_stats,
+    )
+    config = SearchCriterias(nb_enfants=1)
+    config.active_criteria = active_ids
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", pd.errors.PerformanceWarning)
+        res = engine._compute_category_scores(df, config)
+
+    perf_warnings = [
+        w for w in caught if issubclass(w.category, pd.errors.PerformanceWarning)
+    ]
+    assert not perf_warnings, f"Unexpected PerformanceWarning(s): {perf_warnings}"
+    for cat in categories:
+        assert f"{cat}_cat_score" in res.columns
+    for sid in active_ids:
+        assert f"{sid}_uncombined_commune" in res.columns
+    assert res.index.name == "codgeo"
