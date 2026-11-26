@@ -96,7 +96,7 @@
     },
     "ingest_all": {
       "status": "COMPLETED",
-      "timestamp": "2026-11-12T12:17:54.859722+00:00",
+      "timestamp": "2026-11-23T16:05:12.611255+00:00",
       "details": {}
     },
     "clean_communes": {
@@ -955,7 +955,7 @@
     },
     "clean_hebergement_rna": {
       "status": "COMPLETED",
-      "timestamp": "2026-07-31T10:20:51.808047",
+      "timestamp": "2026-11-23T16:05:12.610419+00:00",
       "details": {}
     },
     "clean_jaccueille": {
@@ -1359,6 +1359,11 @@
       "status": "refreshed",
       "timestamp": "2026-11-12T11:53:22.941670+00:00",
       "file": "pipeline/cache/output/odis_ft_jobs_agg.parquet"
+    },
+    "rna_v6_hebergement": {
+      "status": "refreshed",
+      "timestamp": "2026-11-23T16:05:12.608404+00:00",
+      "file": "pipeline/cache/clean/hebergement_rna_cols.parquet"
     }
   }
 }

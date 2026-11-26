@@ -32,6 +32,7 @@ def base_df(sample_data):
     # Add optional inclusion columns to test pruning
     df["inc_asso_add_scaled"] = 0.5
     df["inc_services_add_scaled"] = 0.5
+    df["inc_asso_thematiques_scaled"] = 0.5
     return df
 
 
@@ -147,10 +148,11 @@ def test_association_pruning(scoring_engine, base_df, base_config):
 
 
 def test_service_pruning(scoring_engine, base_df, base_config):
-    """Scenario 5: empty inc_services_selection -> Verify inc_services_incl_scaled is removed."""
+    """Scenario 5: empty inc_services_selection -> Verify inc_services_incl_scaled & inc_asso_thematiques_scaled are removed."""
     config = base_config
     config.inc_services_selection = []
 
     scored_df = scoring_engine._compute_criteria_scores(base_df, config)
 
     assert "inc_services_incl_scaled" not in scored_df.columns
+    assert "inc_asso_thematiques_scaled" not in scored_df.columns

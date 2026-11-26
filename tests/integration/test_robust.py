@@ -18,8 +18,8 @@ def test_robust_search():
     queries = [
         ("déménagement", "rome_codes"),
         ("propreté", "rome_codes"),
-        ("patrimoine", "waldec_codes"),
-        ("gastronomie", "waldec_codes"),
+        ("patrimoine", "association_tags"),
+        ("gastronomie", "association_tags"),
     ]
 
     for q, domain in queries:

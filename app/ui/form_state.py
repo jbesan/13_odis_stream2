@@ -10,13 +10,23 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Mapping, MutableMapping
+import logging
+import re
 from typing import Any, Optional
 
 import pandas as pd
 import streamlit as st
 
 import config as cfg
-from core.models import CriteriaItem, SearchAreaLevel, SearchCriterias
+from core.models import (
+    AssociationSearchGroup,
+    CriteriaItem,
+    SearchAreaLevel,
+    SearchCriterias,
+)
+
+logger = logging.getLogger(__name__)
+_LEGACY_WALDEC_CODE_RE = re.compile(r"^\d{6}$")
 
 
 FORM_INITIALIZED_KEY = "_form_state_initialized"
@@ -60,6 +70,71 @@ def _codes(values: Any) -> list[str]:
     if not isinstance(values, list):
         values = [values]
     return [str(_code(value)) for value in values if _code(value) is not None]
+
+
+def _filter_valid_association_tags(values: Any) -> list[str]:
+    """Extract canonical association tags while discarding legacy 6-digit WALDEC codes.
+
+    Args:
+        values: Raw selection items (strings, mappings, or ``CriteriaItem`` instances).
+
+    Returns:
+        Deduplicated list of non-empty canonical tags in insertion order.
+    """
+    tags: list[str] = []
+    seen: set[str] = set()
+    for raw in _codes(values):
+        cleaned = raw.strip()
+        if not cleaned:
+            continue
+        if _LEGACY_WALDEC_CODE_RE.match(cleaned):
+            logger.warning(
+                "Ignoring legacy 6-digit WALDEC code '%s' in inc_asso_add_selection",
+                cleaned,
+            )
+            continue
+        if cleaned not in seen:
+            seen.add(cleaned)
+            tags.append(cleaned)
+    return tags
+
+
+def _filter_valid_association_tag_groups(groups: Any) -> list[list[str]]:
+    """Normalize structured association search groups into non-empty tag lists.
+
+    Args:
+        groups: Raw sequence of ``AssociationSearchGroup``, mappings with ``tags``,
+            or inner sequences/strings.
+
+    Returns:
+        List of deduplicated tag lists (excluding empty groups).
+    """
+    if not isinstance(groups, list):
+        return []
+    cleaned_groups: list[list[str]] = []
+    for grp in groups:
+        if isinstance(grp, Mapping) and "tags" in grp:
+            raw_items = grp["tags"]
+        elif hasattr(grp, "tags"):
+            raw_items = grp.tags
+        else:
+            raw_items = grp
+        tags = _filter_valid_association_tags(raw_items)
+        if tags:
+            cleaned_groups.append(tags)
+    return cleaned_groups
+
+
+def _flatten_tag_groups(groups: list[list[str]]) -> list[str]:
+    """Flatten structured tag groups into a deduplicated ordered tag list."""
+    flattened: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        for tag in group:
+            if tag not in seen:
+                seen.add(tag)
+                flattened.append(tag)
+    return flattened
 
 
 def _label_from_index(index: pd.DataFrame, code: Any) -> str:
@@ -245,10 +320,22 @@ class FormState:
                 _codes(values["inc_services_selection"]),
                 overwrite=overwrite,
             )
-        if "inc_asso_add_selection" in values:
+        clean_groups = _filter_valid_association_tag_groups(
+            values.get("inc_asso_add_groups")
+        )
+        if clean_groups:
+            self._put("ui_inc_asso_add_groups_raw", clean_groups, overwrite=overwrite)
             self._put(
                 "ui_inc_asso_add_selection_raw",
-                _codes(values["inc_asso_add_selection"]),
+                _flatten_tag_groups(clean_groups),
+                overwrite=overwrite,
+            )
+        elif "inc_asso_add_selection" in values:
+            tags = _filter_valid_association_tags(values["inc_asso_add_selection"])
+            self._put("ui_inc_asso_add_selection_raw", tags, overwrite=overwrite)
+            self._put(
+                "ui_inc_asso_add_groups_raw",
+                [[tag] for tag in tags] if tags else [[]],
                 overwrite=overwrite,
             )
 
@@ -490,10 +577,26 @@ class FormState:
                 set(_codes(self.state.get("ui_inc_services_selection_raw", [])))
             )
         ]
-        waldec_index = app_data.get("waldec_index", pd.DataFrame())
+        if "ui_inc_asso_add_groups_raw" in self.state:
+            raw_groups = _filter_valid_association_tag_groups(
+                self.state.get("ui_inc_asso_add_groups_raw", [])
+            )
+        else:
+            raw_groups = [
+                [tag]
+                for tag in _filter_valid_association_tags(
+                    self.state.get("ui_inc_asso_add_selection_raw", [])
+                )
+            ]
+        association_groups = [
+            AssociationSearchGroup(
+                tags=[CriteriaItem(code=tag, label=tag.capitalize()) for tag in grp]
+            )
+            for grp in raw_groups
+        ]
         associations = [
-            CriteriaItem(code=code, label=_label_from_index(waldec_index, code))
-            for code in _codes(self.state.get("ui_inc_asso_add_selection_raw", []))
+            CriteriaItem(code=tag, label=tag.capitalize())
+            for tag in _flatten_tag_groups(raw_groups)
         ]
 
         raw_range = self.state.get("ui_target_city_size_range")
@@ -586,6 +689,7 @@ class FormState:
             besoin_sante=self.selected_health(),
             inc_services_selection=inclusion,
             inc_asso_add_selection=associations,
+            inc_asso_add_groups=association_groups,
             notes_qualitatives=[notes] if notes else [],
             org_context=org.id if org else None,
             org_strategic_locations=self.state.get("ui_org_strategic_locations", []),

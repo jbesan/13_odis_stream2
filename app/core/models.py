@@ -100,6 +100,23 @@ class CriteriaItem(BaseModel):
         return data
 
 
+class AssociationSearchGroup(BaseModel):
+    """Logical OR-group of canonical association tags representing one interest search."""
+
+    tags: List[CriteriaItem] = Field(
+        default_factory=list,
+        description="Tags canoniques équivalents (OU logique) pour couvrir ce besoin.",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_tag_sequence(cls, data: Any) -> Any:
+        """Accept raw list of tags/strings as shorthand for ``{'tags': ...}``."""
+        if isinstance(data, list):
+            return {"tags": data}
+        return data
+
+
 class SearchAreaLevel(str, Enum):
     """Geographic search scope level."""
 
@@ -186,6 +203,10 @@ class SearchCriterias(BaseModel):
     inc_asso_add_selection: List[CriteriaItem] = Field(
         default_factory=list,
         description="Associations et centres d'intérêt",
+    )
+    inc_asso_add_groups: List[AssociationSearchGroup] = Field(
+        default_factory=list,
+        description="Recherches structurées de centres d'intérêt (OU intra-groupe, ET inter-groupes).",
     )
 
     hebergement_cible: List[str] = Field(
@@ -758,16 +779,35 @@ class HealthMetrics(BaseModel):
     )
 
 
+def format_assoce_url(raw_id: Any) -> Optional[str]:
+    """Return assoce.fr URL only for valid WALDEC/RNA identifiers (``W...``).
+
+    Args:
+        raw_id: Raw association identifier (WALDEC or SIREN/SIRET fallback).
+
+    Returns:
+        Canonical ``https://www.assoce.fr/waldec/{id}`` URL or ``None``.
+    """
+    cleaned = (str(raw_id) if raw_id is not None else "").strip()
+    if cleaned.startswith("W"):
+        return f"https://www.assoce.fr/waldec/{cleaned}"
+    return None
+
+
 class AssociationDetail(BaseModel):
     """Represents a detailed association object from the enrichment process."""
 
     id: str = Field(
         ...,
-        description="Identifiant unique (WALDEC)",
+        description="Identifiant unique (RNA W... ou AMALIA:...)",
     )
     name: str = Field(
         ...,
         description="Nom de l'association",
+    )
+    nom_etablissement: Optional[str] = Field(
+        None,
+        description="Nom d'établissement / antenne lorsque distinct du nom principal",
     )
     description: Optional[str] = Field(
         None,
@@ -775,14 +815,69 @@ class AssociationDetail(BaseModel):
     )
     waldec_label: Optional[str] = Field(
         None,
-        description="Libellé de la catégorie WALDEC",
+        description="Libellé de la catégorie WALDEC / objet social",
+    )
+    codgeo: Optional[str] = Field(
+        None,
+        description="Code INSEE de l'établissement (normalisé PLM)",
+    )
+    commune_nom: Optional[str] = Field(
+        None,
+        description="Nom de la commune d'implantation",
+    )
+    is_same_commune: Optional[bool] = Field(
+        None,
+        description="True si l'établissement est implanté sur la commune cible",
+    )
+    date_decla: Optional[str] = Field(
+        None,
+        description="Date de dernière déclaration (YYYY-MM-DD)",
+    )
+    has_employees: Optional[bool] = Field(
+        None,
+        description="True si l'association déclare des effectifs salariés actifs",
+    )
+    tranche_effectifs: Optional[str] = Field(
+        None,
+        description="Code tranche d'effectifs SIRENE",
+    )
+    matched_tags: List[str] = Field(
+        default_factory=list,
+        description="Tags canoniques correspondants au sein d'une recherche",
     )
     refugee_focused: bool = Field(
         False,
         description="Si l'association est dédiée aux réfugiés",
     )
 
+    @property
+    def assoce_url(self) -> Optional[str]:
+        """Return assoce.fr URL only for valid WALDEC/RNA identifiers (``W...``)."""
+        return format_assoce_url(self.id)
+
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
+
+
+class InterestSearchGroupResult(BaseModel):
+    """Hydrated BDV associations corresponding to a structured interest search."""
+
+    label: str = Field(
+        ...,
+        description="Libellé synthétique des variantes de la recherche",
+    )
+    tags: List[str] = Field(
+        default_factory=list,
+        description="Tags canoniques inclus dans la recherche (OU logique)",
+    )
+    total_bdv_count: int = Field(
+        0,
+        ge=0,
+        description="Nombre total d'associations dédupliquées dans le BDV avant cutoff",
+    )
+    associations: List[AssociationDetail] = Field(
+        default_factory=list,
+        description="Top N associations classées pour cette recherche",
+    )
 
 
 class InclusionServiceDetail(BaseModel):
@@ -864,6 +959,14 @@ class InclusionMetrics(BaseModel):
     services_detailed: Dict[str, List[InclusionServiceDetail]] = Field(
         default_factory=dict,
         description="Services d'inclusion détaillés groupés par thématique (source: Data Inclusion)",
+    )
+    asso_centres_interet_groups: List[InterestSearchGroupResult] = Field(
+        default_factory=list,
+        description="Associations BDV groupées par recherche de besoins spécifiques et centres d'intérêt",
+    )
+    asso_centres_interet_count: int = Field(
+        0,
+        description="Nombre total d'associations retournées dans les recherches de centres d'intérêt",
     )
 
 

@@ -231,6 +231,7 @@ def test_vertical_tables_plm_consolidation(plm_mapping):
 
     vertical_files = [
         ("odis_associations_agg.parquet", "codgeo"),
+        ("odis_associations_thematiques_agg.parquet", "geo_code"),
         ("odis_formations_agg.parquet", "codgeo"),
         ("odis_ccas.parquet", "codgeo"),
         ("odis_refugee_associations.parquet", "codgeo"),
@@ -243,6 +244,8 @@ def test_vertical_tables_plm_consolidation(plm_mapping):
             continue
 
         df = pd.read_parquet(filepath)
+        if filename == "odis_associations_thematiques_agg.parquet" and "grain" in df.columns:
+            df = df[df["grain"] == "commune"].copy()
         df[codgeo_col] = df[codgeo_col].astype(str)
 
         # Assert no child arrondissements exist in vertical table
@@ -259,7 +262,10 @@ def test_vertical_tables_plm_consolidation(plm_mapping):
             )
 
             # Additional validation: count or records should be positive
-            if filename == "odis_associations_agg.parquet":
+            if filename in (
+                "odis_associations_agg.parquet",
+                "odis_associations_thematiques_agg.parquet",
+            ):
                 assert parent_rows["count"].sum() > 0, (
                     f"Parent {parent} has 0 associations in {filename}"
                 )

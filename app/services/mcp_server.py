@@ -5,10 +5,10 @@ import asyncio
 import threading
 
 import pandas as pd
-from utils.data_loader import load_app_data_raw
+from utils.data_loader import get_tag_search_index, load_app_data_raw
 from core.scoring import ScoringEngine
-from core.models import SearchCriterias, CriteriaItem
-from services.rna_rag import RNARagService
+from core.models import AssociationSearchGroup, CriteriaItem, SearchCriterias
+from services.rna_rag import RNARagService, normalize_codgeo_plm, normalize_tokens
 import config as cfg
 import logging
 from utils.common import normalize_text, calculate_fuzzy_match_score, sanitize_for_json
@@ -95,14 +95,28 @@ def get_scoring_engine() -> ScoringEngine:
         ),
         live_jobs_data=DATA_CONTEXT.get("live_jobs_data", pd.DataFrame()),
         siae_jobs_data=DATA_CONTEXT.get("siae_jobs_data", pd.DataFrame()),
+        bv_data=DATA_CONTEXT.get("bv_data"),
+        incl_index_bdv=DATA_CONTEXT.get("incl_index_bdv"),
+        asso_thematiques_data=DATA_CONTEXT.get("asso_thematiques_data"),
+        asso_tags_bdv_data=DATA_CONTEXT.get("asso_tags_bdv_data"),
+        asso_tags_ref=DATA_CONTEXT.get("asso_tags_ref"),
     )
 
 
 def _search_referentiels_logic(query: str, domain: str) -> List[Dict[str, Any]]:
-    """Recherche des codes officiels (Formations, ROME, Services d'inclusion, WALDEC, etc.) dans les référentiels."""
+    """Recherche des codes officiels (Formations, ROME, Services d'inclusion, tags associatifs, etc.)."""
 
     ensure_data_context()
-    # print(f"Search Referentiels for Query: {query}, Domain: {domain}")
+
+    if domain in ("association_tags", "waldec_codes"):
+        if domain == "waldec_codes":
+            logger.warning(
+                "Domain 'waldec_codes' is deprecated; routing to Commun RNA V6 'association_tags'."
+            )
+        tag_index = get_tag_search_index(DATA_CONTEXT)
+        if not tag_index.is_empty:
+            res = tag_index.search(query, limit=5)
+            return [{"code": m.tag, "label": m.tag.capitalize()} for m in res.matches]
 
     if "referentiels_raw" not in DATA_CONTEXT:
         logger.warning("   ⚠️ Referentiels data not available.")
@@ -238,7 +252,7 @@ def search_referentiels(query: str, domain: Optional[str] = None) -> Dict[str, A
 
     Args:
         query (str): Mot clé de recherche.
-        domain (str): Domaine de recherche possibles:['formation_codes', 'inclusion_services', 'waldec_codes', 'rome_codes', 'regions', 'departements', 'communes'].
+        domain (str): Domaine de recherche possibles:['formation_codes', 'inclusion_services', 'association_tags', 'rome_codes', 'regions', 'departements', 'communes', 'housing_types'] ('waldec_codes' accepté en alias).
 
     Returns:
         List[Dict[str, Any]]: Liste des codes + labels officiels correspondants.
@@ -252,6 +266,7 @@ def search_referentiels(query: str, domain: Optional[str] = None) -> Dict[str, A
             "rome_codes",
             "formation_codes",
             "inclusion_services",
+            "association_tags",
             "waldec_codes",
             "regions",
             "departements",
@@ -388,6 +403,14 @@ def _compute_top_cities_logic(
             return int(weights[f"poids_{key_suffix}"])
         return default
 
+    raw_groups = filters.get("inc_asso_add_groups") or []
+    raw_flat = filters.get("inc_asso_add_selection", [])
+    inc_groups = (
+        [AssociationSearchGroup(tags=g) for g in raw_groups if g]
+        if raw_groups
+        else [AssociationSearchGroup(tags=[item]) for item in raw_flat]
+    )
+
     config = SearchCriterias(
         poids_emploi=get_weight("emploi"),
         poids_logement=get_weight("logement"),
@@ -410,7 +433,8 @@ def _compute_top_cities_logic(
         besoin_sante=filters.get("besoin_sante", []),
         type_logement=filters.get("type_logement") or "appt_all",
         inc_services_selection=inc_services,
-        inc_asso_add_selection=filters.get("inc_asso_add_selection", []),
+        inc_asso_add_selection=raw_flat,
+        inc_asso_add_groups=inc_groups,
     )
 
     # 3. Run Engine (Optimized)
@@ -883,12 +907,55 @@ def compute_routes(
         return {"error": str(e)}
 
 
+def _resolve_bdv_for_codgeo(codgeo: str) -> tuple[str, Optional[str]]:
+    """Resolve PLM-normalized INSEE code and Bassin de Vie code for ``codgeo``."""
+    codgeo_norm = normalize_codgeo_plm(codgeo)
+    ensure_data_context()
+    bv_code: Optional[str] = None
+    odis = DATA_CONTEXT.get("odis")
+
+    if odis is not None:
+        lookup_key = (
+            codgeo_norm
+            if codgeo_norm in odis.index
+            else (codgeo if codgeo in odis.index else None)
+        )
+        if lookup_key is not None:
+            bv = odis.loc[lookup_key, "bassin_de_vie"]
+            if not pd.isna(bv):
+                bv_code = str(bv).strip().removesuffix(".0") or None
+
+    if not bv_code:
+        logger.warning(
+            "⚠️ [MCP] Bassin de Vie introuvable pour codgeo=%s (norm=%s) ; repli strict sur la commune.",
+            codgeo,
+            codgeo_norm,
+        )
+    return codgeo_norm, bv_code
+
+
+def _compute_rna_query_vectors(queries: List[str]) -> Dict[str, List[float]]:
+    """Pre-compute 768d embeddings in one batch Vertex AI call for distinct queries."""
+    service = get_rna_rag_service()
+    if not service:
+        return {}
+    non_empty = [q for q in dict.fromkeys(queries) if normalize_tokens(q)]
+    if not non_empty:
+        return {}
+    vectors = service.get_embeddings_batch(non_empty)
+    return {q: vec.tolist() for q, vec in zip(non_empty, vectors)}
+
+
 def _search_rna_rag_logic(
-    query: str, codgeo: str, top_k: int = 10
+    query: str,
+    codgeo: str,
+    top_k: int = 10,
+    *,
+    query_vector: Optional[List[float]] = None,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """
-    Internal logic for looking up associations via RAG.
-    Resolves the Bassin de Vie code for the given commune to perform a broader search.
+    Internal logic for looking up associations via BDV-scoped Hybrid RRF (RNA V6).
+    Resolves the Bassin de Vie code for the given commune to query BigQuery safely.
     """
     service = get_rna_rag_service()
     if not service:
@@ -896,18 +963,15 @@ def _search_rna_rag_logic(
             "error": "RNARagService not initialized. Check BigQuery authentication."
         }
 
-    ensure_data_context()
-    bv_code = None
-    odis = DATA_CONTEXT.get("odis")
-
-    if odis is not None and codgeo in odis.index:
-        bv = odis.loc[codgeo, "bassin_de_vie"]
-        if not pd.isna(bv):
-            bv_code = str(bv).replace(".0", "")
+    codgeo_norm, bv_code = _resolve_bdv_for_codgeo(codgeo)
 
     try:
         return service.get_associations_semantic(
-            query, codgeos=[codgeo], bv_code=bv_code, top_k=top_k
+            query,
+            codgeos=[codgeo_norm],
+            bv_code=bv_code,
+            top_k=top_k,
+            query_vector=query_vector,
         )
     except Exception as e:
         logger.exception(f"❌ [MCP] _search_rna_rag_logic failed: {e}")
@@ -918,20 +982,19 @@ def _search_rna_rag_logic(
 def search_rna_rag(
     query: str, codgeo: str, top_k: int = 10
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
-    """Recherche d'associations locales (RNA) par mot-clé avec classement BM25 pondéré.
+    """Recherche hybride (sémantique 768d + BM25 avec fusion RRF) d'associations locales (RNA V6) sur le bassin de vie.
 
-    Règles pour maximiser le rappel (recall) :
-    - Utiliser des termes statutaires concrets et directs déclarés en préfecture
-      (ex: 'cours de francais', 'alphabetisation', 'FLE', 'aide alimentaire',
-      'maraude', 'mosquee', 'club de football', 'hebergement d urgence').
-    - Éviter les concepts administratifs abstraits (ex: ne pas chercher 'inclusion des publics vulnerables').
-    - Utiliser des groupes nominaux de 2 à 4 mots sans phrases conversationnelles.
-    - Ne jamais inclure le nom de la ville dans la requête (le filtrage géographique est fait via codgeo).
+    Règles pour maximiser la pertinence :
+    - Formuler des requêtes thématiques ou statutaires courtes de 2 à 4 mots
+      (ex: 'cours de français allophones', 'soutien psychologique exilés',
+      'interprétariat médical', 'club de football', 'aide alimentaire maraude').
+    - La recherche vectorielle capte aussi les synonymes et formulations conceptuelles.
+    - Ne jamais inclure le nom de la ville dans la requête (filtrage BDV appliqué via codgeo).
 
     Args:
-        query: Mots-clés concrets de recherche (ex: 'cours de francais FLE', 'club football').
+        query: Termes de recherche (2 à 4 mots, sans nom de commune).
         codgeo: Code INSEE de la commune (5 chiffres).
-        top_k: Nombre maximum de résultats à retourner.
+        top_k: Nombre maximum de résultats dédupliqués à retourner (défaut: 10).
     """
     return _search_rna_rag_logic(query, codgeo, top_k=top_k)
 

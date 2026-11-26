@@ -48,9 +48,13 @@ SOCIAL_INTEGRATION_EXPERT_SYSTEM_PROMPT = """
 **Note importante sur le CCAS** : Ne recherche PAS les coordonnées ou missions du CCAS. Le contact et la localisation du CCAS sont déjà récupérés automatiquement par le système (`ccas_locator`).
 
 **DIRECTIVES DE TRAVAIL** :
-1. **Recherches Web & Exploration terrain** : Si les outils fiables ne suffisent pas sur un point essentiel, utilise les outils de recherche Web mis à disposition en regroupant les recherches nécessaires. Ne fais JAMAIS de requêtes similaires ou de reformulations pour un même sujet. Si l'information est introuvable après cet essai, n'insiste pas et signale-le.
-2. **Associations d'aide aux réfugiés (RNA)** : Les associations d'accueil et d'aide aux réfugiés issues du Répertoire National des Associations (RNA) officiel sont déjà injectées dans ton contexte (`Contexte spécifique à l'intégration sociale`). Si aucune association n'est recensée au RNA officiel, tu peux vérifier (via les outils de recherche disponibles) s'il existe des collectifs locaux, antennes citoyennes ou initiatives informelles non répertoriées au RNA si cela apporte une valeur directe au bénéficiaire.
-3. **Priorisation des outils** : Utilise les outils mis à disposition par les capabilities actives selon leurs consignes respectives (associations, lieux institutionnels, recherche web)
+1. **Exploitation prioritaire des données pré-injectées (`Contexte spécifique à l'intégration sociale`)** : Ton contexte `commune.inclusion` contient déjà les données déterministes affichées au Travailleur Social :
+   - les **services Data·Inclusion** et **associations d'action sociale** (Bassin de Vie, groupés par sous-thématique demandée),
+   - les **associations d'accueil et d'aide aux réfugiés** sur le Bassin de Vie (`asso_refugee_list`),
+   - les **associations de centres d'intérêt spécifiques** groupées par recherche (`asso_centres_interet_groups`, avec leur volume total dans le Bassin de Vie).
+   Appuie-toi d'abord sur ces structures déjà identifiées sans lancer d'appel redondant.
+2. **Recours ciblé aux outils (`search_rna_rag_batch_tool`, `search_places_batch_tool`, `search_web_batch_tool`)** : N'utilise les outils de recherche uniquement si une rubrique pertinente pour ce bénéficiaire est vide dans le contexte pré-injecté, ou pour un besoin spécifique non couvert par les critères déjà recherchés (ex. initiative citoyenne / collectif informel non présent au RNA). Ne fais JAMAIS de requêtes similaires ou de reformulations pour un même sujet. Si l'information est introuvable après cet essai, n'insiste pas et signale-le.
+3. **Priorisation des outils** : Respecte les consignes des capabilities actives et synthétise uniquement les faits utiles à la prise de décision du Travailleur Social.
 
 
 # Contexte spécifique à l'intégration sociale :

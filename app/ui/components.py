@@ -19,6 +19,24 @@ def inject_custom_css() -> None:
             div[data-testid="stMultiSelect"] span {
                 max-width: 500px !important;
             }
+            /* Selected association pills in Singa / J'Accueille green (Streamlit 1.63 react-aria ButtonGroup) */
+            [class*="st-key-ui_asso_"][class*="_selected_"] button[data-variant="pills"][data-selected="true"],
+            [class*="st-key-ui_asso_"][class*="_selected_"] button[data-variant="pills"][aria-pressed="true"] {
+                background-color: #1B4429 !important;
+                border-color: #1B4429 !important;
+                color: #FFFFFF !important;
+            }
+            [class*="st-key-ui_asso_"][class*="_selected_"] button[data-variant="pills"][data-selected="true"] p,
+            [class*="st-key-ui_asso_"][class*="_selected_"] button[data-variant="pills"][data-selected="true"] span,
+            [class*="st-key-ui_asso_"][class*="_selected_"] button[data-variant="pills"][aria-pressed="true"] p,
+            [class*="st-key-ui_asso_"][class*="_selected_"] button[data-variant="pills"][aria-pressed="true"] span {
+                color: #FFFFFF !important;
+            }
+            [class*="st-key-ui_asso_"][class*="_selected_"] button[data-variant="pills"][data-selected="true"]:hover,
+            [class*="st-key-ui_asso_"][class*="_selected_"] button[data-variant="pills"][aria-pressed="true"]:hover {
+                background-color: #265938 !important;
+                border-color: #265938 !important;
+            }
             /* Custom styling for specific buttons if needed */
             /* .st-key-btn_recommencer .stButton p {color: white;} */
 

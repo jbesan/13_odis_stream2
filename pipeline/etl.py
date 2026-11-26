@@ -4,14 +4,17 @@ import logging
 import re
 import os
 import sys
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 # Add app directory to sys.path to allow imports from app/
 sys.path.append(os.path.join(os.getcwd(), "app"))
 
 from pipeline import ingest, build, prescoring
 from google.cloud import storage
+from pipeline.common import CACHE_DIR, CONFIG_FILE, is_cache_valid, load_config
 from pipeline.run_context import PipelineRun, PipelineRunError, bind_run_paths
 
 SOURCE_DIR = Path("pipeline/cache/output")
@@ -22,6 +25,9 @@ DATASET_FILES = [
     "odis_bassins_de_vie.parquet",
     "odis_pois.parquet",
     "odis_associations_agg.parquet",
+    "odis_associations_thematiques_agg.parquet",
+    "odis_associations_tags_bdv.parquet",
+    "odis_association_tags_ref.parquet",
     "odis_formations_agg.parquet",
     "odis_ccas.parquet",
     "odis_refugee_associations.parquet",
@@ -155,6 +161,86 @@ def _assert_deployable_candidate(source_dir: Path, run: PipelineRun) -> None:
         raise PipelineRunError(str(exc)) from exc
 
 
+def _uses_odace(config: dict[str, Any], source_name: str) -> bool:
+    """Return whether a pipeline source is configured to ingest from ODAS.
+
+    Args:
+        config: Parsed pipeline sources configuration from ``sources.yaml``.
+        source_name: Source key under ``sources`` or ``local_files``.
+
+    Returns:
+        True when the source enables ``use_odace``; otherwise False.
+    """
+    source_cfg = config.get("sources", {}).get(source_name) or config.get(
+        "local_files", {}
+    ).get(source_name, {})
+    return isinstance(source_cfg, dict) and bool(source_cfg.get("use_odace", False))
+
+
+def _resolve_jobs_skip_flag(
+    config: dict[str, Any],
+    *,
+    source_name: str,
+    already_skipped: bool,
+    status_fn: Callable[[], dict[str, Any]],
+    label: str,
+    aggregate_name: str,
+    prompt_text: str,
+    skip_label: str,
+    run_message: str,
+) -> bool:
+    """Resolve whether an employment source should be skipped before ingestion.
+
+    When ``use_odace`` is enabled, ingestion always runs non-interactively
+    against ODAS unless explicitly skipped via CLI flags. Legacy interactive
+    refresh prompts are preserved only when ``use_odace`` is disabled.
+
+    Args:
+        config: Parsed pipeline sources configuration.
+        source_name: Source key in ``sources.yaml``.
+        already_skipped: CLI skip flag value.
+        status_fn: Callable returning cache freshness metadata for the source.
+        label: Human-readable source label for status messages.
+        aggregate_name: Human-readable aggregate label when coverage is missing.
+        prompt_text: Interactive confirmation prompt shown in legacy API mode.
+        skip_label: Label printed when the operator declines refresh.
+        run_message: Confirmation message printed when refresh is accepted.
+
+    Returns:
+        Updated skip boolean for the source.
+    """
+    if already_skipped or _uses_odace(config, source_name):
+        return already_skipped
+
+    status = status_fn()
+    if status["within_ttl"]:
+        return False
+
+    print("\n" + "=" * 50)
+    if not status["exists"]:
+        print(f"[?] {label} data is MISSING.")
+    elif not status.get("coverage_exists", False):
+        print(
+            f"[!] {aggregate_name} exists, but its coverage evidence is missing; "
+            "a refresh is required."
+        )
+    else:
+        print(
+            f"[?] {label} data is {status['age_days']:.1f} days old "
+            f"(TTL={status['ttl_days']})."
+        )
+
+    choice = input(prompt_text).lower().strip()
+    if choice != "y":
+        print(f"    >> Skipping {skip_label}.")
+        print("=" * 50 + "\n")
+        return True
+
+    print(f"    >> {run_message}")
+    print("=" * 50 + "\n")
+    return False
+
+
 def main():
     parser = argparse.ArgumentParser(description="ODIS Data Pipeline ETL")
     parser.add_argument(
@@ -222,82 +308,38 @@ def main():
 
     publication_started = False
     try:
-        # Early check for France Travail fetch if ingest/all is selected and not explicitly skipped
         if args.step in ["ingest", "all"]:
-            from pipeline.ingest import get_live_jobs_status
+            config = load_config(CONFIG_FILE)
+            from pipeline.ingest import (
+                get_inclusion_jobs_status,
+                get_live_jobs_status,
+            )
 
-            status = get_live_jobs_status()
+            skip_live_jobs = _resolve_jobs_skip_flag(
+                config,
+                source_name="france_travail_live",
+                already_skipped=skip_live_jobs,
+                status_fn=get_live_jobs_status,
+                label="France Travail Live Jobs",
+                aggregate_name="France Travail aggregate",
+                prompt_text="    Do you want to refresh the metadata? (y/N): ",
+                skip_label="Live Jobs fetch",
+                run_message="Live Jobs fetch will run during ingestion.",
+            )
+            skip_inclusion_jobs = _resolve_jobs_skip_flag(
+                config,
+                source_name="inclusion_jobs",
+                already_skipped=skip_inclusion_jobs,
+                status_fn=get_inclusion_jobs_status,
+                label="Inclusion Jobs",
+                aggregate_name="Inclusion Jobs aggregate",
+                prompt_text="    Do you want to refresh the Inclusion Jobs? (y/N): ",
+                skip_label="Inclusion Jobs fetch",
+                run_message="Inclusion Jobs fetch will run during ingestion using credentials from .env.",
+            )
 
-            if not status["within_ttl"] and not skip_live_jobs:
-                print("\n" + "=" * 50)
-                if not status["exists"]:
-                    print("[?] France Travail Live Jobs data is MISSING.")
-                elif not status.get("coverage_exists", False):
-                    print(
-                        "[!] France Travail aggregate exists, but its coverage evidence is missing; "
-                        "a refresh is required."
-                    )
-                else:
-                    print(
-                        f"[?] France Travail Live Jobs data is {status['age_days']:.1f} days old (TTL={status['ttl_days']})."
-                    )
-
-                choice = (
-                    input("    Do you want to refresh the metadata? (y/N): ")
-                    .lower()
-                    .strip()
-                )
-                if choice != "y":
-                    print("    >> Skipping Live Jobs fetch.")
-                    skip_live_jobs = True
-                else:
-                    print("    >> Live Jobs fetch will run during ingestion.")
-                print("=" * 50 + "\n")
-
-            # Inclusion Jobs check
-            from pipeline.ingest import get_inclusion_jobs_status
-
-            status_inc = get_inclusion_jobs_status()
-            if not status_inc["within_ttl"] and not skip_inclusion_jobs:
-                print("\n" + "=" * 50)
-                if not status_inc["exists"]:
-                    print("[?] Inclusion Jobs data is MISSING.")
-                elif not status_inc.get("coverage_exists", False):
-                    print(
-                        "[!] Inclusion Jobs aggregate exists, but its coverage evidence is missing; "
-                        "a refresh is required."
-                    )
-                else:
-                    print(
-                        f"[?] Inclusion Jobs data is {status_inc['age_days']:.1f} days old (TTL={status_inc['ttl_days']})."
-                    )
-
-                choice = (
-                    input("    Do you want to refresh the Inclusion Jobs? (y/N): ")
-                    .lower()
-                    .strip()
-                )
-                if choice != "y":
-                    print("    >> Skipping Inclusion Jobs fetch.")
-                    skip_inclusion_jobs = True
-                else:
-                    print(
-                        "    >> Inclusion Jobs fetch will run during ingestion using credentials from .env."
-                    )
-                print("=" * 50 + "\n")
-
-        if args.step in ["ingest", "all"]:
             # Print reminders for non-datagouv sources that have expired caches
             try:
-                from pipeline.common import (
-                    load_config,
-                    CONFIG_FILE,
-                    CACHE_DIR,
-                    is_cache_valid,
-                )
-                from datetime import datetime
-
-                config = load_config(CONFIG_FILE)
                 expired_reminders = []
                 for name, source_cfg in config["sources"].items():
                     if not source_cfg.get("datagouv_resource_id"):

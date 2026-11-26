@@ -69,7 +69,13 @@ The pipeline also has deliberate non-Odace adapters:
   1. **Ingest Phase** (`pipeline/ingest/cleaners/salesforce.py`): `clean_salesforce_jaccueille` extracts and aggregates Leads and Contacts by postal code into `CLEAN_DIR / "salesforce_jaccueille.parquet"`.
   2. **Build Phase** (`pipeline/build.py`): `build_salesforce_jaccueille_bdv` maps postal codes to candidate Bassins de Vie using candidate communes and codes postaux, writing `OUTPUT_DIR / "salesforce_jaccueille_bdv.parquet"`.
 - France Travail and Les emplois de l'inclusion provide live job datasets;
-- BigQuery RNA RAG provides the configured association enrichment;
+- BigQuery **Commun RNA V6 (`rna_v6`)** and its verified `gemini-decision-1`
+  qualification tables (`refugee_v6_verified`, `hebergement_v6_verified`) provide
+  social link counts, Data Inclusion themes/tags aggregates, refugee
+  associations, and multi-antenna PLM-normalized housing counts (`heb_loc_iml_count`,
+  `heb_habitant_count`), with automatic `--from-bq` incremental delta sync hooks
+  (`(id, text_source_sha256)` anti-join + `MERGE`) inside `ingest/main.py` and
+  distinct shared cache artifacts (`rna_v6_*.parquet`) in `pipeline/cache/clean/`.
 
 The two job datasets are metropolitan-only scoring inputs. Their collectors
 must complete the 96 valid metropolitan department identifiers and publish
@@ -269,7 +275,11 @@ release pointer.
 - [etl.py](etl.py): orchestrates phases, candidate binding and deployment.
 - [run_context.py](run_context.py): creates isolated run directories and
   validates deployability.
-- [ingest.py](ingest.py): provider acquisition, source validation and cleaning.
+- [ingest/](ingest/): modular provider acquisition, source validation, cleaners,
+  and automatic Commun V6 BigQuery delta sync hooks (`main.py`, `helpers.py`, `cleaners/rna_rag.py`).
+- [scripts/](scripts/): offline `gemini-decision-1` qualification and BigQuery
+  `MERGE` delta scripts (`decisions_common.py`, `qualify_refugee_associations.py`,
+  `qualify_hebergement_associations.py`).
 - [odace_client.py](odace_client.py): Odace query/export client and cache
   staging.
 - [build.py](build.py): joins, geography, PLM policies and release outputs.

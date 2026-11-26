@@ -22,11 +22,15 @@ def mock_clients():
         mock_bq_instance = mock_bq.return_value
         mock_bq_instance.project = "odis-stream2-app"
 
-        # Mock Gemini client embed_content
+        # Mock Gemini client embed_content (supports single and batch contents)
         mock_gemini_instance = mock_gemini.return_value
-        mock_response = MagicMock()
-        mock_response.embeddings = [MagicMock(values=[0.1] * 128)]
-        mock_gemini_instance.models.embed_content.return_value = mock_response
+
+        def _fake_embed_content(*, model, contents, config):
+            resp = MagicMock()
+            resp.embeddings = [MagicMock(values=[0.1] * 768) for _ in contents]
+            return resp
+
+        mock_gemini_instance.models.embed_content.side_effect = _fake_embed_content
 
         yield mock_bq_instance, mock_gemini_instance
 
@@ -142,8 +146,25 @@ def test_get_embedding_backwards_compatibility(mock_clients):
 
     emb = service._get_embedding("hello")
     assert isinstance(emb, np.ndarray)
-    assert len(emb) == 128
+    assert len(emb) == 768
     assert np.isclose(np.linalg.norm(emb), 1.0)
+    assert service.embedding_model == "gemini-embedding-001"
+
+
+def test_get_embeddings_batch_single_call(mock_clients):
+    bq, gemini = mock_clients
+    service = RNARagService()
+
+    embs = service.get_embeddings_batch(["soutien psychologique", "interprétariat médical"])
+    assert len(embs) == 2
+    assert all(len(v) == 768 and np.isclose(np.linalg.norm(v), 1.0) for v in embs)
+    gemini.models.embed_content.assert_called_once()
+    call_kwargs = gemini.models.embed_content.call_args.kwargs
+    assert call_kwargs["model"] == "gemini-embedding-001"
+    assert call_kwargs["config"] == {
+        "output_dimensionality": 768,
+        "task_type": "RETRIEVAL_QUERY",
+    }
 
 
 def test_get_associations_semantic_bm25(mock_clients):
@@ -152,7 +173,7 @@ def test_get_associations_semantic_bm25(mock_clients):
     mock_df = pd.DataFrame(
         [
             {
-                "id": "W1",
+                "id": "W332000001",
                 "name": "Football Club de Bordeaux",
                 "primary_category": "011",
                 "code_waldec": "011075",
@@ -161,7 +182,7 @@ def test_get_associations_semantic_bm25(mock_clients):
                 "codgeo": "33063",
             },
             {
-                "id": "W2",
+                "id": "W332000002",
                 "name": "Tennis Club",
                 "primary_category": "011",
                 "code_waldec": "011080",
@@ -178,10 +199,106 @@ def test_get_associations_semantic_bm25(mock_clients):
     results = service.get_associations_semantic("football", codgeos=["33063"], top_k=5)
 
     assert len(results) == 1
-    assert results[0]["id"] == "W1"
+    assert results[0]["id"] == "W332000001"
     assert results[0]["name"] == "Football Club de Bordeaux"
     assert results[0]["score"] > 0
+    assert results[0]["is_same_commune"] is True
+    assert results[0]["assoce_url"] == "https://www.assoce.fr/waldec/W332000001"
     assert bq.query.called
+
+
+def test_get_associations_semantic_hybrid_rrf_and_dedup(mock_clients):
+    bq, gemini = mock_clients
+    mock_query_job = MagicMock()
+    mock_df = pd.DataFrame(
+        [
+            # Dense #1 only (synonym without lexical match)
+            {
+                "id": "W420000001",
+                "entity_id": "W420000001::siege",
+                "is_siege": True,
+                "name": "Reseau Ecoute Exil",
+                "nom_etablissement": None,
+                "description": "Accompagnement traumatismes psychiques",
+                "waldec_label": "Action sociale",
+                "codgeo": "42218",
+                "commune_nom": "SAINT-ETIENNE",
+                "date_decla": "2024-03-10",
+                "tranche_effectifs": "02",
+                "llm_tags_recherche": ["ecoute", "trauma"],
+                "dense_rank": 1,
+                "cosine_sim": 0.84123,
+            },
+            # Dual match: Dense #2 + BM25 #1 -> should rank #1 after RRF!
+            {
+                "id": "W420000002",
+                "entity_id": "W420000002::siege",
+                "is_siege": True,
+                "name": "Centre Soutien Psychologique",
+                "nom_etablissement": None,
+                "description": "Soutien psychologique pour allophones",
+                "waldec_label": "Sante mentale",
+                "codgeo": "42095",
+                "commune_nom": "FIRMINY",
+                "date_decla": "2023-11-05",
+                "tranche_effectifs": "NN",
+                "llm_tags_recherche": ["soutien psychologique"],
+                "dense_rank": 2,
+                "cosine_sim": 0.81234,
+            },
+            # Same association & same commune (succursale) -> deduplicated against siege above!
+            {
+                "id": "W420000002",
+                "entity_id": "W420000002::antenne1",
+                "is_siege": False,
+                "name": "Centre Soutien Psychologique",
+                "nom_etablissement": "Antenne Firminy",
+                "description": "Soutien psychologique pour allophones",
+                "waldec_label": "Sante mentale",
+                "codgeo": "42095",
+                "commune_nom": "FIRMINY",
+                "date_decla": "2023-11-05",
+                "tranche_effectifs": "NN",
+                "llm_tags_recherche": ["soutien psychologique"],
+                "dense_rank": 3,
+                "cosine_sim": 0.79,
+            },
+        ]
+    )
+    mock_query_job.to_dataframe.return_value = mock_df
+    bq.query.return_value = mock_query_job
+
+    service = RNARagService()
+    results = service.get_associations_semantic(
+        "soutien psychologique",
+        codgeos=["42218"],
+        bv_code="42218",
+        top_k=10,
+    )
+
+    assert len(results) == 2
+    assert results[0]["id"] == "W420000002"
+    assert results[0]["is_same_commune"] is False
+    assert results[0]["has_employees"] is False
+    assert results[0]["matched_terms"] == ["soutien", "psychologique"]
+    assert results[1]["id"] == "W420000001"
+    assert results[1]["is_same_commune"] is True
+    assert results[1]["has_employees"] is True
+    assert results[1]["cosine_sim"] == 0.8412
+    assert "llm_thematiques" not in results[0]
+    assert "tags_recherche" not in results[0]
+
+    sql_sent = bq.query.call_args.args[0]
+    assert "national_v6_consolidated" in sql_sent
+    assert "TRIM(bdv_codeinsee) = @bv_code" in sql_sent
+    assert "LOWER(TRIM(llm_perimetre_action)) != 'international'" in sql_sent
+    assert "COSINE_DISTANCE(embedding_gemini_768, @query_vec)" in sql_sent
+
+
+def test_get_associations_semantic_rejects_full_table_scan(mock_clients):
+    service = RNARagService()
+    with pytest.raises(ValueError, match="full-table scan is forbidden"):
+        service.get_associations_semantic("football")
 
 
 def test_get_associations_semantic_empty_query(mock_clients):

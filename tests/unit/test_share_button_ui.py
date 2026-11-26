@@ -661,6 +661,10 @@ def test_share_search_modal_renders_unified_actions(monkeypatch):
     monkeypatch.setattr("ui.results_actions._share_actions_component", mock_component)
     monkeypatch.setattr("ui.results_actions.st.markdown", lambda *args, **kwargs: None)
     monkeypatch.setattr("ui.results_actions.st.code", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "services.share_service.save_shared_search",
+        lambda **kwargs: kwargs.get("share_id") or "share_abc123",
+    )
 
     search_results = _create_mock_search_results("69123")
     monkeypatch.setattr(
@@ -716,6 +720,10 @@ def test_share_search_modal_decodes_punycode_host(monkeypatch):
     monkeypatch.setattr(
         "ui.results_actions.st.code", lambda code, **kwargs: code_outputs.append(code)
     )
+    monkeypatch.setattr(
+        "services.share_service.save_shared_search",
+        lambda **kwargs: kwargs.get("share_id") or "share_xyz789",
+    )
 
     # Mock st.context.headers with punycode host
     class MockContext:
@@ -740,3 +748,57 @@ def test_share_search_modal_decodes_punycode_host(monkeypatch):
     assert code_outputs[0] == expected_url
     assert len(rendered_components) == 1
     assert expected_url in rendered_components[0]["data"]["msg"]
+
+
+def test_share_search_modal_saves_even_when_auto_persist_disabled(monkeypatch):
+    """Explicit share must persist to GCS for live searches even when auto-persist is off."""
+    from ui.results_actions import share_search_modal
+
+    save_calls = []
+    code_outputs = []
+
+    monkeypatch.setattr(
+        "ui.results_actions._share_actions_component", lambda *args, **kwargs: None
+    )
+    monkeypatch.setattr("ui.results_actions.st.markdown", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "ui.results_actions.st.code", lambda code, **kwargs: code_outputs.append(code)
+    )
+    monkeypatch.setattr(
+        "services.share_service.should_schedule_auto_persist", lambda: False
+    )
+
+    def fake_save(**kwargs):
+        save_calls.append(kwargs)
+        return kwargs.get("share_id") or "fresh123"
+
+    monkeypatch.setattr("services.share_service.save_shared_search", fake_save)
+
+    search_results = _create_mock_search_results("69123")
+
+    # 1. First share on live search (active_share_id is None)
+    live_state = {"search_results": search_results, "config": MagicMock()}
+    monkeypatch.setattr("ui.results_actions.st.session_state", live_state)
+    _call_fn(share_search_modal)
+    assert len(save_calls) == 1
+    assert save_calls[0]["share_id"] is None
+    assert save_calls[0]["allow_overwrite"] is False
+    assert live_state["active_share_id"] == "fresh123"
+
+    # 2. Second share on same live search refreshes GCS in-place even when auto-persist is off
+    _call_fn(share_search_modal)
+    assert len(save_calls) == 2
+    assert save_calls[1]["share_id"] == "fresh123"
+    assert save_calls[1]["allow_overwrite"] is True
+
+    # 3. Viewing an immutable snapshot does NOT overwrite GCS
+    immutable_state = {
+        "search_results": search_results,
+        "config": MagicMock(),
+        "active_share_id": "snap9999",
+        "immutable_shared_snapshot": True,
+    }
+    monkeypatch.setattr("ui.results_actions.st.session_state", immutable_state)
+    _call_fn(share_search_modal)
+    assert len(save_calls) == 2
+    assert "search=snap9999" in code_outputs[-1]

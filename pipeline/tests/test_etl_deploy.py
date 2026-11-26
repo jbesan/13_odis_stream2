@@ -143,3 +143,91 @@ def test_deploy_flag_is_only_valid_for_the_full_pipeline(monkeypatch):
         etl.main()
 
     assert exc_info.value.code == 2
+
+
+def test_resolve_jobs_skip_flag_skips_prompt_when_odace_enabled(monkeypatch):
+    config = {
+        "sources": {"inclusion_jobs": {"use_odace": True}},
+        "local_files": {"france_travail_live": {"use_odace": True}},
+    }
+    status_fn = MagicMock(side_effect=AssertionError("status_fn should not be called"))
+    monkeypatch.setattr(
+        "builtins.input",
+        MagicMock(side_effect=AssertionError("input() should not be called")),
+    )
+
+    assert (
+        etl._resolve_jobs_skip_flag(
+            config,
+            source_name="france_travail_live",
+            already_skipped=False,
+            status_fn=status_fn,
+            label="France Travail Live Jobs",
+            aggregate_name="France Travail aggregate",
+            prompt_text="Refresh? ",
+            skip_label="Live Jobs fetch",
+            run_message="Running.",
+        )
+        is False
+    )
+    assert (
+        etl._resolve_jobs_skip_flag(
+            config,
+            source_name="inclusion_jobs",
+            already_skipped=True,
+            status_fn=status_fn,
+            label="Inclusion Jobs",
+            aggregate_name="Inclusion Jobs aggregate",
+            prompt_text="Refresh? ",
+            skip_label="Inclusion Jobs fetch",
+            run_message="Running.",
+        )
+        is True
+    )
+
+
+def test_resolve_jobs_skip_flag_prompts_only_in_legacy_mode(monkeypatch):
+    config = {
+        "sources": {},
+        "local_files": {"france_travail_live": {"use_odace": False}},
+    }
+    status_fn = MagicMock(
+        return_value={
+            "exists": False,
+            "within_ttl": False,
+            "coverage_exists": False,
+            "ttl_days": 7,
+        }
+    )
+
+    monkeypatch.setattr("builtins.input", lambda _: "n")
+    assert (
+        etl._resolve_jobs_skip_flag(
+            config,
+            source_name="france_travail_live",
+            already_skipped=False,
+            status_fn=status_fn,
+            label="France Travail Live Jobs",
+            aggregate_name="France Travail aggregate",
+            prompt_text="Refresh? ",
+            skip_label="Live Jobs fetch",
+            run_message="Running.",
+        )
+        is True
+    )
+
+    monkeypatch.setattr("builtins.input", lambda _: "y")
+    assert (
+        etl._resolve_jobs_skip_flag(
+            config,
+            source_name="france_travail_live",
+            already_skipped=False,
+            status_fn=status_fn,
+            label="France Travail Live Jobs",
+            aggregate_name="France Travail aggregate",
+            prompt_text="Refresh? ",
+            skip_label="Live Jobs fetch",
+            run_message="Running.",
+        )
+        is False
+    )

@@ -8,6 +8,8 @@ from core.models import (
     SearchResultsData,
     CommuneResult,
     InclusionMetrics,
+    InclusionServiceDetail,
+    InterestSearchGroupResult,
     AssociationDetail,
 )
 
@@ -193,4 +195,66 @@ def test_generate_pdf_report_with_odis_synthesis(
     assert isinstance(pdf_bytes, bytes)
     assert len(pdf_bytes) > 0
     assert pdf_bytes.startswith(b"%PDF-")
+
+
+def test_generate_pdf_report_lot2_guichet_unique_and_interest_groups(
+    sample_session_state, sample_search_results
+):
+    """Verify PDF rendering of DI services, V6 thematic assos, BDV refugees, and Recherches."""
+    inc = sample_search_results.results[0].inclusion
+    inc.services_detailed = {
+        "Maîtriser le français": [
+            InclusionServiceDetail(
+                id="srv-1",
+                name="Ateliers FLE",
+                nom_structure="Centre Social",
+                structure_id="struct-1",
+                distance_km=0,
+                commune_nom="Bordeaux",
+            )
+        ]
+    }
+    inc.asso_inclusion_list_by_cat = {
+        "Maîtriser le français": [
+            AssociationDetail(
+                id="W330001",
+                name="Les Mots Voyageurs",
+                nom_etablissement="Antenne Bastide",
+                commune_nom="Bordeaux",
+                is_same_commune=True,
+                description="Cours de français et insertion.",
+            )
+        ]
+    }
+    inc.asso_refugee_list = [
+        AssociationDetail(
+            id=f"AMALIA:{i}",
+            name=f"Collectif Accueil {i}",
+            commune_nom="Talence",
+            is_same_commune=False,
+            refugee_focused=True,
+        )
+        for i in range(6)
+    ]
+    inc.asso_centres_interet_groups = [
+        InterestSearchGroupResult(
+            label="Afghanistan, Culture afghane",
+            tags=["afghanistan", "culture afghane"],
+            total_bdv_count=12,
+            associations=[
+                AssociationDetail(
+                    id="W330099",
+                    name="Amicale Afghane",
+                    commune_nom="Bordeaux",
+                    is_same_commune=True,
+                    matched_tags=["afghanistan", "culture afghane"],
+                )
+            ],
+        )
+    ]
+
+    pdf_bytes = generate_pdf_report(sample_search_results, sample_session_state.config)
+    assert isinstance(pdf_bytes, bytes)
+    assert pdf_bytes.startswith(b"%PDF-")
+    assert len(pdf_bytes) > 0
 

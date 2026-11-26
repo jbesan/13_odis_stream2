@@ -10,6 +10,7 @@ from services.mcp_server import (
     _compute_routes_logic,
     _search_refugee_associations_logic,
     _search_rna_rag_logic,
+    _compute_rna_query_vectors,
     _search_ccas_logic,
     _search_inclusion_jobs_logic,
     _get_inclusion_job_details_logic,
@@ -30,12 +31,16 @@ logger = logging.getLogger("agent_tools")
 
 
 class RnaSearchQuery(BaseModel):
-    """Recherche d'associations au Répertoire National des Associations officiel sur le bassin de vie."""
+    """Recherche hybride (vecteur + mots-clés) d'associations au Répertoire National des Associations (RNA V6) sur le bassin de vie."""
 
     queries: List[str] = Field(
         min_length=1,
         max_length=5,
-        description="Termes statutaires ou mots-clés concrets indispensables (2 à 4 mots, max 5 requêtes). Ne JAMAIS inclure le nom de la commune.",
+        description=(
+            "Requêtes thématiques ou statutaires courtes (2 à 4 mots, max 5 requêtes). "
+            "La recherche hybride capte synonymes et termes officiels. "
+            "Ne JAMAIS inclure le nom de la commune."
+        ),
     )
     city_code_insee: str = Field(
         pattern=r"^(?:\d{2}|2[ABab])\d{3}$",
@@ -146,12 +151,13 @@ class ReferentielSearchQuery(BaseModel):
         "communes",
         "formation_codes",
         "inclusion_services",
+        "association_tags",
         "waldec_codes",
         "regions",
         "departements",
         "housing_types",
     ] = Field(
-        description="Domaine cible ('rome_codes', 'communes', 'formation_codes', 'inclusion_services', 'waldec_codes', 'regions', 'departements', 'housing_types').",
+        description="Domaine cible ('rome_codes', 'communes', 'formation_codes', 'inclusion_services', 'association_tags', 'regions', 'departements', 'housing_types'; 'waldec_codes' accepté comme alias déprécié).",
     )
 
 
@@ -366,20 +372,32 @@ def search_rna_rag(
 async def search_rna_rag_batch(
     queries: List[str], codgeo: str, top_k: int = 10
 ) -> List[Dict[str, Any]]:
-    """Exécute plusieurs recherches BM25 distinctes en parallèle et consolide les résultats sans doublons.
+    """Exécute plusieurs recherches hybrides (768d + BM25 RRF) en parallèle et consolide sans doublons.
+
+    Calcule les vecteurs de requête en un seul appel batch Vertex AI puis exécute les
+    requêtes BigQuery BDV en parallèle et déduplique par ``(id, codgeo)``.
 
     Args:
         queries: Liste de termes de recherche.
         codgeo: Code INSEE de la commune (5 chiffres).
-        top_k: Nombre maximum de résultats par terme.
+        top_k: Nombre maximum de résultats par terme (défaut: 10).
 
     Returns:
-        List[Dict[str, Any]]: Liste unique d'associations dédoublées par ID.
+        List[Dict[str, Any]]: Liste unique d'associations triées par score RRF décroissant.
     """
     logger.info(f"🚀 [TOOL] search_rna_rag_batch parallel start: {queries} in {codgeo}")
 
+    query_vectors: Dict[str, List[float]] = {}
+    if len(queries) > 1:
+        query_vectors = await asyncio.to_thread(_compute_rna_query_vectors, queries)
+
     async def _single_rna_search(q: str):
         try:
+            vec = query_vectors.get(q)
+            if vec is not None:
+                return await asyncio.to_thread(
+                    _search_rna_rag_logic, q, codgeo, top_k=top_k, query_vector=vec
+                )
             return await asyncio.to_thread(
                 _search_rna_rag_logic, q, codgeo, top_k=top_k
             )
@@ -390,18 +408,43 @@ async def search_rna_rag_batch(
     tasks = [_single_rna_search(q) for q in queries]
     batch_results = await asyncio.gather(*tasks)
 
-    all_results = []
-    seen_ids = set()
+    deduped_by_key: Dict[tuple[str, str], Dict[str, Any]] = {}
 
     for res in batch_results:
         if isinstance(res, list):
             for assoc in res:
-                assoc_id = assoc.get("id")
-                if assoc_id and assoc_id not in seen_ids:
-                    all_results.append(assoc)
-                    seen_ids.add(assoc_id)
+                assoc_id = str(assoc.get("id") or "").strip()
+                assoc_codgeo = str(assoc.get("codgeo") or "").strip()
+                if not assoc_id:
+                    continue
+                dedup_key = (assoc_id, assoc_codgeo)
+                existing = deduped_by_key.get(dedup_key)
+                if existing is None:
+                    deduped_by_key[dedup_key] = dict(assoc)
+                else:
+                    merged_terms = list(
+                        dict.fromkeys(
+                            list(existing.get("matched_terms") or [])
+                            + list(assoc.get("matched_terms") or [])
+                        )
+                    )
+                    if float(assoc.get("score") or 0.0) > float(existing.get("score") or 0.0):
+                        updated = dict(assoc)
+                        updated["matched_terms"] = merged_terms
+                        deduped_by_key[dedup_key] = updated
+                    else:
+                        existing["matched_terms"] = merged_terms
         elif isinstance(res, dict) and "error" in res:
             logger.warning(f"  ⚠️ Research step failed: {res['error']}")
+
+    all_results = sorted(
+        deduped_by_key.values(),
+        key=lambda item: (
+            -float(item.get("score") or 0.0),
+            0 if item.get("is_same_commune") else 1,
+            0 if item.get("is_siege", True) else 1,
+        ),
+    )
 
     logger.info(
         f"✅ [TOOL] search_rna_rag_batch finished: {len(all_results)} unique results."
@@ -410,7 +453,7 @@ async def search_rna_rag_batch(
 
 
 async def search_rna_rag_batch_tool(params: RnaSearchQuery) -> List[Dict[str, Any]]:
-    """Recherche BM25 sur le Répertoire National des Associations (RNA) officiel sur l'ensemble du bassin de vie de la commune."""
+    """Recherche hybride (vecteur 768d + BM25 RRF) sur le Répertoire National des Associations (RNA V6) sur le bassin de vie."""
     return await search_rna_rag_batch(
         params.queries, params.city_code_insee, top_k=params.top_k
     )

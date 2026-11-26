@@ -31,7 +31,9 @@ def test_map_ui_config_to_search_criterias():
         "inclusion_services_index": pd.DataFrame(
             {"label": ["FLE Service"]}, index=["S123"]
         ),
-        "waldec_index": pd.DataFrame({"label": ["Football"]}, index=["W123"]),
+        "asso_tags_ref": pd.DataFrame(
+            {"tag_canonique": ["football"], "occ_national": [28000]}
+        ),
     }
 
     # Create a custom config class to represent the raw UI values
@@ -69,7 +71,7 @@ def test_map_ui_config_to_search_criterias():
     assert mapped.codes_formations[0][0].label == "FLE"
     assert mapped.inc_services_selection[0].code == "S123"
     assert mapped.inc_services_selection[0].label == "FLE Service"
-    assert mapped.inc_asso_add_selection[0].code == "W123"
+    assert mapped.inc_asso_add_selection[0].code == "football"
     assert mapped.inc_asso_add_selection[0].label == "Football"
 
 

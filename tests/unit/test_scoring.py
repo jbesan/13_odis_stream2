@@ -687,16 +687,28 @@ class TestInclusionScoringLogic:
     """Tests from test_inclusion_scoring.py focusing on specific inclusion components."""
 
     @pytest.fixture
-    def mock_associations_data(self):
+    def mock_asso_thematiques_data(self):
         return pd.DataFrame(
             {
-                "codgeo": ["33063", "33063", "64445"],
-                "id_waldec": [
-                    "009010",
-                    "011000",
-                    "009010",
-                ],  # 009010: Activités manuelles, 011000: Sports
-                "count": [5, 10, 2],
+                "grain": ["commune", "commune", "bdv", "bdv"],
+                "geo_code": ["33063", "64445", "BV_BDX", "BV_PAU"],
+                "thematique_slug": [
+                    "social_aide",
+                    "social_aide",
+                    "social_aide",
+                    "social_aide",
+                ],
+                "count": [3, 1, 5, 1],
+            }
+        )
+
+    @pytest.fixture
+    def mock_asso_tags_bdv_data(self):
+        return pd.DataFrame(
+            {
+                "bassin_de_vie": ["BV_BDX", "BV_BDX", "BV_PAU"],
+                "tag_canonique": ["bricolage", "sport", "bricolage"],
+                "count": [3, 4, 1],
             }
         )
 
@@ -712,6 +724,7 @@ class TestInclusionScoringLogic:
     def mock_geo_df(self):
         data = {
             "codgeo": ["33063", "64445"],
+            "bassin_de_vie": ["BV_BDX", "BV_PAU"],
             "population": [1000, 500],
             "pop_be": [1000, 500],
             "lien_social_count": [10, 5],
@@ -725,11 +738,12 @@ class TestInclusionScoringLogic:
         self,
         mock_geo_df,
         mock_incl_index,
-        mock_associations_data,
+        mock_asso_thematiques_data,
+        mock_asso_tags_bdv_data,
         live_scores_cat,
         global_stats,
     ):
-        """Tests Socle Administratif score calculation."""
+        """Tests Socle Administratif + RNA V6 social associations score calculation."""
         from types import SimpleNamespace
 
         prefs = SimpleNamespace(
@@ -741,7 +755,8 @@ class TestInclusionScoringLogic:
             df_bv_geo=pd.DataFrame(),
             scores_cat=live_scores_cat,
             incl_index=mock_incl_index,
-            associations_data=mock_associations_data,
+            asso_thematiques_data=mock_asso_thematiques_data,
+            asso_tags_bdv_data=mock_asso_tags_bdv_data,
             formations_data=pd.DataFrame(),
             global_stats=global_stats,
         )
@@ -750,60 +765,58 @@ class TestInclusionScoringLogic:
         assert scores.loc["33063", "inc_services_incl_scaled"] == 1.0
         # 64445: one match out of two needed -> 0.5
         assert scores.loc["64445", "inc_services_incl_scaled"] == 0.5
+        # 33063: 1/2 themes matched (count 3 -> tier 1.0) -> 0.5
+        assert scores.loc["33063", "inc_asso_thematiques_scaled"] == 0.5
+        # 64445: 1/2 themes matched (count 1 -> tier 0.5) -> 0.25
+        assert scores.loc["64445", "inc_asso_thematiques_scaled"] == 0.25
 
     def test_compute_inclusion_score_affinite(
         self,
         mock_geo_df,
         mock_incl_index,
-        mock_associations_data,
+        mock_asso_thematiques_data,
+        mock_asso_tags_bdv_data,
         live_scores_cat,
         global_stats,
     ):
-        """Tests Affinité score calculation."""
+        """Tests Affinité BdV graduated score calculation."""
         from types import SimpleNamespace
 
         prefs = SimpleNamespace(
-            inc_asso_add_selection=["009"], inc_services_selection=[]
+            inc_asso_add_selection=["bricolage"], inc_services_selection=[]
         )
         engine = scoring.ScoringEngine(
             df_all_communes=pd.DataFrame(),
             df_bv_geo=pd.DataFrame(),
             scores_cat=live_scores_cat,
             incl_index=mock_incl_index,
-            associations_data=mock_associations_data,
+            asso_thematiques_data=mock_asso_thematiques_data,
+            asso_tags_bdv_data=mock_asso_tags_bdv_data,
             formations_data=pd.DataFrame(),
             global_stats=global_stats,
         )
         scores = engine._compute_inclusion_scores(mock_geo_df, prefs)
 
-        assert "inc_asso_add_scaled" in scores.columns
-        assert scores.loc["33063", "inc_asso_add_scaled"] >= 0
-        assert scores.loc["64445", "inc_asso_add_scaled"] >= 0
+        assert "inc_asso_add_scaled_bdv" in scores.columns
+        assert scores.loc["33063", "inc_asso_add_scaled_bdv"] == 1.0
+        assert scores.loc["64445", "inc_asso_add_scaled_bdv"] == 0.7
 
         prefs_sport = SimpleNamespace(
-            inc_asso_add_selection=["011"], inc_services_selection=[]
+            inc_asso_add_selection=["sport"], inc_services_selection=[]
         )
-        engine_sport = scoring.ScoringEngine(
-            df_all_communes=pd.DataFrame(),
-            df_bv_geo=pd.DataFrame(),
-            scores_cat=live_scores_cat,
-            incl_index=mock_incl_index,
-            associations_data=mock_associations_data,
-            formations_data=pd.DataFrame(),
-            global_stats=global_stats,
-        )
-        scores_sport = engine_sport._compute_inclusion_scores(mock_geo_df, prefs_sport)
+        scores_sport = engine._compute_inclusion_scores(mock_geo_df, prefs_sport)
 
         assert (
-            scores_sport.loc["33063", "inc_asso_add_scaled"]
-            > scores_sport.loc["64445", "inc_asso_add_scaled"]
+            scores_sport.loc["33063", "inc_asso_add_scaled_bdv"]
+            > scores_sport.loc["64445", "inc_asso_add_scaled_bdv"]
         )
 
     def test_compute_inclusion_score_components(
         self,
         mock_geo_df,
         mock_incl_index,
-        mock_associations_data,
+        mock_asso_thematiques_data,
+        mock_asso_tags_bdv_data,
         live_scores_cat,
         global_stats,
     ):
@@ -812,22 +825,24 @@ class TestInclusionScoringLogic:
 
         prefs = SimpleNamespace(
             inc_services_selection=["social_aide"],
-            inc_asso_add_selection=["Bricolage / Création"],
+            inc_asso_add_selection=["bricolage"],
         )
         engine = scoring.ScoringEngine(
             df_all_communes=pd.DataFrame(),
             df_bv_geo=pd.DataFrame(),
             scores_cat=live_scores_cat,
             incl_index=mock_incl_index,
-            associations_data=mock_associations_data,
+            asso_thematiques_data=mock_asso_thematiques_data,
+            asso_tags_bdv_data=mock_asso_tags_bdv_data,
             formations_data=pd.DataFrame(),
             global_stats=global_stats,
         )
         scores = engine._compute_inclusion_scores(mock_geo_df, prefs)
 
         assert "inc_services_incl_scaled" in scores.columns
+        assert "inc_asso_thematiques_scaled" in scores.columns
         assert "inc_asso_core_scaled" in scores.columns
-        assert "inc_asso_add_scaled" in scores.columns
+        assert "inc_asso_add_scaled_bdv" in scores.columns
 
 
 @pytest.mark.unit
@@ -1585,3 +1600,65 @@ class TestP108TieBreak:
         assert abs(modifier["metropole_centre"] - floor) < 1e-5
         # Deep rural (500) is below a (2k) -> floor
         assert abs(modifier["deep_rural"] - floor) < 1e-5
+
+
+@pytest.mark.unit
+def test_compute_category_scores_no_fragmentation_warning(global_stats):
+    """Verify _compute_category_scores emits no PerformanceWarning with 60+ active criteria."""
+    import warnings
+
+    categories = [
+        "education",
+        "emploi",
+        "inclusion",
+        "logement",
+        "mobilite",
+        "sante",
+        "territoire",
+    ]
+    rows = []
+    data: dict[str, list[float]] = {}
+    active_ids: set[str] = set()
+    for idx in range(60):
+        sid = f"crit_{idx}_scaled"
+        cat = categories[idx % len(categories)]
+        rows.append(
+            {
+                "score": sid,
+                "cat": cat,
+                "weight": 1.0,
+                "bdv_factor": 0.5,
+                "min_bound": 0.0,
+                "max_bound": 1.0,
+                "missing_strategy": "exclude",
+            }
+        )
+        data[sid] = [0.4, 0.8]
+        data[f"{sid}_bdv"] = [0.6, 0.2]
+        active_ids.add(sid)
+
+    scores_cat = pd.DataFrame(rows)
+    df = pd.DataFrame(data, index=pd.Index(["33063", "33064"], name="codgeo"))
+    engine = scoring.ScoringEngine(
+        df_all_communes=df,
+        df_bv_geo=pd.DataFrame(),
+        scores_cat=scores_cat,
+        incl_index=pd.DataFrame(),
+        global_stats=global_stats,
+    )
+    config = SearchCriterias(nb_enfants=1)
+    config.active_criteria = active_ids
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", pd.errors.PerformanceWarning)
+        res = engine._compute_category_scores(df, config)
+
+    perf_warnings = [
+        w for w in caught if issubclass(w.category, pd.errors.PerformanceWarning)
+    ]
+    assert not perf_warnings, f"Unexpected PerformanceWarning(s): {perf_warnings}"
+    for cat in categories:
+        assert f"{cat}_cat_score" in res.columns
+    for sid in active_ids:
+        assert f"{sid}_uncombined_commune" in res.columns
+    assert res.index.name == "codgeo"

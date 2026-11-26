@@ -102,6 +102,17 @@ sources:
     ttl_days: 365
     description: "Table BigQuery RNA RAG (Associations enrichies et embeddings)"
 
+  rna_v6:
+    provider: "bigquery"
+    table: "rna_rag.national_v6_consolidated"
+    tags_ref_table: "rna_rag.referentiel_tags_canoniques_n50"
+    refugee_verified_table: "rna_rag.refugee_v6_verified"
+    hebergement_verified_table: "rna_rag.hebergement_v6_verified"
+    format: "parquet"
+    local_name: "rna_v6_inclusion_agg.parquet"
+    ttl_days: 30
+    description: "Commun Associatif National V6 (RNA + SIRENE + LLM + tags normalisés)"
+
 
   logement_vacant:
     use_odace: true
@@ -232,13 +243,13 @@ sources:
     description: "Population active et chômage (INSEE)"
 
   referentiel_services_inclusion:
-    use_odace: true
+    use_odace: false
     odace_table: "ref_service_inclusion"
     url: "file://pipeline/local/referentiel_services_inclusion.csv"
     format: "csv"
     local_name: "referentiel_services_inclusion.csv"
     ttl_days: 365
-    description: "Référentiel des services d'inclusion (Data Inclusion via ODAS)"
+    description: "Référentiel des 69 sous-thématiques Data Inclusion (CSV local)"
     used_columns:
       - code
       - libelle

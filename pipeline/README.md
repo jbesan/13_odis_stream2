@@ -27,12 +27,20 @@ Geospatial processing runs entirely on pure **Pandas 3.0 + Shapely 2.0** with cl
 ### Configure credentials
 
 Create `pipeline/.env` with the credentials required by the providers used in
-the run. At minimum, ODAS (Open Data Accueil Solidaire) credentials are needed for ODAS-backed sources:
+the run. At minimum, ODAS (Open Data Accueil Solidaire) credentials and the GCP
+data project for Commun RNA V6 are needed:
 
 ```env
 ODAS_API_URL=https://odas-app-trlhxf55uq-ew.a.run.app
 ODAS_API_KEY=sk_live_...
+ODIS_DATA_PROJECT=odis-stream2-app
 ```
+
+Incremental qualification delta syncs on Commun RNA V6 (`--from-bq`) also use
+`GOOGLE_API_KEY` (or `GEMINI_API_KEY`, resolved from `pipeline/.env` or
+`app/.env`) whenever new/modified candidate associations appear in BigQuery; when
+the BigQuery delta is `0`, the sync exits as a no-op without requiring a Gemini
+API key.
 
 > **Note (Cloud Run Cold Start)**: The ODAS data platform runs on Google Cloud Run with scale-to-zero autoscaling. When idle, the container may take ~20-30 seconds to wake up (cold start). `OdasClient` automatically handles this warmup phase via its `/health` check polling before kicking off downloads or queries.
 
@@ -152,15 +160,16 @@ The active catalog is in [sources.yaml](sources.yaml). It currently combines:
 - **external reference/open-data inputs** that remain required for the active
   build, such as INSEE, education, electoral, postal-code and referential
   files;
-- **BigQuery RNA RAG** where the configured association enrichment requires
-  it.
+- **BigQuery Commun RNA V6 (`rna_v6`)** and its verified `gemini-decision-1`
+  qualification tables (`refugee_v6_verified`, `hebergement_v6_verified`),
+  replacing legacy V5 128d vector queries on `rna_rag_clustered`.
 
 For Odace-backed sources, a request failure may reuse an existing Odace cache,
-  but the pipeline never silently revives the retired manual download
-  implementation. If no readable Odace artifact is available, the required
-  clean step fails. The retired direct-download cleaners and the former
-  CSV/XLSX and BigQuery J'Accueille paths are preserved only in
-  [legacy_ingest/](legacy_ingest/); they are not imported by the default ETL.
+but the pipeline never silently revives the retired manual download
+implementation. If no readable Odace artifact is available, the required
+clean step fails. The retired direct-download cleaners and the former
+CSV/XLSX and BigQuery J'Accueille paths are preserved only in
+[legacy_ingest/](legacy_ingest/); they are not imported by the default ETL.
 
 Salesforce is the single active source for J'Accueille. Its published BDV
 artifact supplies both accueillant and prospect aggregates used by scoring and
@@ -170,6 +179,39 @@ exports are not part of the active path.
 Odace rent facts are joined to communes through the candidate's persisted
 `commune_sk` key. If that key or the Odace rent artifacts are unavailable, the
 candidate fails rather than silently reviving the archived `loyers` dataset.
+
+## Commun RNA V6 & Qualification `gemini-decision-1`
+
+Offline qualification scripts in [scripts/](scripts/) pre-qualify associations from
+`rna_rag.national_v6_consolidated` into deterministic BigQuery tables (`europe-west1`)
+using `/v1beta/decisions` (`gemini-decision-1`) and shared REST/BigQuery helpers in
+[decisions_common.py](scripts/decisions_common.py):
+
+- **Réfugiés** ([qualify_refugee_associations.py](scripts/qualify_refugee_associations.py)
+  → `rna_rag.refugee_v6_verified`): Stage 1 `Personnes exilées ∪ Regex`, verified at
+  `p_noul >= 0.65 & role == "accompagnement_accueil" & p_accompagnement_accueil >= 0.70`.
+  Consumed by `fetch_rna_v6_commune_stats` (`inc_asso_refug_count`) and
+  `clean_refugee_associations` (`odis_refugee_associations.parquet`, deduplicated with
+  `QUALIFY ROW_NUMBER()`).
+- **Hébergement** ([qualify_hebergement_associations.py](scripts/qualify_hebergement_associations.py)
+  → `rna_rag.hebergement_v6_verified`): Stage 1 `5` V6 housing themes ∪ generic
+  domain regexes (without RAG or proper nouns), evaluated across 4 independent `noul`
+  questions (`is_iml`, `is_hebergement_citoyen`, `is_habitat_partage_pension`,
+  `is_hebergement_collectif_urgent`) and verified at `>= 0.75`. Consumed by
+  `clean_hebergement_rna` joining `national_v6_consolidated` to count every active
+  antenna per PLM-normalized commune (`heb_loc_iml_count`, `heb_habitant_count`).
+
+When `pipeline/ingest/main.py` runs and the corresponding V6 cache TTL has expired
+(`rna_v6_inclusion_agg.parquet`, `rna_v6_refugee_associations.parquet`, or
+`rna_v6_hebergement_cols.parquet` under `pipeline/cache/clean/`), it automatically
+executes incremental `--from-bq` delta syncs (`NOT EXISTS` anti-join on
+`(id, text_source_sha256)` + `MERGE`), remaining a zero-cost no-op when `delta == 0`:
+
+```bash
+# Run qualification scripts as modules (dry-run BigQuery delta check)
+uv run python -m pipeline.scripts.qualify_refugee_associations --from-bq --dry-run --bq-project odis-stream2-app
+uv run python -m pipeline.scripts.qualify_hebergement_associations --from-bq --dry-run --bq-project odis-stream2-app
+```
 
 ## Contracts and quality gate
 
@@ -232,9 +274,9 @@ one already exists.
 
 - A new candidate uses isolated `clean/`, `output/` and `run.json` paths. The
   provider caches remain last-known-good inputs and are never themselves the
-  release source of truth. The RAG aggregates use the shared
-  `pipeline/cache/clean/` cache for their configured TTL, then are copied into
-  the candidate clean directory.
+  release source of truth. The Commun RNA V6 / RAG aggregates use the shared
+  `pipeline/cache/clean/` cache (`rna_v6_*.parquet`) for their configured TTL,
+  then are copied into the candidate clean directory.
 - Odace downloads are staged and readability-checked before the cache is
   atomically replaced.
 - A failed candidate never advances the active GCS pointer and does not update

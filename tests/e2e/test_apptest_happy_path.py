@@ -141,9 +141,12 @@ def test_happy_path_end_to_end(
 
     # --- PAGE 7: Inclusion ---
     assert at.session_state.form_page == "other_needs"
-    ms_asso = at.multiselect(key="ui_inc_asso_add_selection_raw")
-    assert len(ms_asso.options) > 0
-    ms_asso.select(ms_asso.options[0]).run()
+    tag_search = at.text_input(key="ui_asso_tag_search_query")
+    tag_search.input("sport").run()
+    sug_pills = at.pills(key="ui_asso_tag_suggestions_0")
+    assert len(sug_pills.options) > 0
+    sug_pills.select(sug_pills.options[0]).run()
+    assert len(at.session_state["ui_inc_asso_add_selection_raw"]) == 1
 
     # Native selection of official Data Inclusion FLE service
     ms_serv = at.multiselect(key="ui_inc_services_selection_raw")
@@ -219,6 +222,7 @@ def test_happy_path_end_to_end(
         "heb_loc_iml_scaled",
         "sante_hopital_scaled",
         "inc_services_incl_scaled",
+        "inc_asso_thematiques_scaled",
         "inc_asso_add_scaled",
         "inc_siae_density_scaled",
         "met_match_adult1_scaled",
@@ -299,13 +303,21 @@ def test_happy_path_end_to_end(
             f"Commune {commune.name} missing categories: {expected_categories - commune_categories}"
         )
 
-        # Inclusion details must contain inc_services_incl_scaled
+        # Inclusion details must contain inc_services_incl_scaled and inc_asso_thematiques_scaled
         incl_details = {d.score_id: d for d in commune.scores.get("inclusion", [])}
         assert "inc_services_incl_scaled" in incl_details, (
             f"inc_services_incl_scaled missing from inclusion scores for {commune.name}"
         )
+        assert "inc_asso_thematiques_scaled" in incl_details, (
+            f"inc_asso_thematiques_scaled missing from inclusion scores for {commune.name}"
+        )
+        assert "inc_asso_add_scaled" in incl_details, (
+            f"inc_asso_add_scaled missing from inclusion scores for {commune.name}"
+        )
         assert 0.0 <= incl_details["inc_services_incl_scaled"].score_normalise <= 1.0
         assert incl_details["inc_services_incl_scaled"].relative_weight > 0
+        assert 0.0 <= incl_details["inc_asso_thematiques_scaled"].score_normalise <= 1.0
+        assert incl_details["inc_asso_add_scaled"].score_normalise_commune is None
 
         # Education details must contain edu_maternelle_scaled
         edu_details = {d.score_id: d for d in commune.scores.get("education", [])}

@@ -100,9 +100,16 @@
 
 ## Associations
 
-- Données: https://www.data.gouv.fr/datasets/rna-agrege-a-lechelle-nationale/#/resources/cc7b8f0c-45ea-4444-8b55-55d30bc34ac5
-- URL Stable: https://www.data.gouv.fr/api/1/datasets/r/cc7b8f0c-45ea-4444-8b55-55d30bc34ac5
-- Type de fichier: parquet
+- Données historiques : https://www.data.gouv.fr/datasets/rna-agrege-a-lechelle-nationale/#/resources/cc7b8f0c-45ea-4444-8b55-55d30bc34ac5 (source ODAS `dim_association` / `odis_associations_agg.parquet` maintenue en compatibilité pendant la bascule)
+
+## Commun Associatif National V6 & Qualifications IA (`rna_v6`, BigQuery `europe-west1`)
+
+- Source maître : `odis-stream2-app.rna_rag.national_v6_consolidated` (RNA + SIRENE + LLM + tags normalisés) & `rna_rag.referentiel_tags_canoniques_n50`
+- Tables qualifiées `gemini-decision-1` (`pipeline/scripts/`) :
+  - `rna_rag.refugee_v6_verified` (`p_noul >= 0.65 & role == "accompagnement_accueil" & p_acc >= 0.70`) → consommée par `fetch_rna_v6_commune_stats` (`lien_social_count`, `inc_asso_refug_count`) et `clean_refugee_associations` (`odis_refugee_associations.parquet`, déduplication `QUALIFY ROW_NUMBER()`)
+  - `rna_rag.hebergement_v6_verified` (`p_iml >= 0.75`, `p_hebergement_citoyen >= 0.75`) → jointe avec `national_v6_consolidated` dans `clean_hebergement_rna` (`hebergement_rna_cols.parquet` : `heb_loc_iml_count`, `heb_habitant_count`, comptage multi-antennes et normalisation PLM)
+- Agrégats complémentaires V6 : `fetch_rna_v6_thematiques_agg` (`odis_associations_thematiques_agg.parquet`) et `fetch_rna_v6_tags_bdv` (`odis_associations_tags_bdv.parquet`, `odis_association_tags_ref.parquet`)
+- Synchronisation incrémentale : hooks automatiques `sync_refugee_verified_delta_from_bq` et `sync_hebergement_verified_delta_from_bq` dans `pipeline/ingest/main.py` (`ANTI JOIN` sur `(id, text_source_sha256)`, no-op si delta = `0`).
 
 ## Nomenclature WALDEC
 

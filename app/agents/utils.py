@@ -14,7 +14,7 @@ from typing import Any, Callable, Dict, Literal, Optional, TYPE_CHECKING, cast
 import logfire
 import pandas as pd
 
-from core.models import SearchCriterias, CriteriaItem
+from core.models import AssociationSearchGroup, CriteriaItem, SearchCriterias
 from services.telemetry import resolve_interaction_id
 
 logger = logging.getLogger(__name__)
@@ -378,22 +378,30 @@ def map_ui_config_to_search_criterias(
         )
         inc_services.append(CriteriaItem(code=str(code), label=str(label)))
 
-    # 5. Inclusion Associations
+    # 5. Inclusion Associations (Commun RNA V6 canonical tags)
     import config as cfg
+    from utils.data_loader import get_tag_search_index
 
     inc_assos = []
-    waldec_index = app_data.get("waldec_index", pd.DataFrame())
+    tag_search_index = get_tag_search_index(app_data)
     for item in config.inc_asso_add_selection:
         if isinstance(item, CriteriaItem):
             inc_assos.append(item)
         else:
-            # item is likely a label (string)
-            code_str = "000"
-            if not waldec_index.empty:
-                matches = waldec_index[waldec_index["label"] == item]
-                if not matches.empty:
-                    code_str = str(matches.index[0])
-            inc_assos.append(CriteriaItem(code=code_str, label=str(item)))
+            raw_tag = str(item).strip()
+            if not raw_tag:
+                continue
+            resolved_tag = raw_tag
+            if not tag_search_index.is_empty:
+                if tag_search_index.get_count(raw_tag.lower()) is not None:
+                    resolved_tag = raw_tag.lower()
+                else:
+                    search_res = tag_search_index.search(raw_tag, limit=1)
+                    if search_res.matches:
+                        resolved_tag = search_res.matches[0].tag
+            inc_assos.append(
+                CriteriaItem(code=resolved_tag, label=resolved_tag.capitalize())
+            )
 
     # 6. Type Logement
     type_log = None
@@ -414,6 +422,7 @@ def map_ui_config_to_search_criterias(
         codes_formations=codes_formations,
         inc_services_selection=inc_services,
         inc_asso_add_selection=inc_assos,
+        inc_asso_add_groups=[AssociationSearchGroup(tags=[item]) for item in inc_assos],
         hebergement_cible=config.hebergement_cible,
         logement=config.logement,
         type_logement=type_log,

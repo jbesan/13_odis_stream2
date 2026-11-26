@@ -341,21 +341,21 @@ scores:
   missing_strategy: zero
 - id: inc_asso_add_scaled
   category: inclusion
-  source_metric: affinite_density
-  bdv_factor: 0.8
+  source_metric: inc_asso_add_scaled
+  bdv_factor: 1.0
   computation: live
   display:
-    name: Affinités
-    strong_point_text: Associations correspondant aux centres d'intérêt
+    name: Loisirs & Centres d'intérêt
+    strong_point_text: Associations correspondant aux centres d'intérêt (Bassin de Vie)
     high_value_adjective: présent
     show: true
-    unit: assos/1000 hab.
-    display_factor: 1
-    tooltip: Densité d'associations correspondant aux affinités sélectionnées
-    format: '{:.1f}'
+    unit: '%'
+    display_factor: 100
+    tooltip: Couverture des centres d'intérêt sélectionnés sur le Bassin de Vie
+    format: '{:.0f}'
   weight: 1.0
   min_bound: 0.0
-  max_bound: 0.25
+  max_bound: 1.0
   missing_strategy: zero
 - id: inc_services_incl_scaled
   category: inclusion
@@ -372,6 +372,24 @@ scores:
     tooltip: Présence des services d'inclusion sélectionnés
     format: '{:.1f}'
   weight: 1.0
+  min_bound: 0.0
+  max_bound: 1.0
+  missing_strategy: zero
+- id: inc_asso_thematiques_scaled
+  category: inclusion
+  source_metric: inc_asso_thematiques_scaled
+  bdv_factor: 0.8
+  computation: live
+  display:
+    name: Associations d'Action Sociale
+    strong_point_text: Tissu associatif d'action sociale sur les besoins sélectionnés
+    high_value_adjective: complet
+    show: true
+    unit: '%'
+    display_factor: 100
+    tooltip: Couverture des besoins d'inclusion sélectionnés par les associations d'action sociale
+    format: '{:.0f}'
+  weight: 0.75
   min_bound: 0.0
   max_bound: 1.0
   missing_strategy: zero

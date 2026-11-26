@@ -37,7 +37,9 @@ ODIS_FILE = "odis_communes.parquet"
 POIS_FILE = "odis_pois.parquet"
 REFERENTIELS_FILE = "odis_referentiels.parquet"
 BV_FILE = "odis_bassins_de_vie.parquet"
-AGG_ASSOCIATIONS_FILE = "odis_associations_agg.parquet"
+AGG_ASSO_THEMATIQUES_FILE = "odis_associations_thematiques_agg.parquet"
+AGG_ASSO_TAGS_BDV_FILE = "odis_associations_tags_bdv.parquet"
+ASSO_TAGS_REF_FILE = "odis_association_tags_ref.parquet"
 AGG_FORMATIONS_FILE = "odis_formations_agg.parquet"
 CCAS_FILE = "odis_ccas.parquet"
 REFUGEE_ASSOCIATIONS_FILE = "odis_refugee_associations.parquet"
@@ -493,7 +495,7 @@ DEMO_DATA_DEFAULT: Dict[str, Any] = {
     "recherche_siae": True,
     "classe_enfants": [],
     "inc_services_selection": DEFAULT_INC_SERVICES_CORE,
-    "inc_asso_add_selection": [],
+    "inc_asso_add_groups": [],
     "loc_search_code": [],
     "type_logement": "appt_all",
     "weight_profile": "Équilibré",
@@ -552,7 +554,7 @@ DEMO_SCENARIOS = {
         "besoin_sante": ["Maternité"],
         "inc_services_selection": DEFAULT_INC_SERVICES_CORE
         + ["lecture-ecriture-calcul--maitriser-le-francais"],
-        "inc_asso_add_selection": ["006030"],
+        "inc_asso_add_groups": [["chant choral"]],
         "notes_qualitatives": "Famille monoparentale recherchant des services de mobilité et d'accompagnement.",
     },
     "agir": {
@@ -569,7 +571,7 @@ DEMO_SCENARIOS = {
         "classe_enfants": ["Elémentaire"],
         "inc_services_selection": DEFAULT_INC_SERVICES_CORE
         + ["lecture-ecriture-calcul--maitriser-le-francais"],
-        "inc_asso_add_selection": ["011075"],
+        "inc_asso_add_groups": [["sport"]],
         "weight_profile": "Economique",
         "poids_emploi": 1.0,
         "poids_logement": 0.75,
@@ -599,7 +601,7 @@ DEMO_SCENARIOS = {
         "classe_enfants": ["Maternelle", "Elémentaire"],
         "inc_services_selection": DEFAULT_INC_SERVICES_CORE
         + ["lecture-ecriture-calcul--maitriser-le-francais"],
-        "inc_asso_add_selection": ["011075"],
+        "inc_asso_add_groups": [["sport"]],
         "weight_profile": "Profil personnalisé",
         "poids_emploi": 1.0,
         "poids_logement": 1.0,
@@ -629,7 +631,7 @@ DEMO_SCENARIOS = {
         "classe_enfants": ["Maternelle", "Elémentaire"],
         "inc_services_selection": DEFAULT_INC_SERVICES_CORE
         + ["lecture-ecriture-calcul--maitriser-le-francais"],
-        "inc_asso_add_selection": ["011075"],
+        "inc_asso_add_groups": [["sport"]],
         "weight_profile": "Profil personnalisé",
         "poids_emploi": 1.0,
         "poids_logement": 1.0,
@@ -645,37 +647,6 @@ DEMO_SCENARIOS = {
         "target_population_c": CITY_SIZE_MAPPING["🏙️ Ville moyenne"]["c"],
         "target_population_d": CITY_SIZE_MAPPING["🏙️ Ville moyenne"]["d"],
     },
-}
-
-
-# --- LOISIRS CATÉGORIES (WALDEC PREFIXES) ---
-# Seuls les codes commençant par ces 3 digits sont conservés pour la sélection "Loisirs"
-WALDEC_CATEGORIES = [
-    "003",
-    "006",
-    "007",
-    "009",
-    "011",
-    "013",
-    "014",
-    "019",
-    "020",
-    "021",
-    "024",
-]
-
-
-def get_relevant_rna_codes() -> List[str]:
-    """Retourne les préfixes de catégories WALDEC utiles pour le filtrage"""
-    return WALDEC_CATEGORIES
-
-
-# 3. WALDEC labels for refugee associations
-WALDEC_REFUGEE_LABELS = {
-    "003": "Action socio-culturelle",
-    "014": "Enseignement, éducation",
-    "019": "Action sociale",
-    "020": "Associations caritatives, humanitaires",
 }
 
 

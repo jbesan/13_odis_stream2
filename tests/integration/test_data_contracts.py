@@ -32,7 +32,8 @@ def test_data_columns_contract():
         "form_match_adult1",
         "form_match_adult2",
         "inc_services_incl_scaled",  # Computed via incl_index
-        "inc_asso_add_scaled",  # Computed via associations_data
+        "inc_asso_thematiques_scaled",  # Computed via asso_thematiques_data
+        "inc_asso_add_scaled",  # Computed via asso_tags_bdv_data
         "inc_asso_core_scaled",  # Computed via associations_data
         "mob_epci_scaled",  # Computed dynamically
         "affinite_density",  # Computed dynamically

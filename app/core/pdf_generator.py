@@ -875,45 +875,171 @@ def _render_commune_sheet(
             pdf.cell(pdf.epw, 4, "  • Aucune offre inclusive active identifiée", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(1.5)
 
-    # 3. Associations Réfugiés & Inclusion
+    # 3. Guichet Unique — Action sociale (Services DI + Associations V6 par sous-thématique, Top 10)
     pdf.set_font("DejaVu", "B", 8)
     pdf.set_text_color(*COLOR_PRIMARY_TEAL)
-    pdf.cell(pdf.epw, 4.5, "▸ Associations - Intégration des réfugiés", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.cell(
+        pdf.epw,
+        4.5,
+        "▸ Guichet unique — Action sociale (Services & Associations locales)",
+        new_x=XPos.LMARGIN,
+        new_y=YPos.NEXT,
+    )
     pdf.set_font("DejaVu", "", 7.5)
     pdf.set_text_color(*COLOR_DARK_SLATE)
-    refugee_assos = inc.asso_refugee_list[:4] if inc else []
-    if refugee_assos:
-        for asso in refugee_assos:
-            name = (asso.name or "Inconnu").strip()
-            cat = (asso.waldec_label or "").strip()
-            cat_str = f" ({cat})" if cat else ""
-            desc = (asso.description or "").strip()
-            desc_str = f" : {desc[:75]}..." if len(desc) > 75 else (f" : {desc}" if desc else "")
-            pdf.cell(pdf.epw, 4, f"  • {name}{cat_str}{desc_str}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    services_by_cat = (inc.services_detailed or {}) if inc else {}
+    assos_by_cat = (inc.asso_inclusion_list_by_cat or {}) if inc else {}
+    all_themes = sorted(set(services_by_cat.keys()) | set(assos_by_cat.keys()))
+    if all_themes:
+        for theme_label in all_themes:
+            di_items = services_by_cat.get(theme_label, [])
+            asso_items = assos_by_cat.get(theme_label, [])[:10]
+            if not di_items and not asso_items:
+                continue
+            pdf.set_font("DejaVu", "B", 7.5)
+            pdf.multi_cell(pdf.epw, 4, f"  {theme_label}")
+            pdf.set_font("DejaVu", "", 7.2)
+
+            seen_structs: set[str] = set()
+            for srv in di_items:
+                struct_key = srv.structure_id or srv.nom_structure or srv.name
+                if struct_key in seen_structs:
+                    continue
+                seen_structs.add(struct_key)
+                s_name = (srv.nom_structure or srv.name or "Service").strip()
+                dist = getattr(srv, "distance_km", None)
+                loc_str = (
+                    " [Sur place]"
+                    if dist == 0
+                    else (
+                        f" [{srv.commune_nom} · {dist} km]"
+                        if dist is not None and srv.commune_nom
+                        else (f" [{dist} km]" if dist is not None else "")
+                    )
+                )
+                pdf.multi_cell(pdf.epw, 3.8, f"    • [Service] {s_name}{loc_str} — {srv.name}")
+
+            for asso in asso_items:
+                name = (asso.name or "Inconnu").strip()
+                etab = f" ({asso.nom_etablissement})" if asso.nom_etablissement else ""
+                loc = (
+                    " [Sur place]"
+                    if asso.is_same_commune
+                    else (f" [{asso.commune_nom}]" if asso.commune_nom else "")
+                )
+                desc = (asso.description or "").strip()
+                desc_str = (
+                    f" : {desc[:90]}..."
+                    if len(desc) > 90
+                    else (f" : {desc}" if desc else "")
+                )
+                pdf.multi_cell(pdf.epw, 3.8, f"    • [Asso] {name}{etab}{loc}{desc_str}")
+            pdf.ln(1.0)
     else:
-        pdf.cell(pdf.epw, 4, "  • Aucune association spécifique identifiée", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.cell(
+            pdf.epw,
+            4,
+            "  • Aucun service ou association thématique identifié",
+            new_x=XPos.LMARGIN,
+            new_y=YPos.NEXT,
+        )
     pdf.ln(1.5)
 
-    # 4. Solidarité & Services Locaux
+    # 4. Associations — Intégration des réfugiés (Bassin de Vie, sans cutoff)
     pdf.set_font("DejaVu", "B", 8)
     pdf.set_text_color(*COLOR_PRIMARY_TEAL)
-    pdf.cell(pdf.epw, 4.5, "▸ Réseau solidarité & services locaux", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.cell(
+        pdf.epw,
+        4.5,
+        "▸ Associations — Intégration des réfugiés (Bassin de Vie)",
+        new_x=XPos.LMARGIN,
+        new_y=YPos.NEXT,
+    )
     pdf.set_font("DejaVu", "", 7.5)
     pdf.set_text_color(*COLOR_DARK_SLATE)
-    inc_by_cat = inc.asso_inclusion_list_by_cat if inc else {}
-    if inc_by_cat:
-        rendered_count = 0
-        for cat_name, assos in sorted(inc_by_cat.items()):
-            for asso in assos[:2]:
-                if rendered_count < 4:
-                    name = (asso.name or "Inconnu").strip()
-                    desc = (asso.description or "").strip()
-                    desc_str = f" : {desc[:65]}..." if len(desc) > 65 else (f" : {desc}" if desc else "")
-                    pdf.cell(pdf.epw, 4, f"  • {name} ({cat_name}){desc_str}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                    rendered_count += 1
+    refugee_assos = inc.asso_refugee_list if inc else []
+    if refugee_assos:
+        displayed_refugees = refugee_assos[:10]
+        for asso in displayed_refugees:
+            name = (asso.name or "Inconnu").strip()
+            loc = (
+                " [Sur place]"
+                if asso.is_same_commune
+                else (f" [{asso.commune_nom}]" if asso.commune_nom else "")
+            )
+            desc = (asso.description or "").strip()
+            desc_str = (
+                f" : {desc[:90]}..."
+                if len(desc) > 90
+                else (f" : {desc}" if desc else "")
+            )
+            pdf.multi_cell(pdf.epw, 3.8, f"  • {name}{loc}{desc_str}")
+        if len(refugee_assos) > len(displayed_refugees):
+            pdf.set_font("DejaVu", "I", 7)
+            pdf.cell(
+                pdf.epw,
+                3.8,
+                f"  ... et {len(refugee_assos) - len(displayed_refugees)} autres structures référencées sur le bassin de vie.",
+                new_x=XPos.LMARGIN,
+                new_y=YPos.NEXT,
+            )
+            pdf.set_font("DejaVu", "", 7.5)
     else:
-        pdf.cell(pdf.epw, 4, "  • Aucun réseau spécifique répertorié", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.ln(3)
+        pdf.cell(
+            pdf.epw,
+            4,
+            "  • Aucune association spécifique identifiée",
+            new_x=XPos.LMARGIN,
+            new_y=YPos.NEXT,
+        )
+    pdf.ln(1.5)
+
+    # 5. Besoins spécifiques & centres d'intérêt (par Recherche, Top 10)
+    interest_groups = (inc.asso_centres_interet_groups or []) if inc else []
+    if interest_groups:
+        pdf.set_font("DejaVu", "B", 8)
+        pdf.set_text_color(*COLOR_PRIMARY_TEAL)
+        pdf.cell(
+            pdf.epw,
+            4.5,
+            "▸ Besoins spécifiques & centres d'intérêt",
+            new_x=XPos.LMARGIN,
+            new_y=YPos.NEXT,
+        )
+        pdf.set_text_color(*COLOR_DARK_SLATE)
+        for grp in interest_groups:
+            suffix = (
+                f" ({len(grp.associations)} / {grp.total_bdv_count} dans le BDV)"
+                if grp.total_bdv_count > len(grp.associations)
+                else f" ({len(grp.associations)})"
+            )
+            pdf.set_font("DejaVu", "B", 7.5)
+            pdf.multi_cell(pdf.epw, 4, f"  {grp.label}{suffix}")
+            pdf.set_font("DejaVu", "", 7.2)
+            if not grp.associations:
+                pdf.multi_cell(pdf.epw, 3.8, "    • Aucune association dans le Bassin de Vie")
+                continue
+            for asso in grp.associations[:10]:
+                name = (asso.name or "Inconnu").strip()
+                loc = (
+                    " [Sur place]"
+                    if asso.is_same_commune
+                    else (f" [{asso.commune_nom}]" if asso.commune_nom else "")
+                )
+                tags_str = (
+                    f" [{', '.join(asso.matched_tags)}]"
+                    if len(grp.tags) > 1 and asso.matched_tags
+                    else ""
+                )
+                desc = (asso.description or "").strip()
+                desc_str = (
+                    f" : {desc[:85]}..."
+                    if len(desc) > 85
+                    else (f" : {desc}" if desc else "")
+                )
+                pdf.multi_cell(pdf.epw, 3.8, f"    • {name}{loc}{tags_str}{desc_str}")
+            pdf.ln(1.0)
+    pdf.ln(2.5)
 
     # --- 5. Advanced AI Synthesis (If present) ---
     synthesis_messages = getattr(commune, "odis_synthesis", None)

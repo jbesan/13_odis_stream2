@@ -7,6 +7,7 @@ a single process-wide cached bundle via Streamlit's cache_resource.
 import json
 import logging
 import os
+from collections.abc import Mapping
 from pathlib import Path
 import tempfile
 from typing import Any, Dict, List, Optional, Set
@@ -18,6 +19,7 @@ import streamlit as st
 import yaml
 
 import config as cfg
+from core.inclusion_referential import get_inclusion_thematiques_df
 from utils.data_sync import ensure_datasets_available
 
 logging.basicConfig(level=logging.INFO)
@@ -29,7 +31,9 @@ _RUNTIME_DATASET_FILENAMES = (
     cfg.ODIS_FILE,
     cfg.BV_FILE,
     cfg.POIS_FILE,
-    cfg.AGG_ASSOCIATIONS_FILE,
+    cfg.AGG_ASSO_THEMATIQUES_FILE,
+    cfg.AGG_ASSO_TAGS_BDV_FILE,
+    cfg.ASSO_TAGS_REF_FILE,
     cfg.AGG_FORMATIONS_FILE,
     cfg.CCAS_FILE,
     cfg.REFUGEE_ASSOCIATIONS_FILE,
@@ -49,6 +53,7 @@ from ui.form_state import (
     apply_search_criteria_to_ui,  # noqa: F401
     initialize_session_state,
 )
+from ui.tag_search import TagSearchIndex
 
 
 # =============================================================================
@@ -438,19 +443,89 @@ def _load_pois_and_indexes() -> tuple[
     return pois_df, ecoles, sante, incl_df, incl_idx
 
 
+def _build_incl_index_bdv(
+    incl_df: pd.DataFrame, odis: pd.DataFrame
+) -> pd.DataFrame:
+    """Build a Bassin de Vie inclusion-slugs index matching ``incl_index`` shape.
+
+    Args:
+        incl_df: Filtered POIs for ``incl_services`` containing ``codgeo`` and ``slug``.
+        odis: Communes DataFrame indexed by ``codgeo`` with a ``bassin_de_vie`` column.
+
+    Returns:
+        DataFrame indexed by ``bassin_de_vie`` with column ``key`` (``set[str]``).
+    """
+    if (
+        incl_df.empty
+        or "codgeo" not in incl_df.columns
+        or "slug" not in incl_df.columns
+        or odis.empty
+        or "bassin_de_vie" not in odis.columns
+    ):
+        return pd.DataFrame(columns=["key"])
+
+    commune_to_bv = (
+        odis[["bassin_de_vie"]]
+        .dropna(subset=["bassin_de_vie"])
+        .assign(
+            bassin_de_vie=lambda frame: (
+                frame["bassin_de_vie"]
+                .astype(str)
+                .str.strip()
+                .str.replace(r"\.0$", "", regex=True)
+            )
+        )
+    )
+    joined = incl_df[["codgeo", "slug"]].merge(
+        commune_to_bv, left_on="codgeo", right_index=True, how="inner"
+    )
+    if joined.empty:
+        return pd.DataFrame(columns=["key"])
+
+    return (
+        joined.groupby("bassin_de_vie", observed=False)["slug"]
+        .apply(set)
+        .rename("key")
+        .to_frame()
+    )
+
+
 def _load_auxiliary_datasets(
     refs: Dict[str, Any],
     load_errors: List[str],
 ) -> Dict[str, Any]:
-    """Loads vertical employment, association, formation and CCAS datasets."""
+    """Loads vertical employment, V6 association, formation and CCAS datasets."""
     live_jobs = _load_parquet(
         getattr(cfg, "LIVE_JOPS_FILE", cfg.LIVE_JOBS_FILE),
         error_list=load_errors,
     )
-    assos = _load_parquet(
-        cfg.AGG_ASSOCIATIONS_FILE,
+    asso_thematiques = _load_parquet(
+        cfg.AGG_ASSO_THEMATIQUES_FILE,
         error_list=load_errors,
     )
+    asso_tags_bdv = _load_parquet(
+        cfg.AGG_ASSO_TAGS_BDV_FILE,
+        error_list=load_errors,
+    )
+    if not asso_tags_bdv.empty and {
+        "bassin_de_vie",
+        "tag_canonique",
+    }.issubset(asso_tags_bdv.columns):
+        asso_tags_bdv["bassin_de_vie"] = (
+            asso_tags_bdv["bassin_de_vie"]
+            .astype(str)
+            .str.strip()
+            .str.replace(r"\.0$", "", regex=True)
+            .astype("category")
+        )
+        asso_tags_bdv["tag_canonique"] = asso_tags_bdv["tag_canonique"].astype(
+            "category"
+        )
+    asso_tags_ref = _load_parquet(
+        cfg.ASSO_TAGS_REF_FILE,
+        error_list=load_errors,
+    )
+    assos = pd.DataFrame(columns=["codgeo", "id_waldec", "count"])
     formations = _load_parquet(
         cfg.AGG_FORMATIONS_FILE,
         error_list=load_errors,
@@ -469,9 +544,16 @@ def _load_auxiliary_datasets(
         refs.get("waldec_index", pd.DataFrame(columns=["label"])), assos
     )
 
+    # NOTE(architecture): Keep `app_data` restricted to pure DataFrames and primitive
+    # containers so `@st.cache_resource` never retains custom class instances across
+    # Streamlit hot-reloads. Ideally, the entire dataset bundle should eventually be
+    # formalized as an explicit Pydantic model (e.g. AppDataBundle).
     return {
         "live_jobs_data": live_jobs,
         "associations_data": assos,
+        "asso_thematiques_data": asso_thematiques,
+        "asso_tags_bdv_data": asso_tags_bdv,
+        "asso_tags_ref": asso_tags_ref,
         "refugee_associations_data": _load_parquet(
             cfg.REFUGEE_ASSOCIATIONS_FILE,
             error_list=load_errors,
@@ -608,7 +690,7 @@ def load_referentiels_raw() -> Dict[str, Any]:
         "rome_index": rome_index,
         "rome_top_index": rome_index,
         "codformations_index": _index_df("formation_codes"),
-        "inclusion_services_index": _index_df("inclusion_services"),
+        "inclusion_services_index": get_inclusion_thematiques_df(),
         "waldec_index": _index_df("waldec_codes"),
         "waldec_top_index": _index_df("waldec_codes").head(500),
     }
@@ -634,6 +716,7 @@ def load_scoring_datasets_raw(
 
     odis, odis_geo, depcom_df, coddep_set = _load_and_clean_odis(refs, df_jaccueille)
     pois_df, ecoles, sante, incl_df, incl_idx = _load_pois_and_indexes()
+    incl_idx_bdv = _build_incl_index_bdv(incl_df, odis)
     aux = _load_auxiliary_datasets(refs, load_errors)
     bv_geo = _load_and_enrich_bv_geo(df_jaccueille, load_errors)
 
@@ -648,6 +731,7 @@ def load_scoring_datasets_raw(
             "annuaire_sante": sante,
             "annuaire_inclusion": incl_df,
             "incl_index": incl_idx,
+            "incl_index_bdv": incl_idx_bdv,
             "bv_geo": bv_geo,
             "bv_data": bv_geo,
             "pois": pois_df,
@@ -677,6 +761,40 @@ def load_app_data_raw(
 def get_scoring_datasets(release_version: Optional[str] = None) -> Dict[str, Any]:
     """Cached complete scoring bundle for one immutable release version."""
     return load_app_data_raw(release_version)
+
+
+@st.cache_resource(show_spinner=False)
+def _build_cached_tag_search_index(
+    cache_key: tuple[Any, ...], _ref_df: pd.DataFrame
+) -> TagSearchIndex:
+    """Build and cache ``TagSearchIndex`` outside the raw DataFrame bundle."""
+    return TagSearchIndex(_ref_df)
+
+
+def get_tag_search_index(
+    app_data: Optional[Mapping[str, Any]] = None,
+) -> TagSearchIndex:
+    """Return a cached ``TagSearchIndex`` built from ``app_data['asso_tags_ref']``.
+
+    Args:
+        app_data: Optional dataset bundle; falls back to ``get_app_data()`` when omitted.
+
+    Returns:
+        Populated ``TagSearchIndex`` (or empty index if ``asso_tags_ref`` is missing).
+    """
+    data = app_data if app_data is not None else get_app_data()
+    ref_df = data.get("asso_tags_ref")
+    if ref_df is None or not isinstance(ref_df, pd.DataFrame) or ref_df.empty:
+        return TagSearchIndex(pd.DataFrame())
+
+    head_tags = (
+        tuple(ref_df["tag_canonique"].head(3).astype(str).tolist())
+        if "tag_canonique" in ref_df.columns
+        else ()
+    )
+    release_id = str(data.get("_release_id") or "no-release")
+    cache_key = (release_id, len(ref_df), head_tags)
+    return _build_cached_tag_search_index(cache_key, ref_df)
 
 
 def get_app_data() -> Dict[str, Any]:

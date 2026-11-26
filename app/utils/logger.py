@@ -224,18 +224,22 @@ def setup_logfire() -> None:
             send_to_logfire=send_to_logfire,
             console=False,
         )
+        if send_to_logfire is False:
+            # Skip pydantic_ai/httpx instrumentation when remote telemetry is disabled
+            # (GDPR production): instrument_pydantic_ai() eagerly imports ~1,200 modules
+            # (pydantic_ai, fastmcp, mcp) for no-op local spans.
+            logger.info(
+                f"🔒 Logfire remote telemetry disabled in '{logfire_env}' environment (GCP GDPR compliance)."
+            )
+            return
+
         logfire.instrument_pydantic_ai()
         logfire.instrument_httpx()
         # Suppress BigQuery automatic tracing to reduce noise (as requested)
         logfire.suppress_scopes("google.cloud.bigquery.opentelemetry_tracing")
-        if send_to_logfire is False:
-            logger.info(
-                f"🔒 Logfire remote telemetry disabled in '{logfire_env}' environment (GCP GDPR compliance)."
-            )
-        else:
-            logger.info(
-                f"🔥 Logfire instrumentation enabled in '{logfire_env}' environment."
-            )
+        logger.info(
+            f"🔥 Logfire instrumentation enabled in '{logfire_env}' environment."
+        )
     except Exception as e:
         logger.warning(f"⚠️ Failed to initialize Logfire: {e}")
 

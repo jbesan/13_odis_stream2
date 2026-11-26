@@ -3,9 +3,14 @@
 Scoring module for the ODIS application.
 """
 
+import logging
+import re
 from typing import List, Dict, Set, Any, Optional, Union, Tuple, cast
+
+import logfire
 import numpy as np
 import pandas as pd
+
 import config as cfg
 from core.models import (
     SearchCriterias,
@@ -20,8 +25,6 @@ from core.models import (
     MobilityMetrics,
     TerritoryMetrics,
 )
-import logging
-import logfire
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -313,6 +316,8 @@ class ScoringEngine:
                     )
                 else:
                     df[score_id] = df[score_id].fillna(0.0)
+            elif f"{score_id}_bdv" in df.columns:
+                df[f"{score_id}_bdv"] = df[f"{score_id}_bdv"].fillna(0.0)
             else:
                 df[score_id] = 0.0
         return df
@@ -413,7 +418,17 @@ class ScoringEngine:
     def _compute_category_scores(
         self, df: pd.DataFrame, config: SearchCriterias
     ) -> pd.DataFrame:
-        df = df.copy()
+        """Computes per-category scores and combined commune/BdV criterion columns.
+
+        Args:
+            df: Candidate communes DataFrame with criterion and BdV columns.
+            config: Active search configuration.
+
+        Returns:
+            DataFrame augmented with ``{sid}_uncombined_commune``, combined
+            ``{sid}``, and ``{category}_cat_score`` columns.
+        """
+        col_updates: Dict[str, Any] = {}
 
         # Use cached active criteria if available
         active = (
@@ -445,7 +460,11 @@ class ScoringEngine:
                 bdv_f = float(s_row.get("bdv_factor", 0.0))
 
                 # 1. Get Commune Value
-                val_commune = df[sid] if sid in df.columns else None
+                val_commune = (
+                    col_updates[sid]
+                    if sid in col_updates
+                    else (df[sid] if sid in df.columns else None)
+                )
 
                 # 2. Get BDV Value
                 sid_bdv = f"{sid}_bdv"
@@ -509,7 +528,7 @@ class ScoringEngine:
 
                 # Save uncombined commune value for BdV transparency details
                 if val_commune is not None:
-                    df[f"{sid}_uncombined_commune"] = val_commune
+                    col_updates[f"{sid}_uncombined_commune"] = val_commune
 
                 # Track valid weights per row (using non-nullity of original sources)
                 # If both are null, weight is 0
@@ -547,7 +566,7 @@ class ScoringEngine:
 
                 # IMPORTANT: save the combined value back to the dataframe
                 # so it can be picked up by format_city_details for the UI breakdown.
-                df[sid] = val
+                col_updates[sid] = val
 
             if weights_val:
                 scores_arr = np.nan_to_num(sum(scores_val), nan=0.0).astype(float)
@@ -565,9 +584,15 @@ class ScoringEngine:
                 )
 
                 # Absolute Category Score (0.0 to 1.0): raw weighted mean of active criteria
-                df[f"{category}_cat_score"] = s
+                col_updates[f"{category}_cat_score"] = s
 
-        return df.copy()
+        if not col_updates:
+            return df.copy()
+
+        existing_cols = [c for c in col_updates if c in df.columns]
+        base_df = df.drop(columns=existing_cols) if existing_cols else df
+        updates_df = pd.DataFrame(col_updates, index=df.index)
+        return pd.concat([base_df, updates_df], axis=1)
 
     @logfire.instrument("_compute_weighted_score", extract_args=False)
     def _compute_weighted_score(
@@ -704,6 +729,10 @@ class ScoringEngine:
             siae_jobs_data=app_data.get("siae_jobs_data", pd.DataFrame()),
             rna_rag_service=app_data.get("rna_rag_service"),
             pois=app_data.get("pois", pd.DataFrame()),
+            incl_index_bdv=app_data.get("incl_index_bdv"),
+            asso_thematiques_data=app_data.get("asso_thematiques_data"),
+            asso_tags_bdv_data=app_data.get("asso_tags_bdv_data"),
+            asso_tags_ref=app_data.get("asso_tags_ref"),
         )
 
     def __init__(
@@ -712,8 +741,8 @@ class ScoringEngine:
         df_bv_geo: pd.DataFrame,
         scores_cat: pd.DataFrame,
         incl_index: pd.DataFrame,
-        associations_data: pd.DataFrame,
-        formations_data: pd.DataFrame,
+        associations_data: Optional[pd.DataFrame] = None,
+        formations_data: pd.DataFrame = pd.DataFrame(),
         codformations_index: Optional[pd.DataFrame] = None,
         waldec_index: Optional[pd.DataFrame] = None,
         global_stats: Optional[Dict[str, Any]] = None,
@@ -729,13 +758,19 @@ class ScoringEngine:
         siae_jobs_data: pd.DataFrame = pd.DataFrame(),
         rna_rag_service: Optional[RNARagService] = None,
         pois: pd.DataFrame = pd.DataFrame(),
+        incl_index_bdv: Optional[pd.DataFrame] = None,
+        asso_thematiques_data: Optional[pd.DataFrame] = None,
+        asso_tags_bdv_data: Optional[pd.DataFrame] = None,
+        asso_tags_ref: Optional[pd.DataFrame] = None,
     ):
         self.current_city_scored_row = None
         self.df_all_communes = df_all_communes
         self.df_bv_geo = df_bv_geo
         self.scores_cat = scores_cat
         self.incl_index = incl_index
-        self.associations_data = associations_data
+        self.associations_data = (
+            associations_data if associations_data is not None else pd.DataFrame()
+        )
         self.formations_data = formations_data
         self.global_stats = global_stats
         self.bv_data = bv_data if bv_data is not None else df_bv_geo
@@ -750,6 +785,18 @@ class ScoringEngine:
         self.live_jobs_data = live_jobs_data
         self.siae_jobs_data = siae_jobs_data
         self.pois = pois
+        self.asso_thematiques_data = (
+            asso_thematiques_data
+            if asso_thematiques_data is not None
+            else pd.DataFrame()
+        )
+        self.asso_tags_bdv_data = (
+            asso_tags_bdv_data if asso_tags_bdv_data is not None else pd.DataFrame()
+        )
+        self.asso_tags_ref = (
+            asso_tags_ref if asso_tags_ref is not None else pd.DataFrame()
+        )
+        self.incl_index_bdv = self._resolve_incl_index_bdv(incl_index_bdv)
         self._unavailable_runtime_scores: set[str] = set()
 
         # Initialize RNA RAG Service if not provided
@@ -911,8 +958,11 @@ class ScoringEngine:
         inc_services = getattr(config, "inc_services_selection", [])
         if inc_services:
             active.add("inc_services_incl_scaled")
+            active.add("inc_asso_thematiques_scaled")
 
-        if getattr(config, "inc_asso_add_selection", []):
+        if getattr(config, "inc_asso_add_selection", []) or any(
+            getattr(g, "tags", g) for g in getattr(config, "inc_asso_add_groups", [])
+        ):
             active.add("inc_asso_add_scaled")
 
         # 8. Territory (Partners & Strategic Locations)
@@ -1175,11 +1225,14 @@ class ScoringEngine:
                 )
                 if has_bdv_data:
                     bdv_applied = True
-                    score_norm_commune = (
-                        float(row[f"{score_id}_uncombined_commune"])
-                        if f"{score_id}_uncombined_commune" in row
-                        and pd.notna(row[f"{score_id}_uncombined_commune"])
-                        else val_scaled
+                    sid_uncombined = f"{score_id}_uncombined_commune"
+                    has_uncombined_commune = (
+                        sid_uncombined in row and pd.notna(row[sid_uncombined])
+                    )
+                    is_pure_bdv = (
+                        not has_uncombined_commune
+                        and score_id not in static_row
+                        and raw_metric_col not in static_row
                     )
                     score_norm_bdv = (
                         float(row[sid_bdv])
@@ -1190,7 +1243,28 @@ class ScoringEngine:
                             else None
                         )
                     )
-                    val_kpi_commune = val_raw
+                    if is_pure_bdv:
+                        score_norm_commune = None
+                        val_kpi_commune = None
+                    else:
+                        score_norm_commune = (
+                            float(row[sid_uncombined])
+                            if has_uncombined_commune
+                            else val_scaled
+                        )
+                        if raw_metric_col == score_id and has_uncombined_commune:
+                            d_factor = float(score_row.get("display_factor", 1.0))
+                            val_kpi_commune = _format_kpi_value(
+                                float(score_norm_commune * d_factor),
+                                unit,
+                                score_id,
+                                score_norm_commune,
+                                fmt,
+                                metric_type=metric_type,
+                                discrete_mapping=discrete_mapping,
+                            )
+                        else:
+                            val_kpi_commune = val_raw
                     raw_bdv_col = f"{raw_metric_col}_bdv"
                     bdv_src = (
                         static_row
@@ -2239,78 +2313,265 @@ class ScoringEngine:
         """
         return df
 
+    def _resolve_incl_index_bdv(
+        self, incl_index_bdv: Optional[pd.DataFrame]
+    ) -> pd.DataFrame:
+        """Build or normalize the Bassin de Vie Data Inclusion service-slug index.
+
+        Args:
+            incl_index_bdv: Optional pre-aggregated index indexed by ``bassin_de_vie``.
+
+        Returns:
+            DataFrame indexed by normalized ``bassin_de_vie`` strings with a ``key``
+            column containing ``set[str]`` slugs.
+        """
+        if incl_index_bdv is not None and not incl_index_bdv.empty:
+            out = incl_index_bdv.copy()
+            out.index = (
+                out.index.astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+            )
+            return out
+
+        if (
+            self.incl_index is None
+            or self.incl_index.empty
+            or "key" not in self.incl_index.columns
+            or self.df_all_communes is None
+            or self.df_all_communes.empty
+            or "bassin_de_vie" not in self.df_all_communes.columns
+        ):
+            return pd.DataFrame(columns=["key"])
+
+        joined = self.df_all_communes[["bassin_de_vie"]].join(
+            self.incl_index[["key"]], how="inner"
+        )
+        if joined.empty:
+            return pd.DataFrame(columns=["key"])
+
+        joined["bassin_de_vie"] = (
+            joined["bassin_de_vie"]
+            .astype(str)
+            .str.strip()
+            .str.replace(r"\.0$", "", regex=True)
+        )
+        grouped = joined.groupby("bassin_de_vie", observed=True)["key"].apply(
+            lambda sets: set().union(*(s for s in sets if isinstance(s, set)))
+        )
+        return grouped.to_frame(name="key")
+
+    @staticmethod
+    def _normalized_bv_series(df: pd.DataFrame) -> Optional[pd.Series]:
+        """Extract normalized Bassin de Vie codes aligned to ``df.index``."""
+        if "bassin_de_vie" not in df.columns:
+            return None
+        return (
+            df["bassin_de_vie"]
+            .where(df["bassin_de_vie"].notna(), "")
+            .astype(str)
+            .str.strip()
+            .str.replace(r"\.0$", "", regex=True)
+        )
+
+    @staticmethod
+    def _extract_valid_tags(selection: Any) -> List[str]:
+        """Extract canonical tag strings while ignoring legacy 6-digit WALDEC codes."""
+        tags: List[str] = []
+        seen: Set[str] = set()
+        for item in selection or []:
+            code = (
+                str(item.code if hasattr(item, "code") else item)
+                .strip()
+            )
+            if not code:
+                continue
+            if re.match(r"^\d{6}$", code):
+                logger.warning(
+                    "Ignoring legacy 6-digit WALDEC code '%s' in inc_asso_add_selection",
+                    code,
+                )
+                continue
+            if code not in seen:
+                seen.add(code)
+                tags.append(code)
+        return tags
+
+    @classmethod
+    def _extract_association_tag_groups(cls, config: SearchCriterias) -> List[List[str]]:
+        """Resolve structured OR-groups of canonical association tags.
+
+        Uses ``config.inc_asso_add_groups`` when present; falls back to treating
+        each item in ``config.inc_asso_add_selection`` as a standalone single-tag
+        group for legacy profiles and snapshots.
+
+        Args:
+            config: Search criteria instance.
+
+        Returns:
+            Non-empty list of tag lists, one per logical interest search.
+        """
+        raw_groups = getattr(config, "inc_asso_add_groups", None) or []
+        groups: List[List[str]] = []
+        for grp in raw_groups:
+            raw_tags = grp.tags if hasattr(grp, "tags") else grp
+            cleaned = cls._extract_valid_tags(raw_tags)
+            if cleaned:
+                groups.append(cleaned)
+        if groups:
+            return groups
+
+        legacy_tags = cls._extract_valid_tags(
+            getattr(config, "inc_asso_add_selection", [])
+        )
+        return [[tag] for tag in legacy_tags]
+
     def _compute_inclusion_scores(
         self, df: pd.DataFrame, config: SearchCriterias
     ) -> pd.DataFrame:
-        # Operating in-place
+        """Compute live inclusion scores for DI services, social associations, and leisure tags."""
+        bv_series = self._normalized_bv_series(df)
 
-        # Affinities
-        inc_asso_add = getattr(config, "inc_asso_add_selection", [])
-        if inc_asso_add:
-            interest_codes = set()
-            for i in inc_asso_add:
-                # Logic to handle CriteriaItem or str
-                code = i.code if hasattr(i, "code") else str(i)
-                interest_codes.add(code)
+        # 1. Leisure & Interests (inc_asso_add_scaled — pure Bassin de Vie graduated coverage)
+        for col in ("inc_asso_add_scaled", "inc_asso_add_scaled_bdv"):
+            if col in df.columns:
+                df.drop(columns=[col], inplace=True)
 
-            if interest_codes and not self.associations_data.empty:
-                # Normalization logic
-                expanded_interests = set()
-                for c in interest_codes:
-                    expanded_interests.add(c)
-                    if c.startswith("0"):
-                        expanded_interests.add(c.lstrip("0"))
-                    else:
-                        expanded_interests.add("0" + c)
-
-                affinite_assos = self.associations_data[
-                    self.associations_data["id_waldec"]
-                    .astype(str)
-                    .str.startswith(tuple(expanded_interests), na=False)
-                ]
-                affinite_counts = (
-                    affinite_assos.groupby("codgeo")["count"]
-                    .sum()
-                    .reindex(df.index, fill_value=0)
-                )
-
-                if "population" in df.columns:
-                    population = df["population"].where(df["population"] > 0)
-                    df["affinite_density"] = (affinite_counts * 1000) / population
-                else:
-                    df["affinite_density"] = np.nan
-                min_b, max_b = self._get_bounds("inc_asso_add_scaled")
-                df["inc_asso_add_scaled"] = self._scale_series(
-                    df["affinite_density"], min_b, max_b
-                )
+        tag_groups = self._extract_association_tag_groups(config)
+        selected_tags = list(dict.fromkeys(t for group in tag_groups for t in group))
+        if (
+            selected_tags
+            and not self.asso_tags_bdv_data.empty
+            and bv_series is not None
+        ):
+            subset = self.asso_tags_bdv_data[
+                self.asso_tags_bdv_data["tag_canonique"].astype(str).isin(selected_tags)
+            ].copy()
+            if subset.empty:
+                df["inc_asso_add_scaled_bdv"] = 0.0
             else:
-                if "inc_asso_add_scaled" in df.columns:
-                    df.drop(columns=["inc_asso_add_scaled"], inplace=True)
-        else:
-            if "inc_asso_add_scaled" in df.columns:
-                df.drop(columns=["inc_asso_add_scaled"], inplace=True)
+                subset["_bv"] = (
+                    subset["bassin_de_vie"]
+                    .astype(str)
+                    .str.strip()
+                    .str.replace(r"\.0$", "", regex=True)
+                )
+                subset["_count"] = pd.to_numeric(
+                    subset["count"], errors="coerce"
+                ).fillna(0.0)
+                # Intra-group logical OR via conservative max(count), averaged across groups:
+                # 0 -> 0.0, 1 -> 0.7, >= 2 -> 1.0
+                group_scores_sum = pd.Series(0.0, index=df.index, dtype=float)
+                for group_tags in tag_groups:
+                    grp_sub = subset[
+                        subset["tag_canonique"].astype(str).isin(group_tags)
+                    ]
+                    if grp_sub.empty:
+                        continue
+                    grp_max = grp_sub.groupby("_bv", observed=True)["_count"].max()
+                    mapped_max = (
+                        bv_series.map(grp_max).fillna(0.0).to_numpy(dtype=float)
+                    )
+                    group_scores_sum += np.where(
+                        mapped_max >= 2, 1.0, np.where(mapped_max >= 1, 0.7, 0.0)
+                    )
+                df["inc_asso_add_scaled_bdv"] = (
+                    group_scores_sum / len(tag_groups)
+                ).astype(float)
 
-        # Inclusion Services (Merged Selection)
-        needed = set()
-        for i in getattr(config, "inc_services_selection", []):
-            needed.add(i.code if hasattr(i, "code") else str(i))
+        # 2. Unified Inclusion Needs (inc_services_selection):
+        #    a) inc_services_incl_scaled (DI Services: Commune + Bassin de Vie)
+        #    b) inc_asso_thematiques_scaled (RNA V6 Social Assos: Commune + Bassin de Vie)
+        needed = [
+            str(i.code if hasattr(i, "code") else i).strip()
+            for i in getattr(config, "inc_services_selection", [])
+        ]
+        needed = list(dict.fromkeys(code for code in needed if code))
 
-        if needed and not self.incl_index.empty:
+        for col in (
+            "inc_services_incl_scaled",
+            "inc_services_incl_scaled_bdv",
+            "inc_asso_thematiques_scaled",
+            "inc_asso_thematiques_scaled_bdv",
+        ):
+            if col in df.columns:
+                df.drop(columns=[col], inplace=True)
 
-            def count_matches(available):
+        if needed and not self.incl_index.empty and "key" in self.incl_index.columns:
+
+            def count_matches(available: Any) -> int:
                 if not isinstance(available, set):
                     return 0
                 return sum(1 for n in needed if any(n in a for a in available))
 
-            if "key" not in df.columns:
-                df = df.join(self.incl_index, how="left")
-
-            df["inc_services_incl_scaled"] = df["key"].apply(count_matches) / len(
-                needed
+            commune_keys = self.incl_index["key"].reindex(df.index)
+            df["inc_services_incl_scaled"] = (
+                commune_keys.apply(count_matches).astype(float) / len(needed)
             )
-        else:
-            if "inc_services_incl_scaled" in df.columns:
-                df.drop(columns=["inc_services_incl_scaled"], inplace=True)
+
+            if bv_series is not None:
+                incl_bdv_idx = self.incl_index_bdv
+                if incl_bdv_idx.empty:
+                    # Fallback synthesis for minimal unit-test fixtures lacking df_all_communes
+                    temp = pd.DataFrame({"_bv": bv_series, "key": commune_keys})
+                    synthesized = temp.groupby("_bv", observed=True)["key"].apply(
+                        lambda sets: set().union(*(s for s in sets if isinstance(s, set)))
+                    )
+                    incl_bdv_idx = synthesized.to_frame(name="key")
+
+                if not incl_bdv_idx.empty and "key" in incl_bdv_idx.columns:
+                    bdv_keys = bv_series.map(incl_bdv_idx["key"])
+                    df["inc_services_incl_scaled_bdv"] = (
+                        bdv_keys.apply(count_matches).astype(float) / len(needed)
+                    )
+
+        if needed and not self.asso_thematiques_data.empty:
+            theme_subset = self.asso_thematiques_data[
+                self.asso_thematiques_data["thematique_slug"].isin(needed)
+            ].copy()
+
+            commune_slice = theme_subset[theme_subset["grain"] == "commune"].copy()
+            if commune_slice.empty:
+                df["inc_asso_thematiques_scaled"] = 0.0
+            else:
+                c_counts = pd.to_numeric(
+                    commune_slice["count"], errors="coerce"
+                ).fillna(0.0)
+                # Commune graduated tiers: 0 -> 0.0, 1 -> 0.5, 2 -> 0.75, >= 3 -> 1.0
+                commune_slice["_tier"] = np.where(
+                    c_counts >= 3,
+                    1.0,
+                    np.where(c_counts >= 2, 0.75, np.where(c_counts >= 1, 0.5, 0.0)),
+                )
+                commune_scores = (
+                    commune_slice.groupby("geo_code", observed=True)["_tier"].sum()
+                    / len(needed)
+                )
+                df["inc_asso_thematiques_scaled"] = (
+                    commune_scores.reindex(df.index, fill_value=0.0).astype(float)
+                )
+
+            if bv_series is not None:
+                bdv_slice = theme_subset[theme_subset["grain"] == "bdv"].copy()
+                if bdv_slice.empty:
+                    df["inc_asso_thematiques_scaled_bdv"] = 0.0
+                else:
+                    b_counts = pd.to_numeric(
+                        bdv_slice["count"], errors="coerce"
+                    ).fillna(0.0)
+                    # BdV graduated tiers: 0 -> 0.0, 1-2 -> 0.5, 3-5 -> 0.75, >= 6 -> 1.0
+                    bdv_slice["_tier"] = np.where(
+                        b_counts >= 6,
+                        1.0,
+                        np.where(
+                            b_counts >= 3, 0.75, np.where(b_counts >= 1, 0.5, 0.0)
+                        ),
+                    )
+                    bdv_scores = (
+                        bdv_slice.groupby("geo_code", observed=True)["_tier"].sum()
+                        / len(needed)
+                    )
+                    df["inc_asso_thematiques_scaled_bdv"] = (
+                        bv_series.map(bdv_scores).fillna(0.0).astype(float)
+                    )
 
         return df
 

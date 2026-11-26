@@ -21,8 +21,19 @@ logger = logging.getLogger(__name__)
 @pytest.fixture(scope="module")
 def mcp_data_context():
     """Load data once for the module (simulating Server Startup)."""
+    import pandas as pd
+
     print("Loading ODIS Data Context...")
     data = load_app_data_raw()
+    ref_df = data.get("asso_tags_ref")
+    if ref_df is None or not isinstance(ref_df, pd.DataFrame) or ref_df.empty:
+        data["asso_tags_ref"] = pd.DataFrame(
+            {
+                "tag_canonique": ["football", "volley ball", "chant choral"],
+                "occ_national": [28000, 3200, 14500],
+                "exemples_bruts": [["football", "foot"], ["volley"], ["chorale"]],
+            }
+        )
     set_data_context(data)
     return data
 
@@ -50,11 +61,15 @@ def test_search_referentiels_jobs(mcp_data_context):
 
 
 def test_search_referentiels_hobbies(mcp_data_context):
-    """Verify WALDEC search finds hobbies."""
-    results = _search_referentiels_logic("Football", domain="waldec_codes")
+    """Verify association_tags search finds hobbies and supports waldec_codes alias."""
+    results = _search_referentiels_logic("Football", domain="association_tags")
     assert len(results) > 0
     top = results[0]
     assert "football" in top["label"].lower()
+
+    alias_results = _search_referentiels_logic("Football", domain="waldec_codes")
+    assert len(alias_results) > 0
+    assert alias_results[0]["code"] == top["code"]
 
 
 def test_search_referentiels_inclusion(mcp_data_context):
@@ -131,6 +146,26 @@ def test_compute_top_cities_execution_complex(mcp_data_context):
     print(f"Top Result: {top['name']} ({top['score']})")
     assert "detailed_scores" in top
     assert top["score"] > 0
+
+
+def test_search_rna_rag_logic_resolves_plm_and_bdv(mcp_data_context):
+    """Verify _search_rna_rag_logic normalizes PLM codes and enforces BDV scope."""
+    from unittest.mock import MagicMock, patch
+    from services.mcp_server import _search_rna_rag_logic
+
+    mock_service = MagicMock()
+    mock_service.get_associations_semantic.return_value = [
+        {"id": "W751000001", "name": "Test Paris", "codgeo": "75056"}
+    ]
+
+    with patch("services.mcp_server.get_rna_rag_service", return_value=mock_service):
+        results = _search_rna_rag_logic("cours de français", "75111", top_k=7)
+
+    assert len(results) == 1
+    call_kwargs = mock_service.get_associations_semantic.call_args.kwargs
+    assert call_kwargs["codgeos"] == ["75056"]
+    assert call_kwargs["bv_code"] == "75056"
+    assert call_kwargs["top_k"] == 7
 
 
 if __name__ == "__main__":

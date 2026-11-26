@@ -60,6 +60,9 @@ from pipeline.ingest.cleaners.rna_rag import (
     clean_refugee_associations,
     compute_rna_rag_counts,
     fetch_rna_rag_stats,
+    fetch_rna_v6_commune_stats,
+    fetch_rna_v6_tags_bdv,
+    fetch_rna_v6_thematiques_agg,
 )
 from pipeline.ingest.cleaners.salesforce import clean_salesforce_jaccueille
 
@@ -101,6 +104,9 @@ __all__ = [
     "clean_ter_insecurite",
     "compute_rna_rag_counts",
     "fetch_rna_rag_stats",
+    "fetch_rna_v6_commune_stats",
+    "fetch_rna_v6_tags_bdv",
+    "fetch_rna_v6_thematiques_agg",
     "get_inclusion_jobs_status",
     "get_live_jobs_status",
     "transform_housing_occupation_odace",
